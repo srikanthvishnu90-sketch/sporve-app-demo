@@ -1,0 +1,27 @@
+# Real config (PUBLIC keys only, but keep it out of git — commit env.example.json)
+env.json
+
+# Flutter / Dart build output
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.iml
+.idea/
+.vscode/
+
+# Native build artifacts
+android/.gradle/
+android/app/debug
+android/app/profile
+android/app/release
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+**/Flutter/ephemeral/
+
+# OS
+.DS_Store
+*.log

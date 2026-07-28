@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://tseszaprvtvqrkfpditu.supabase.co wss://tseszaprvtvqrkfpditu.supabase.co https://www.gstatic.com https://fonts.gstatic.com https://hcaptcha.com https://*.hcaptcha.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="AI-native youth-sports training & marketplace — find coaches, book sessions, and manage your athletes.">
+  <meta name="theme-color" content="#11161F">
+  <meta name="color-scheme" content="dark light">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Sporve">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Open Graph / Twitter -->
+  <meta property="og:title" content="Sporve">
+  <meta property="og:description" content="AI-native youth-sports training & marketplace — find coaches, book sessions, and manage your athletes.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="icons/Icon-512.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sporve">
+  <meta name="twitter:description" content="AI-native youth-sports training & marketplace.">
+  <meta name="twitter:image" content="icons/Icon-512.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="preload" href="main.dart.js" as="script" fetchpriority="high">
+
+  <!-- Kill the default first-paint flash and make boot state explicit. -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --demo-bg: #11161F;
+      --demo-panel: #111821;
+      --demo-text: #F6F8FB;
+      --demo-muted: rgba(246, 248, 251, .62);
+      --demo-line: rgba(246, 248, 251, .14);
+      --demo-accent: #7692AE;
+      --demo-brand: #00C2CC;
+      --entry-wall: #475569;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--demo-bg);
+      color: var(--demo-text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #demo-boot {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+      /* The SAME entry wall as the login screen, so the loader hands off to
+         it seamlessly — no separate dark screen. Flat, even fill. */
+      background: var(--entry-wall);
+      opacity: 1;
+      transition: opacity 220ms ease, visibility 220ms ease;
+    }
+    /* Skip the branded loading screen entirely on the direct demo path. */
+    html.demo-direct #demo-boot {
+      display: none;
+    }
+
+    body.demo-ready #demo-boot {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    /* Clean, full-bleed brand splash — one centered wordmark, nothing else.
+       Progress + copy only surface when loading is slow or fails. */
+    .boot-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      width: min(420px, 100%);
+    }
+
+    /* The black S mark — matches the Flutter splash exactly (104px, pure
+       black on the slate wall) so there is no visible handoff jump. */
+    .boot-mark {
+      display: block;
+      width: 104px;
+      height: 104px;
+      filter: brightness(0) invert(1);
+    }
+
+    /* Chrome from the old loading card — retired for the clean splash. */
+    .boot-brand,
+    .boot-pill,
+    .boot-title {
+      display: none;
+    }
+
+    .boot-copy {
+      margin: 18px 0 0;
+      color: rgba(10, 10, 10, .72);
+      font-size: 14px;
+      line-height: 1.55;
+      max-width: 34ch;
+      display: none;
+    }
+
+    .boot-bar {
+      position: relative;
+      width: 128px;
+      height: 3px;
+      margin-top: 24px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(10, 10, 10, .16);
+      opacity: 0;
+      transition: opacity 300ms ease;
+    }
+
+    body.boot-slow .boot-bar {
+      opacity: 1;
+    }
+
+    .boot-bar::after {
+      content: "";
+      position: absolute;
+      inset-block: 0;
+      left: -42%;
+      width: 42%;
+      border-radius: inherit;
+      background: #0A0A0A;
+      animation: boot-slide 1.15s cubic-bezier(.22, 1, .36, 1) infinite;
+    }
+
+    .boot-actions,
+    .boot-slow,
+    .boot-error {
+      display: none;
+    }
+
+    body.boot-slow .boot-slow,
+    body.boot-failed .boot-error,
+    body.boot-failed .boot-actions {
+      display: block;
+    }
+
+    body.boot-failed .boot-bar {
+      display: none;
+    }
+
+    .boot-actions {
+      margin-top: 24px;
+    }
+
+    .boot-actions button,
+    .boot-actions a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      margin: 0 10px 10px 0;
+      padding: 0 16px;
+      border: 1px solid rgba(10, 10, 10, .28);
+      border-radius: 999px;
+      background: transparent;
+      color: #0A0A0A;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .09em;
+      text-decoration: none;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .boot-actions button:first-child {
+      border-color: #0A0A0A;
+      background: #0A0A0A;
+      color: white;
+    }
+
+    .demo-note {
+      position: fixed;
+      left: 50%;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 9;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      transform: translate(-50%, 14px);
+      width: min(620px, calc(100% - 32px));
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 12px;
+      background: rgba(11, 15, 20, .82);
+      color: rgba(255, 255, 255, .76);
+      backdrop-filter: blur(14px);
+      font-size: 12px;
+      line-height: 1.45;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms ease;
+    }
+
+    body.demo-ready.show-demo-note .demo-note {
+      display: flex;
+      opacity: 1;
+      transform: translate(-50%, 0);
+      pointer-events: auto;
+    }
+
+    .demo-note span {
+      min-width: 0;
+    }
+
+    .demo-note-actions {
+      display: flex;
+      gap: 8px;
+      flex: none;
+    }
+
+    .demo-note button,
+    .fd-close,
+    .fd-tab,
+    .fd-choice,
+    .fd-primary,
+    .fd-secondary {
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .demo-note button {
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .08);
+      color: white;
+      padding: 8px 11px;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .demo-note button:first-child {
+      border-color: var(--demo-accent);
+      background: var(--demo-accent);
+    }
+
+    .fast-demo {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: none;
+      overflow-y: auto;
+      background: #F6F8FB;
+      color: #10151B;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    body.fast-demo-open {
+      overflow: hidden;
+    }
+
+    body.fast-demo-open .fast-demo {
+      display: block;
+    }
+
+    .fd-shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0 34px;
+    }
+
+    .fd-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .fd-brand {
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: #283541;
+    }
+
+    .fd-close {
+      min-height: 38px;
+      border: 1px solid #D6DDE5;
+      border-radius: 999px;
+      background: white;
+      color: #26323D;
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .fd-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .fd-panel {
+      border: 1px solid #DCE3EA;
+      border-radius: 16px;
+      background: white;
+      overflow: hidden;
+    }
+
+    .fd-intro {
+      padding: clamp(22px, 4vw, 40px);
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .fd-kicker {
+      margin: 0 0 22px;
+      color: #6C7A87;
+      font-size: 11px;
+      font-weight: 820;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .fd-title {
+      margin: 0;
+      max-width: 12ch;
+      color: #0D1218;
+      font-size: clamp(38px, 7vw, 76px);
+      line-height: .94;
+      letter-spacing: -.035em;
+    }
+
+    .fd-copy {
+      margin: 22px 0 0;
+      max-width: 58ch;
+      color: #53616E;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .fd-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: auto;
+      padding: 4px;
+      border: 1px solid #DDE4EB;
+      border-radius: 999px;
+      background: #F1F4F8;
+      width: max-content;
+      max-width: 100%;
+    }
+
+    .fd-tab {
+      min-height: 36px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #586774;
+      padding: 0 16px;
+      font-size: 12px;
+      font-weight: 820;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .fd-tab.is-active {
+      background: #7692AE;
+      color: white;
+    }
+
+    .fd-workspace {
+      padding: clamp(16px, 3vw, 24px);
+      background: #10151B;
+      color: white;
+      min-height: 600px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .fd-view {
+      display: none;
+    }
+
+    .fd-view.is-active {
+      display: block;
+    }
+
+    .fd-phonebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      color: rgba(255, 255, 255, .56);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .fd-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .fd-card {
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .06);
+      padding: 15px;
+    }
+
+    .fd-choice {
+      width: 100%;
+      text-align: left;
+      color: inherit;
+      transition: border-color 180ms ease, background-color 180ms ease, transform 130ms ease;
+    }
+
+    .fd-choice:active {
+      transform: scale(.99);
+    }
+
+    .fd-chips {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .fd-chips::-webkit-scrollbar {
+      display: none;
+    }
+
+    .fd-chip {
+      flex: none;
+      min-height: 34px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 999px;
+      background: transparent;
+      color: rgba(255, 255, 255, .72);
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+    }
+
+    .fd-chip.is-active {
+      background: #7692AE;
+      color: #fff;
+      border-color: #7692AE;
+    }
+
+    .fd-choice.is-active {
+      border-color: rgba(118, 146, 174, .9);
+      background: rgba(118, 146, 174, .24);
+    }
+
+    .fd-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .fd-name {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 820;
+      letter-spacing: -.01em;
+    }
+
+    .fd-meta {
+      margin: 6px 0 0;
+      color: rgba(255, 255, 255, .62);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .fd-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .1);
+      color: white;
+      padding: 0 10px;
+      font-size: 11px;
+      font-weight: 820;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .fd-pill.good {
+      background: rgba(34, 197, 94, .18);
+      color: #93F2B2;
+    }
+
+    .fd-pill.warn {
+      background: rgba(245, 158, 11, .18);
+      color: #FFD083;
+    }
+
+    .fd-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .fd-time {
+      min-height: 50px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 12px;
+      background: transparent;
+      color: white;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+    }
+
+    .fd-time.is-active {
+      border-color: #00A15E;
+      background: rgba(0, 161, 94, .18);
+      box-shadow: 0 0 24px -14px #00A15E;
+    }
+
+    .fd-summary {
+      margin-top: 14px;
+      background: white;
+      color: #10151B;
+    }
+
+    .fd-summary .fd-meta {
+      color: #5E6974;
+    }
+
+    .fd-total {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -.03em;
+    }
+
+    .fd-primary,
+    .fd-secondary {
+      width: 100%;
+      min-height: 48px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .fd-primary {
+      border: 0;
+      background: #00A15E;
+      color: white;
+    }
+
+    .fd-secondary {
+      border: 1px solid rgba(255, 255, 255, .16);
+      background: transparent;
+      color: white;
+    }
+
+    .fd-state {
+      display: none;
+      margin-top: 12px;
+      color: #00A15E;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .fd-state.is-on {
+      display: block;
+    }
+
+    .fd-provider-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .fd-metric {
+      min-height: 104px;
+    }
+
+    .fd-metric strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      letter-spacing: -.03em;
+    }
+
+    .fd-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .fd-empty {
+      padding: 22px 15px;
+      text-align: center;
+      color: rgba(255, 255, 255, .5);
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 860px) {
+      .fd-hero {
+        grid-template-columns: 1fr;
+      }
+
+      .fd-workspace {
+        min-height: 0;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .demo-note {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .demo-note-actions {
+        width: 100%;
+      }
+
+      .demo-note button {
+        flex: 1;
+      }
+
+      .fd-shell {
+        width: min(100% - 20px, 1180px);
+        padding-top: 12px;
+      }
+
+      .fd-intro {
+        padding: 22px;
+      }
+
+      .fd-title {
+        font-size: 40px;
+      }
+
+      .fd-tabs,
+      .fd-tab {
+        width: 100%;
+      }
+
+      .fd-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .fd-tab {
+        width: auto;
+        padding: 0 8px;
+      }
+
+      .fd-grid,
+      .fd-provider-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @keyframes boot-slide {
+      from { transform: translateX(0); }
+      to { transform: translateX(340%); }
+    }
+
+    /* --- #2 motion + polish (additive) --- */
+    @keyframes fd-rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @keyframes fd-pop {
+      from { opacity: 0; transform: translateY(8px) scale(.98); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @keyframes fd-check-draw {
+      to { stroke-dashoffset: 0; }
+    }
+
+    body.fast-demo-open .fd-shell {
+      animation: fd-rise 440ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .fd-enter {
+      animation: fd-rise 400ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .fd-card,
+    .fd-primary,
+    .fd-secondary,
+    .fd-time,
+    .fd-tab {
+      transition: transform 140ms ease, box-shadow 180ms ease,
+        background-color 160ms ease, border-color 160ms ease;
+    }
+
+    .fd-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 30px -14px #00A15E;
+    }
+
+    .fd-primary:active {
+      transform: translateY(0) scale(.99);
+    }
+
+    .fd-time:hover {
+      border-color: rgba(255, 255, 255, .3);
+    }
+
+    /* Booking-confirmed seal — mirrors the real app's drawn green check. */
+    .fd-state.is-on {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: fd-pop 380ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+
+    .fd-seal-svg {
+      flex: none;
+      width: 22px;
+      height: 22px;
+    }
+
+    .fd-seal-ring {
+      fill: none;
+      stroke: rgba(0, 161, 94, .4);
+      stroke-width: 3;
+    }
+
+    .fd-seal-check {
+      fill: none;
+      stroke: #00A15E;
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 40;
+      stroke-dashoffset: 40;
+    }
+
+    .fd-state.is-on .fd-seal-check {
+      animation: fd-check-draw 420ms cubic-bezier(.65, 0, .35, 1) 70ms both;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #demo-boot,
+      .demo-note {
+        transition: none;
+      }
+
+      .boot-bar::after {
+        animation: none;
+        left: 0;
+        width: 100%;
+      }
+
+      body.fast-demo-open .fd-shell,
+      .fd-enter,
+      .fd-state.is-on,
+      .fd-state.is-on .fd-seal-check {
+        animation: none;
+      }
+
+      .fd-seal-check {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+
+  <title>Sporve</title>
+  <link rel="manifest" href="manifest.json">
+
+  <script>
+    (function () {
+      var ready = false;
+      var slowTimer = 0;
+      var noteTimer = 0;
+      var pendingFailure = null;
+
+      function setText(id, value) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = value;
+      }
+
+      function markReady() {
+        if (ready) return;
+        if (!document.body) return;
+        ready = true;
+        clearTimeout(slowTimer);
+        document.body.classList.remove('boot-slow', 'boot-failed');
+        document.body.classList.add('demo-ready', 'show-demo-note');
+        clearTimeout(noteTimer);
+        noteTimer = setTimeout(function () {
+          document.body.classList.remove('show-demo-note');
+        }, 9000);
+      }
+
+      function markFailed(error) {
+        if (ready) return;
+        if (!document.body) {
+          pendingFailure = error;
+          return;
+        }
+        clearTimeout(slowTimer);
+        document.body.classList.add('boot-failed');
+        var message = error && (error.message || error.reason || error.toString && error.toString());
+        setText('boot-error-detail', message ? String(message).slice(0, 180) : 'The demo could not finish loading.');
+      }
+
+      function preloadCanvasKit() {
+        var isBlink = navigator.vendor === 'Google Inc.' || navigator.userAgent.indexOf('Edg/') !== -1;
+        var hasImageCodecs = typeof ImageDecoder !== 'undefined';
+        var hasBreakIterator = typeof Intl.v8BreakIterator !== 'undefined' && typeof Intl.Segmenter !== 'undefined';
+        var base = isBlink && hasImageCodecs && hasBreakIterator ? 'canvaskit/chromium/' : 'canvaskit/';
+        [
+          { href: base + 'canvaskit.js', as: 'script', crossorigin: 'anonymous' },
+          { href: base + 'canvaskit.wasm', as: 'fetch', type: 'application/wasm', crossorigin: 'anonymous' }
+        ].forEach(function (item) {
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.href = item.href;
+          link.as = item.as;
+          if (item.type) link.type = item.type;
+          if (item.crossorigin) link.crossOrigin = item.crossorigin;
+          document.head.appendChild(link);
+        });
+      }
+
+      function forgetOldWorkers() {
+        if (!('serviceWorker' in navigator)) return Promise.resolve();
+        return navigator.serviceWorker.getRegistrations()
+          .then(function (registrations) {
+            var appWorkers = registrations.filter(function (registration) {
+              try { return new URL(registration.scope).pathname.indexOf('/app/') === 0; }
+              catch (_) { return false; }
+            });
+            return Promise.all(appWorkers.map(function (registration) {
+              return registration.unregister();
+            })).then(function () {
+              if (!appWorkers.length || !window.caches) return null;
+              return caches.keys().then(function (keys) {
+                return Promise.all(keys.filter(function (key) {
+                  return key.indexOf('flutter-') === 0 || key.indexOf('sporve') === 0;
+                }).map(function (key) {
+                  return caches.delete(key);
+                }));
+              });
+            }).then(function () {
+              var controlled = !!navigator.serviceWorker.controller;
+              var alreadyReset = false;
+              try { alreadyReset = sessionStorage.getItem('sporve-demo-sw-reset') === '1'; }
+              catch (_) {}
+              if (controlled && !alreadyReset) {
+                try { sessionStorage.setItem('sporve-demo-sw-reset', '1'); }
+                catch (_) {}
+                location.reload();
+                return new Promise(function () {});
+              }
+              return null;
+            });
+          })
+          .catch(function () {});
+      }
+
+      function startFlutter() {
+        var script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js';
+        script.async = true;
+        script.onerror = function () { markFailed('Could not load the Flutter bootstrap.'); };
+        document.body.appendChild(script);
+      }
+
+      function initFastDemo() {
+        var root = document.getElementById('fast-demo');
+        if (!root) return;
+
+        var openers = document.querySelectorAll('[data-fast-demo-open]');
+        var closers = document.querySelectorAll('[data-fast-demo-close]');
+        var tabs = root.querySelectorAll('[data-fast-tab]');
+        var views = root.querySelectorAll('[data-fast-view]');
+        var coachButtons = root.querySelectorAll('[data-coach]');
+        var timeButtons = root.querySelectorAll('[data-time]');
+        var coachName = root.querySelector('[data-selected-coach]');
+        var timeName = root.querySelector('[data-selected-time]');
+        var confirmed = root.querySelector('[data-confirmed]');
+        var confirmButton = root.querySelector('[data-confirm-booking]');
+        var dismissNote = document.querySelector('[data-demo-note-dismiss]');
+
+        function openFastDemo() {
+          document.body.classList.add('fast-demo-open');
+          root.setAttribute('aria-hidden', 'false');
+          var close = root.querySelector('[data-fast-demo-close]');
+          if (close && close.focus) close.focus();
+        }
+
+        function closeFastDemo() {
+          document.body.classList.remove('fast-demo-open');
+          root.setAttribute('aria-hidden', 'true');
+        }
+
+        function setTab(name) {
+          tabs.forEach(function (tab) {
+            tab.classList.toggle('is-active', tab.getAttribute('data-fast-tab') === name);
+          });
+          views.forEach(function (view) {
+            view.classList.toggle('is-active', view.getAttribute('data-fast-view') === name);
+          });
+        }
+
+        openers.forEach(function (button) {
+          button.addEventListener('click', openFastDemo);
+        });
+        closers.forEach(function (button) {
+          button.addEventListener('click', closeFastDemo);
+        });
+        tabs.forEach(function (button) {
+          button.addEventListener('click', function () {
+            setTab(button.getAttribute('data-fast-tab'));
+          });
+        });
+        coachButtons.forEach(function (button) {
+          button.addEventListener('click', function () {
+            coachButtons.forEach(function (other) { other.classList.remove('is-active'); });
+            button.classList.add('is-active');
+            if (coachName) coachName.textContent = button.getAttribute('data-coach');
+            if (confirmed) confirmed.classList.remove('is-on');
+          });
+        });
+        timeButtons.forEach(function (button) {
+          button.addEventListener('click', function () {
+            timeButtons.forEach(function (other) { other.classList.remove('is-active'); });
+            button.classList.add('is-active');
+            if (timeName) timeName.textContent = button.getAttribute('data-time');
+            if (confirmed) confirmed.classList.remove('is-on');
+          });
+        });
+        if (confirmButton) {
+          confirmButton.addEventListener('click', function () {
+            if (!confirmed) return;
+            var span = confirmed.querySelector('span');
+            if (span) {
+              var coach = (currentProgram && currentProgram.providers && currentProgram.providers.business_name) ||
+                (coachName ? coachName.textContent : 'your coach');
+              var when = currentSession
+                ? (fmtDatePill(currentSession) + ', ' + String(currentSession.start_time || '').replace(/^0/, ''))
+                : (timeName ? timeName.textContent : '');
+              var price = currentProgram ? (' · $' + Math.round(currentProgram.price || 0)) : '';
+              span.textContent = 'Preview complete — ' + coach + (when ? ' · ' + when : '') + price +
+                '. No booking was created, no payment was made, and nothing was saved.';
+            }
+            confirmed.classList.add('is-on');
+          });
+        }
+
+        // --- Wire the instant demo to REAL marketplace data (read-only, no writes) ---
+        var SB_URL = 'https://tseszaprvtvqrkfpditu.supabase.co';
+        var SB_KEY = 'sb_publishable_CLawpS61QZDONSyy8ZdhTQ_rjCBLYBW';
+        var allPicks = [];
+        var currentSession = null;
+        function emptyEl(cls, msg, span) {
+          var e = document.createElement('div');
+          e.className = cls;
+          if (span) e.style.gridColumn = '1 / -1';
+          e.textContent = msg;
+          return e;
+        }
+        var DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        // Per-sport identity color (mirrors lib/core/theme/sport_colors.dart).
+        var SPORT_COLORS = {
+          basketball: '#DA5A05', football: '#C27000', tennis: '#878500', soccer: '#2EA136',
+          baseball: '#2384FB', swimming: '#009AA0', 'track & field': '#9A68E0',
+          gymnastics: '#AB61D3', volleyball: '#D54F8A', wrestling: '#DD4E65',
+          golf: '#00A15E', 'ice hockey': '#0092CA', hockey: '#0092CA', 'martial arts': '#7172FA'
+        };
+        function sportColor(s) { return SPORT_COLORS[String(s || '').toLowerCase().trim()] || '#7692AE'; }
+        function normalizedStatus(value) {
+          return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+        }
+        function isEligibleProvider(program) {
+          var provider = program && program.providers;
+          if (!provider) return false;
+          var providerApproval = normalizedStatus(provider.status);
+          var identityVerification = normalizedStatus(provider.verification_status);
+          var backgroundCheck = normalizedStatus(provider.background_check_status);
+          return providerApproval === 'approved' &&
+            identityVerification === 'verified' &&
+            backgroundCheck === 'verified';
+        }
+        var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function fmtDatePill(s) {
+          var d = new Date((s.start_date || '') + 'T00:00:00');
+          if (isNaN(d.getTime())) return '';
+          return DAY[d.getDay()] + ' · ' + MON[d.getMonth()] + ' ' + d.getDate();
+        }
+        function fmtSession(s) {
+          var d = new Date((s.start_date || '') + 'T00:00:00');
+          var wd = isNaN(d.getTime()) ? '' : DAY[d.getDay()] + ' · ';
+          return wd + String(s.start_time || '').replace(/^0/, '');
+        }
+        function pickSessions(p) {
+          var today = new Date().toISOString().slice(0, 10);
+          return (p.sessions || [])
+            .filter(function (s) { return s.start_date >= today; })
+            .sort(function (a, b) { return a.start_date < b.start_date ? -1 : 1; })
+            .slice(0, 3);
+        }
+        function selectListing(p, btn, list) {
+          currentProgram = p;
+          [].forEach.call(list.children, function (c) { c.classList.remove('is-active'); });
+          if (btn) btn.classList.add('is-active');
+          var prov = (p.providers && p.providers.business_name) || 'Sporve coach';
+          if (coachName) coachName.textContent = prov;
+          var total = root.querySelector('[data-total]');
+          if (total) total.textContent = '$' + Math.round(p.price || 0);
+          var tl = root.querySelector('[data-time-list]');
+          var sess = pickSessions(p);
+          if (confirmButton) confirmButton.disabled = sess.length === 0;
+          var availLabel = root.querySelector('[data-avail-label]');
+          var availPill = root.querySelector('[data-avail-date]');
+          if (sess[0]) {
+            var todayISO = new Date().toISOString().slice(0, 10);
+            if (availLabel) availLabel.textContent = (sess[0].start_date === todayISO) ? 'Available today' : 'Next available';
+            if (availPill) availPill.textContent = fmtDatePill(sess[0]);
+          } else {
+            if (availLabel) availLabel.textContent = 'No upcoming sessions';
+            if (availPill) availPill.textContent = '—';
+          }
+          if (tl && !sess.length) {
+            tl.innerHTML = '';
+            tl.appendChild(emptyEl('fd-empty', 'No upcoming sessions right now.', true));
+            currentSession = null;
+          } else if (tl) {
+            tl.innerHTML = '';
+            sess.forEach(function (s, i) {
+              var t = document.createElement('button');
+              t.type = 'button';
+              t.className = 'fd-time fd-enter' + (i === 0 ? ' is-active' : '');
+              t.style.animationDelay = (i * 45) + 'ms';
+              var lbl = fmtSession(s);
+              t.textContent = lbl;
+              t.addEventListener('click', function () {
+                [].forEach.call(tl.children, function (c) { c.classList.remove('is-active'); });
+                t.classList.add('is-active');
+                if (timeName) timeName.textContent = lbl;
+                currentSession = s;
+                if (confirmed) confirmed.classList.remove('is-on');
+              });
+              tl.appendChild(t);
+            });
+            if (sess[0] && timeName) timeName.textContent = fmtSession(sess[0]);
+            currentSession = sess[0] || null;
+          }
+          if (confirmed) confirmed.classList.remove('is-on');
+        }
+        function renderListings(picks) {
+          var list = root.querySelector('[data-coach-list]');
+          if (!list) return;
+          list.innerHTML = '';
+          if (!picks || !picks.length) {
+            currentProgram = null;
+            if (confirmButton) confirmButton.disabled = true;
+            list.appendChild(emptyEl('fd-card fd-empty', 'No coaches available right now — check back soon.'));
+            var tl0 = root.querySelector('[data-time-list]');
+            if (tl0) { tl0.innerHTML = ''; tl0.appendChild(emptyEl('fd-empty', 'No sessions to show.', true)); }
+            var al0 = root.querySelector('[data-avail-label]'); if (al0) al0.textContent = 'No sessions';
+            var ap0 = root.querySelector('[data-avail-date]'); if (ap0) ap0.textContent = '—';
+            if (coachName) coachName.textContent = '—';
+            if (timeName) timeName.textContent = '—';
+            var t0 = root.querySelector('[data-total]'); if (t0) t0.textContent = '$0';
+            if (confirmed) confirmed.classList.remove('is-on');
+            return;
+          }
+          picks.forEach(function (p, i) {
+            var prov = (p.providers && p.providers.business_name) || 'Sporve coach';
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'fd-card fd-choice fd-enter' + (i === 0 ? ' is-active' : '');
+            btn.style.animationDelay = (i * 55) + 'ms';
+            btn.innerHTML = '<div class="fd-row"><div><p class="fd-name"></p>' +
+              '<p class="fd-meta"></p></div><span class="fd-pill good">Verified</span></div>';
+            btn.querySelector('.fd-name').textContent = prov;
+            var scol = sportColor(p.sport_type);
+            btn.style.borderLeft = '3px solid ' + scol;
+            var cloc = (p.providers && p.providers.location) ? ' · ' + p.providers.location : '';
+            var meta = btn.querySelector('.fd-meta');
+            meta.innerHTML = '';
+            var sp = document.createElement('span');
+            sp.textContent = p.sport_type || 'Training';
+            sp.style.color = scol;
+            sp.style.fontWeight = '800';
+            meta.appendChild(sp);
+            meta.appendChild(document.createTextNode(cloc + ' · $' + Math.round(p.price || 0) + '/session'));
+            btn.addEventListener('click', function () { selectListing(p, btn, list); });
+            list.appendChild(btn);
+          });
+          if (picks[0]) selectListing(picks[0], list.firstChild, list);
+        }
+        function renderProvider(p) {
+          function setPV(sel, val) { var el = root.querySelector(sel); if (el) el.textContent = val; }
+          var q = root.querySelector('[data-provider-queue]');
+          if (!p) {
+            setPV('[data-pv-provider]', 'Provider workspace');
+            setPV('[data-pv-count]', '0');
+            setPV('[data-pv-payout]', '$0');
+            setPV('[data-pv-rating]', 'New');
+            setPV('[data-pv-reviews]', 'avg rating');
+            if (q) { q.innerHTML = ''; q.appendChild(emptyEl('fd-card fd-empty', 'No upcoming sessions on the schedule.')); }
+            return;
+          }
+          var today = new Date().toISOString().slice(0, 10);
+          var future = (p.sessions || [])
+            .filter(function (s) { return s.start_date >= today; })
+            .sort(function (a, b) { return a.start_date < b.start_date ? -1 : 1; });
+          var price = Math.round(p.price || 0);
+          setPV('[data-pv-provider]', (p.providers && p.providers.business_name) || 'Provider workspace');
+          var pvEl = root.querySelector('[data-pv-provider]');
+          if (pvEl) pvEl.style.color = sportColor(p.sport_type);
+          setPV('[data-pv-count]', String(future.length));
+          setPV('[data-pv-payout]', '$' + (future.length * price).toLocaleString());
+          setPV('[data-pv-rating]', p.average_rating ? Number(p.average_rating).toFixed(1) : 'New');
+          setPV('[data-pv-reviews]', p.total_reviews ? ('avg · ' + p.total_reviews + ' reviews') : 'avg rating');
+          if (q) {
+            q.innerHTML = '';
+            if (!future.length) { q.appendChild(emptyEl('fd-card fd-empty', 'No upcoming sessions on the schedule.')); return; }
+            future.slice(0, 4).forEach(function (s, i) {
+              var card = document.createElement('div');
+              card.className = 'fd-card fd-enter';
+              card.style.animationDelay = (i * 55) + 'ms';
+              card.innerHTML = '<div class="fd-row"><div><p class="fd-name"></p>' +
+                '<p class="fd-meta"></p></div><span class="fd-pill good">Scheduled</span></div>';
+              card.querySelector('.fd-name').textContent = fmtSession(s);
+              card.querySelector('.fd-meta').textContent =
+                (p.sport_type || 'Training') + (p.skill_level ? (' · ' + p.skill_level) : '') + ' session';
+              q.appendChild(card);
+            });
+          }
+        }
+        function renderChips() {
+          var wrap = root.querySelector('[data-sport-chips]');
+          if (!wrap) return;
+          var sports = [], seen = {};
+          allPicks.forEach(function (p) {
+            var s = p.sport_type || 'Training';
+            if (!seen[s]) { seen[s] = 1; sports.push(s); }
+          });
+          if (sports.length < 2) { wrap.style.display = 'none'; return; }
+          wrap.style.display = 'flex';
+          wrap.innerHTML = '';
+          ['All'].concat(sports).forEach(function (label, i) {
+            var c = document.createElement('button');
+            c.type = 'button';
+            c.className = 'fd-chip' + (i === 0 ? ' is-active' : '');
+            if (label === 'All') {
+              c.textContent = label;
+            } else {
+              var dot = document.createElement('span');
+              dot.style.cssText = 'display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle;background:' + sportColor(label);
+              c.appendChild(dot);
+              c.appendChild(document.createTextNode(label));
+            }
+            c.addEventListener('click', function () {
+              [].forEach.call(wrap.children, function (x) { x.classList.remove('is-active'); });
+              c.classList.add('is-active');
+              var filtered = (label === 'All') ? allPicks : allPicks.filter(function (p) {
+                return (p.sport_type || 'Training') === label;
+              });
+              renderListings(filtered);
+            });
+            wrap.appendChild(c);
+          });
+        }
+        function loadListings() {
+          var q = SB_URL + '/rest/v1/programs?select=title,sport_type,price,skill_level,whats_included,average_rating,total_reviews,' +
+            'providers(business_name,location,bio,status,verification_status,background_check_status,coach_years_coaching,coach_years_played,credentials),' +
+            'sessions(start_date,start_time)&status=eq.published&limit=40';
+          fetch(q, { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } })
+            .then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (rows) {
+              if (!Array.isArray(rows)) { renderListings([]); renderProvider(null); return; }
+              if (!rows.length) { renderListings([]); renderProvider(null); return; }
+              var today = new Date().toISOString().slice(0, 10);
+              function hasSess(p) { return (p.sessions || []).some(function (s) { return s.start_date >= today; }); }
+              function realProv(p) {
+                var n = (p.providers && p.providers.business_name) || '';
+                return n.length >= 6 && /\s/.test(n) && !/^(academy [ab]|test academy)$/i.test(n);
+              }
+              function clean(p) {
+                var t = (p.title || ''), s = (p.sport_type || '');
+                return t.indexOf(s) === 0 || /(Clinic|Training|Coaching|Camp|Development)/i.test(t);
+              }
+              var good = rows.filter(function (p) {
+                return hasSess(p) && realProv(p) && isEligibleProvider(p);
+              });
+              good.sort(function (a, b) { return (clean(a) ? 0 : 1) - (clean(b) ? 0 : 1); });
+              var seen = {}, picks = [];
+              good.forEach(function (p) {
+                var n = (p.providers && p.providers.business_name) || '';
+                if (!seen[n]) { seen[n] = 1; picks.push(p); }
+              });
+              picks = picks.slice(0, 10);
+              if (picks.length) { allPicks = picks; renderChips(); renderListings(picks); renderProvider(picks[0]); }
+              else { renderListings([]); renderProvider(null); }
+            })
+            .catch(function () { renderListings([]); renderProvider(null); });
+        }
+        loadListings();
+
+        // --- Coach profile screen (real data) ---
+        var currentProgram = null;
+        var profilePanel = root.querySelector('[data-profile-panel]');
+        function showProfile(on) {
+          if (!profilePanel) return;
+          profilePanel.style.opacity = on ? '1' : '0';
+          profilePanel.style.transform = on ? 'none' : 'translateY(12px)';
+          profilePanel.style.pointerEvents = on ? 'auto' : 'none';
+          profilePanel.setAttribute('aria-hidden', on ? 'false' : 'true');
+        }
+        function openProfile(p) {
+          if (!p || !profilePanel) return;
+          var prov = (p.providers && p.providers.business_name) || 'Sporve coach';
+          var nameEl = profilePanel.querySelector('[data-p-name]');
+          var subEl = profilePanel.querySelector('[data-p-sub]');
+          var incEl = profilePanel.querySelector('[data-p-included]');
+          var sessEl = profilePanel.querySelector('[data-p-sessions]');
+          var scol = sportColor(p.sport_type);
+          if (nameEl) {
+            nameEl.textContent = prov;
+            nameEl.style.borderLeft = '3px solid ' + scol;
+            nameEl.style.paddingLeft = '12px';
+          }
+          var pv = p.providers || {};
+          var rating = p.average_rating ? ('★ ' + Number(p.average_rating).toFixed(1)) : '★ New';
+          var reviews = p.total_reviews ? (' · ' + p.total_reviews + ' reviews') : '';
+          var loc = pv.location ? (' · ' + pv.location) : '';
+          if (subEl) {
+            subEl.innerHTML = '';
+            var sps = document.createElement('span');
+            sps.textContent = p.sport_type || 'Training';
+            sps.style.color = scol;
+            sps.style.fontWeight = '800';
+            subEl.appendChild(sps);
+            subEl.appendChild(document.createTextNode(' · ' + rating + reviews + loc + ' · $' + Math.round(p.price || 0) + '/session'));
+          }
+
+          // Trust badges (real verification state)
+          var badgesEl = profilePanel.querySelector('[data-p-badges]');
+          if (badgesEl) {
+            badgesEl.innerHTML = '';
+            var badges = [];
+            if (isEligibleProvider(p)) {
+              badges.push('Verified');
+              badges.push('Background-checked');
+            }
+            if (p.skill_level) badges.push(p.skill_level.charAt(0).toUpperCase() + p.skill_level.slice(1));
+            badges.forEach(function (b, i) {
+              var span = document.createElement('span');
+              span.className = 'fd-pill' + (i < 2 ? ' good' : '');
+              span.textContent = (i < 2 ? '✓ ' : '') + b;
+              badgesEl.appendChild(span);
+            });
+          }
+
+          // Bio
+          var bioEl = profilePanel.querySelector('[data-p-bio]');
+          if (bioEl) {
+            if (pv.bio) { bioEl.textContent = pv.bio; bioEl.style.display = 'block'; }
+            else { bioEl.style.display = 'none'; }
+          }
+
+          // Experience + credentials
+          var expCard = profilePanel.querySelector('[data-p-exp-card]');
+          var expEl = profilePanel.querySelector('[data-p-exp]');
+          var credsEl = profilePanel.querySelector('[data-p-creds]');
+          var exp = [];
+          if (pv.coach_years_coaching) exp.push(pv.coach_years_coaching + ' yrs coaching');
+          if (pv.coach_years_played) exp.push(pv.coach_years_played + ' yrs played');
+          var creds = Array.isArray(pv.credentials) ? pv.credentials : [];
+          if (expCard) {
+            if (exp.length || creds.length) {
+              expCard.style.display = 'block';
+              if (expEl) expEl.textContent = exp.length ? exp.join(' · ') : 'Eligible Sporve coach';
+              if (credsEl) {
+                credsEl.innerHTML = '';
+                creds.forEach(function (c) {
+                  var span = document.createElement('span');
+                  span.className = 'fd-pill';
+                  span.textContent = c;
+                  credsEl.appendChild(span);
+                });
+              }
+            } else { expCard.style.display = 'none'; }
+          }
+
+          var inc = (Array.isArray(p.whats_included) && p.whats_included.length) ? p.whats_included.join(' · ') : 'Expert coaching · Equipment provided · Progress tracking';
+          if (incEl) incEl.textContent = inc;
+          if (sessEl) {
+            sessEl.innerHTML = '';
+            var psess = pickSessions(p);
+            if (!psess.length) sessEl.appendChild(emptyEl('fd-empty', 'No upcoming sessions right now.', true));
+            psess.forEach(function (s, i) {
+              var b = document.createElement('button');
+              b.type = 'button'; b.className = 'fd-time fd-enter';
+              b.style.animationDelay = (i * 45) + 'ms';
+              b.textContent = fmtSession(s);
+              sessEl.appendChild(b);
+            });
+          }
+          showProfile(true);
+        }
+        var vpBtn = root.querySelector('[data-view-profile]');
+        if (vpBtn) vpBtn.addEventListener('click', function () { openProfile(currentProgram); });
+        var pBack = root.querySelector('[data-profile-back]');
+        if (pBack) pBack.addEventListener('click', function () { showProfile(false); });
+        var pBook = root.querySelector('[data-profile-book]');
+        if (pBook) pBook.addEventListener('click', function () { showProfile(false); if (confirmed) confirmed.classList.remove('is-on'); });
+        if (dismissNote) {
+          dismissNote.addEventListener('click', function () {
+            document.body.classList.remove('show-demo-note');
+          });
+        }
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && document.body.classList.contains('fast-demo-open')) {
+            closeFastDemo();
+          }
+        });
+
+        try {
+          if (new URLSearchParams(window.location.search).get('fast') === '1') {
+            openFastDemo();
+          }
+        } catch (_) {}
+      }
+
+      window.sporveDemoBoot = {
+        markReady: markReady,
+        markFailed: markFailed,
+        startFlutter: startFlutter,
+        forgetOldWorkers: forgetOldWorkers
+      };
+
+      preloadCanvasKit();
+
+      window.addEventListener('flutter-first-frame', markReady, { once: true });
+      window.addEventListener('error', function (event) {
+        if (!ready) markFailed(event.error || event.message);
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        if (!ready) markFailed(event.reason || 'Demo boot promise rejected.');
+      });
+
+      document.addEventListener('DOMContentLoaded', function () {
+        if (pendingFailure) markFailed(pendingFailure);
+        initFastDemo();
+      });
+
+      new MutationObserver(function () {
+        if (document.querySelector('flt-glass-pane, flutter-view')) {
+          setTimeout(markReady, 250);
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+
+      slowTimer = setTimeout(function () {
+        if (!ready && document.body) document.body.classList.add('boot-slow');
+      }, 3000);
+    })();
+  </script>
+
+  <!-- Passkeys Web SDK (defines window.PasskeyAuthenticator). Required because
+       supabase_flutter pulls in the `passkeys` plugin, whose web registrant
+       calls window.close() (blank screen) if this global is missing. Loaded
+       synchronously so it's present before Flutter's plugin registration. -->
+  <script src="bundle.js"></script>
+  <script>try{if(location.search.indexOf('fast=1')>=0)document.documentElement.classList.add('demo-direct');}catch(e){}</script>
+</head>
+<body>
+  <div id="demo-boot" role="status" aria-live="polite" aria-label="Loading Sporve">
+    <div class="boot-card">
+      <img class="boot-mark" src="assets/assets/images/SporveLogo.png" alt="Sporve" width="104" height="104">
+      <p class="boot-copy boot-slow">Still loading — fetching the app for the first time.</p>
+      <p class="boot-copy boot-error">The demo didn't load cleanly. <span id="boot-error-detail"></span></p>
+      <div class="boot-bar" aria-hidden="true"></div>
+      <div class="boot-actions">
+        <button type="button" onclick="location.reload()">Reload</button>
+        <a href="/">Back to site</a>
+      </div>
+    </div>
+  </div>
+  <div class="demo-note">
+    <span>Demo mode uses a preloaded sample account. If the full app hesitates, open the instant demo.</span>
+    <div class="demo-note-actions">
+      <button type="button" data-fast-demo-open>Instant demo</button>
+      <button type="button" data-demo-note-dismiss>Dismiss</button>
+    </div>
+  </div>
+  <section id="fast-demo" class="fast-demo" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="fast-demo-title">
+    <div class="fd-shell">
+      <div class="fd-topbar">
+        <div class="fd-brand">Sporve instant demo</div>
+        <button type="button" class="fd-close" data-fast-demo-close>Close</button>
+      </div>
+      <div class="fd-hero">
+        <div class="fd-panel fd-intro">
+          <p class="fd-kicker">Live public listings · Interactive preview · No sign-up to look</p>
+          <h1 id="fast-demo-title" class="fd-title">Preview finding a background-check-verified coach.</h1>
+          <p class="fd-copy">Explore eligible coaches and available sessions using live public marketplace listing data. This interactive preview does not create a booking, take payment, hold a spot, or save your choices.</p>
+          <div class="fd-tabs" role="tablist" aria-label="Demo view">
+            <button type="button" class="fd-tab is-active" data-fast-tab="family">Family</button>
+            <button type="button" class="fd-tab" data-fast-tab="provider">Provider</button>
+          </div>
+        </div>
+
+        <div class="fd-panel fd-workspace">
+          <div class="fd-view is-active" data-fast-view="family">
+            <div class="fd-phonebar">
+              <span>Family booking</span>
+              <span>Live listings</span>
+            </div>
+            <div class="fd-stack">
+              <div class="fd-chips" data-sport-chips style="display:none"></div>
+              <div data-coach-list style="display:contents">
+              <button type="button" class="fd-card fd-choice is-active" data-coach="Sporve coach">
+                <div class="fd-row">
+                  <div>
+                    <p class="fd-name">Loading real coaches…</p>
+                    <p class="fd-meta">Pulling live listings from the marketplace</p>
+                  </div>
+                  <span class="fd-pill">Checking eligibility…</span>
+                </div>
+              </button>
+              </div>
+
+              <button type="button" data-view-profile style="width:100%;background:none;border:1px solid rgba(246,248,251,.18);border-radius:12px;color:#F6F8FB;padding:12px;font:inherit;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer">View full coach profile ›</button>
+
+              <div class="fd-card">
+                <div class="fd-row" style="margin-bottom:12px">
+                  <p class="fd-name" data-avail-label>Next available</p>
+                  <span class="fd-pill" data-avail-date>—</span>
+                </div>
+                <div class="fd-grid" data-time-list>
+                  <span class="fd-empty" style="grid-column:1 / -1">Loading availability…</span>
+                </div>
+              </div>
+
+              <div class="fd-card fd-summary">
+                <div class="fd-row">
+                  <div>
+                    <p class="fd-name">Booking preview</p>
+                    <p class="fd-meta"><span data-selected-coach>—</span> · <span data-selected-time>—</span> · no spot is held</p>
+                  </div>
+                  <span class="fd-total" data-total>$0</span>
+                </div>
+              </div>
+
+              <button type="button" class="fd-primary" data-confirm-booking disabled>Preview booking</button>
+              <p class="fd-meta" style="margin:2px 0 0;font-size:11px;color:rgba(255,255,255,.42);text-align:center">Interactive preview only — no booking is created, no card is charged, and nothing is saved.</p>
+              <div class="fd-state" data-confirmed><svg class="fd-seal-svg" viewBox="0 0 52 52" aria-hidden="true"><circle class="fd-seal-ring" cx="26" cy="26" r="23"/><path class="fd-seal-check" d="M15 27 l7 7 l15 -16"/></svg><span>Preview complete. No booking was created, no payment was made, and nothing was saved.</span></div>
+            </div>
+          </div>
+
+          <div class="fd-view" data-fast-view="provider">
+            <div class="fd-phonebar">
+              <span data-pv-provider>Provider workspace</span>
+              <span>Your schedule</span>
+            </div>
+            <div class="fd-provider-grid">
+              <div class="fd-card fd-metric">
+                <span class="fd-pill good">Schedule</span>
+                <strong data-pv-count>0</strong>
+                <p class="fd-meta">upcoming sessions</p>
+              </div>
+              <div class="fd-card fd-metric">
+                <span class="fd-pill">Value</span>
+                <strong data-pv-payout>$0</strong>
+                <p class="fd-meta">on the schedule</p>
+              </div>
+              <div class="fd-card fd-metric">
+                <span class="fd-pill warn">Rating</span>
+                <strong data-pv-rating>New</strong>
+                <p class="fd-meta" data-pv-reviews>avg rating</p>
+              </div>
+            </div>
+            <div class="fd-list">
+              <div data-provider-queue style="display:contents">
+              <div class="fd-card">
+                <div class="fd-row">
+                  <div>
+                    <p class="fd-name">Loading your schedule…</p>
+                    <p class="fd-meta">Pulling upcoming sessions from your listings</p>
+                  </div>
+                  <span class="fd-pill good">Scheduled</span>
+                </div>
+              </div>
+              </div>
+              <button type="button" class="fd-secondary" data-fast-tab="family">Back to family booking</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-profile-panel aria-hidden="true" style="position:fixed;inset:0;z-index:60;background:#0B0F14;color:#F6F8FB;padding:28px 24px;overflow-y:auto;opacity:0;transform:translateY(12px);transition:opacity .22s ease,transform .22s ease;pointer-events:none;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+      <div style="max-width:520px;margin:0 auto">
+        <button type="button" data-profile-back style="background:none;border:none;color:rgba(246,248,251,.62);font:inherit;font-size:13px;cursor:pointer;margin-bottom:18px">← Back to coaches</button>
+        <h2 data-p-name style="margin:0 0 8px;color:#F6F8FB;font-size:clamp(30px,6vw,44px);line-height:1.02;letter-spacing:-.03em;font-weight:700">Coach</h2>
+        <p class="fd-kicker" data-p-sub style="margin:0 0 14px;color:rgba(246,248,251,.62)"></p>
+        <div data-p-badges style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px"></div>
+        <p data-p-bio style="margin:0 0 18px;color:rgba(246,248,251,.74);font-size:14px;line-height:1.55;display:none"></p>
+        <div class="fd-card" data-p-exp-card style="display:none">
+          <p class="fd-name" style="margin-bottom:8px">Experience</p>
+          <p class="fd-meta" data-p-exp></p>
+          <div data-p-creds style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"></div>
+        </div>
+        <div class="fd-card"><p class="fd-name">What's included</p><p class="fd-meta" data-p-included>—</p></div>
+        <div class="fd-card">
+          <p class="fd-name" style="margin-bottom:10px">Upcoming sessions</p>
+          <div class="fd-grid" data-p-sessions></div>
+        </div>
+        <button type="button" class="fd-primary" data-profile-book style="margin-top:8px">Book with this coach</button>
+      </div>
+    </div>
+  </section>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script>
+    window.sporveDemoBoot.forgetOldWorkers().then(window.sporveDemoBoot.startFlutter);
+  </script>
+  <noscript>
+    <div style="padding:24px;color:white;font-family:system-ui,sans-serif">JavaScript is required to run the Sporve demo.</div>
+  </noscript>
+</body>
+</html>
