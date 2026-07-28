@@ -1001,9 +1001,11 @@
           });
         }
 
-        // --- Wire the instant demo to REAL marketplace data (read-only, no writes) ---
-        var SB_URL = 'https://tseszaprvtvqrkfpditu.supabase.co';
-        var SB_KEY = 'sb_publishable_CLawpS61QZDONSyy8ZdhTQ_rjCBLYBW';
+        // --- Wire the demo to marketplace data (read-only, no writes) ---
+        // Public-safe values only (Supabase URL + publishable/anon key; RLS is
+        // the security boundary). Fill in your own project's values to run.
+        var SB_URL = 'https://YOUR-PROJECT-REF.supabase.co';
+        var SB_KEY = 'sb_publishable_YOUR_ANON_KEY';
         var allPicks = [];
         var currentSession = null;
         function emptyEl(cls, msg, span) {
