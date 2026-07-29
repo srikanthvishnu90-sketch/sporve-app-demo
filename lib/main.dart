@@ -8,6 +8,7 @@ import 'core/config/env.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_typography.dart';
 import 'core/auth/auth_service.dart';
+import 'core/auth/mock_auth_service.dart';
 import 'core/auth/supabase_auth_service.dart';
 import 'core/data/app_repository.dart';
 // ignore: unused_import
@@ -33,35 +34,35 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init(); // Must be called before any token read/write
 
-  if (Env.supabaseUrl.isEmpty || Env.supabaseAnonKey.isEmpty) {
-    runApp(const _ConfigurationErrorApp());
-    return;
-  }
-
-  // Real Supabase auth (#18). Keys come ONLY from Env (--dart-define-from-file=
-  // env.json); never hardcoded. Supabase persists the session itself.
-  await Supabase.initialize(
-    url: Env.supabaseUrl,
-    // Env.supabaseAnonKey holds the sb_publishable_… client key.
-    publishableKey: Env.supabaseAnonKey,
-  );
-
-  // THE SWAP POINT (#16/#19): the app's single data source. Now bound to the
-  // real backend. ROLLBACK is one line — swap this back to:
-  //   final AppRepository repo = const MockRepository();
-  // For an offline demo (no deployed Edge Functions), run with:
-  //   flutter run -d chrome --dart-define=USE_MOCK_REPO=true --dart-define-from-file=env.json
   const useMockRepo = bool.fromEnvironment(
     'USE_MOCK_REPO',
     defaultValue: false,
   );
+
+  if (!useMockRepo && (Env.supabaseUrl.isEmpty || Env.supabaseAnonKey.isEmpty)) {
+    runApp(const _ConfigurationErrorApp());
+    return;
+  }
+
+  if (Env.supabaseUrl.isNotEmpty && Env.supabaseAnonKey.isNotEmpty) {
+    await Supabase.initialize(
+      url: Env.supabaseUrl,
+      publishableKey: Env.supabaseAnonKey,
+    );
+  } else if (useMockRepo) {
+    await Supabase.initialize(
+      url: 'https://mock.supabase.co',
+      anonKey: 'mock_anon_key',
+    );
+  }
+
   final AppRepository repo = useMockRepo
       ? const MockRepository()
       : SupabaseRepository();
 
-  // AUTH SWAP POINT (#18): the app's single auth source. The UI only ever talks
-  // to AuthService (via AuthProvider); the Supabase SDK never leaks past it.
-  final AuthService authService = SupabaseAuthService();
+  final AuthService authService = useMockRepo
+      ? MockAuthService()
+      : SupabaseAuthService();
 
   runApp(
     MultiProvider(
