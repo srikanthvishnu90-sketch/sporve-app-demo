@@ -10,6 +10,7 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/sport_colors.dart';
 import '../../../core/routes/app_routes.dart';
 import 'search_screen.dart'; // import Opportunity if defined there
+import 'join_waitlist_sheet.dart';
 
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
@@ -548,30 +549,48 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
             const SizedBox(width: 12),
             Expanded(
               flex: 2,
-              child: SporveButton(
-                'Book · $_tierPrice',
-                onPressed: () {
-                  // Auth-on-action (spec §3.2): a guest is sent to verify first;
-                  // a verified user proceeds straight into the booking flow.
-                  context.read<AuthProvider>().requireAuth(() {
-                    if (_navigating) return; // ignore rapid double-taps
-                    _navigating = true;
-                    Get.toNamed(
-                      AppRoutes.bookingFlow,
-                      arguments: {
-                        'program': programData,
-                        'title': title,
-                        'coach': coach,
-                        'tier': _selectedTier,
-                        'price': _tierPriceValue,
+              // Coach OS (P0 #3): a FULL program shows "Join waitlist" instead of
+              // Book — full-slot demand is captured, not bounced. Open/unbounded
+              // programs (no declared capacity) always show Book.
+              child: programIsFull(programData)
+                  ? SporveButton(
+                      'Join waitlist',
+                      icon: Icons.people_alt_outlined,
+                      onPressed: () {
+                        context.read<AuthProvider>().requireAuth(() {
+                          showJoinWaitlistSheet(
+                            context,
+                            program: programData ?? const {},
+                          );
+                        });
                       },
-                    )?.then((_) => _navigating = false);
-                  });
-                },
-                variant: SporveButtonVariant.primary,
-                color: AppColors
-                    .slate, // §1/#7: Book is chrome — slate, never sport color
-              ),
+                      variant: SporveButtonVariant.primary,
+                      color: AppColors.slate,
+                    )
+                  : SporveButton(
+                      'Book · $_tierPrice',
+                      onPressed: () {
+                        // Auth-on-action (spec §3.2): a guest is sent to verify
+                        // first; a verified user proceeds into the booking flow.
+                        context.read<AuthProvider>().requireAuth(() {
+                          if (_navigating) return; // ignore rapid double-taps
+                          _navigating = true;
+                          Get.toNamed(
+                            AppRoutes.bookingFlow,
+                            arguments: {
+                              'program': programData,
+                              'title': title,
+                              'coach': coach,
+                              'tier': _selectedTier,
+                              'price': _tierPriceValue,
+                            },
+                          )?.then((_) => _navigating = false);
+                        });
+                      },
+                      variant: SporveButtonVariant.primary,
+                      color: AppColors
+                          .slate, // §1/#7: Book is chrome — slate, never sport
+                    ),
             ),
           ],
         ),

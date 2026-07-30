@@ -17,7 +17,7 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://tseszaprvtvqrkfpditu.supabase.co wss://tseszaprvtvqrkfpditu.supabase.co https://www.gstatic.com https://fonts.gstatic.com https://hcaptcha.com https://*.hcaptcha.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://YOUR-PROJECT-REF.supabase.co wss://YOUR-PROJECT-REF.supabase.co https://www.gstatic.com https://fonts.gstatic.com https://hcaptcha.com https://*.hcaptcha.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="AI-native youth-sports training & marketplace — find coaches, book sessions, and manage your athletes.">
@@ -1001,9 +1001,7 @@
           });
         }
 
-        // --- Wire the demo to marketplace data (read-only, no writes) ---
-        // Public-safe values only (Supabase URL + publishable/anon key; RLS is
-        // the security boundary). Fill in your own project's values to run.
+        // --- Wire the instant demo to REAL marketplace data (read-only, no writes) ---
         var SB_URL = 'https://YOUR-PROJECT-REF.supabase.co';
         var SB_KEY = 'sb_publishable_YOUR_ANON_KEY';
         var allPicks = [];

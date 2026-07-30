@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:provider/provider.dart';
+import '../controllers/provider_controller.dart';
+import '../../../core/utils/platform_fee.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 
-/// Fee figures shown in the payout breakdown, de-magicked into named constants
-/// so the labels can't silently drift from the values billing actually uses.
-/// The Sporve commission is the platform's own rate; the Stripe line is the
-/// payment processor's published fee.
-const double kPlatformCommissionRate = 0.10; // 10%
-final String kPlatformCommissionLabel =
-    '${(kPlatformCommissionRate * 100).toStringAsFixed(0)}%';
+/// Fee figures shown in the payout breakdown. The Sporve commission is the
+/// TIERED platform rate (mirrors platform_fee.dart / the `platform_fees` config /
+/// resolve_platform_fee_bps): the full intro rate on a family's first paid
+/// booking with a coach, a thin rate thereafter — "we charge for introductions,
+/// not relationships." The Stripe line is the processor's published fee.
+final String kPlatformIntroLabel =
+    '${(kFirstBookingFeeBps / 100).toStringAsFixed(0)}%'; // 18%
+final String kPlatformRecurringLabel =
+    '${(kRecurringFeeBps / 100).toStringAsFixed(0)}%'; // 4%
 const String kStripeProcessingFeeLabel = '2.9% + \$0.30';
 
 class ProviderPayoutsPaymentsScreen extends StatefulWidget {
@@ -29,13 +34,9 @@ class _ProviderPayoutsPaymentsScreenState
   late TabController _tabController;
   String _selectedSchedule = 'Monthly'; // Daily, Weekly, Monthly
 
-  // Bank accounts + payout history are real Stripe data — never fabricated.
-  // Until the Stripe payouts feed is wired (a coach's connected account lists
-  // these), these stay empty so the screen shows honest empty states instead of
-  // fake "PAID" history with invented bank names.
+  // Bank accounts are real Stripe data — never fabricated. Until bank-linking is
+  // wired these stay empty so the screen shows honest empty states.
   final List<Map<String, dynamic>> _banks = [];
-
-  final List<Map<String, dynamic>> _payouts = [];
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _routingController = TextEditingController();
@@ -46,7 +47,14 @@ class _ProviderPayoutsPaymentsScreenState
     super.initState();
     // Default to Middle Tab (Bank Accounts, index 1) as shown in left image
     _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
+    // Real payout history + pending figure (money page #1), shared with the
+    // finances surface via the controller.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProviderController>().fetchPayouts();
+    });
   }
+
+  String _money(double v) => '\$${v.toStringAsFixed(2)}';
 
   @override
   void dispose() {
@@ -132,87 +140,150 @@ class _ProviderPayoutsPaymentsScreenState
   }
 
   Widget _buildPayoutsTab() {
-    if (_payouts.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Center(
-          child: Text(
-            'No payouts yet.',
-            style: AppTypography.font(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
+    // Money page #1: PENDING (net derived from paid bookings — an estimate) is
+    // shown distinctly from PAID OUT (real Stripe payouts, empty until the
+    // stripe-provider-payouts fn is deployed). Never fabricates a payout (L-003).
+    final c = context.watch<ProviderController>();
+    final payouts = c.payouts;
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      children: [
+        Text(
+          'PENDING PAYOUT',
+          style: AppTypography.font(
+            color: AppColors.textTertiary,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
           ),
         ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      itemCount: _payouts.length,
-      itemBuilder: (context, index) {
-        final payout = _payouts[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadii.card),
-            border: Border.all(color: AppColors.hairline),
+        const SizedBox(height: 8),
+        Text(
+          _money(c.pendingPayoutNet),
+          style: AppTypography.mono(
+            size: 32,
+            weight: FontWeight.bold,
+            color: AppColors.textPrimary,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      payout['bank'],
-                      style: AppTypography.font(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      payout['date'],
-                      style: AppTypography.font(
-                        color: AppColors.textTertiary,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Your net from paid sessions, not yet transferred. Estimate from your '
+          'bookings — actual bank payouts appear below.',
+          style: AppTypography.font(
+            color: AppColors.textTertiary,
+            fontSize: 11,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'PAYOUTS TO YOUR BANK',
+          style: AppTypography.font(
+            color: AppColors.textTertiary,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.0,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (payouts.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadii.card),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            child: Center(
+              child: Text(
+                'No bank payouts yet.',
+                style: AppTypography.font(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
                 ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+            ),
+          )
+        else
+          ...payouts.map((payout) {
+            final cents = (payout['amountCents'] as num?)?.toInt() ?? 0;
+            final status =
+                (payout['status']?.toString() ?? 'pending').toUpperCase();
+            final last4 = payout['bankLast4']?.toString();
+            final arrival = payout['arrivalDate'];
+            String when = '';
+            if (arrival is num) {
+              final d = DateTime.fromMillisecondsSinceEpoch(
+                  arrival.toInt() * 1000);
+              when = '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+                  '${d.day.toString().padLeft(2, '0')}';
+            }
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadii.card),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              child: Row(
                 children: [
-                  Text(
-                    payout['amount'],
-                    style: AppTypography.mono(
-                      size: 15,
-                      weight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          last4 != null ? 'Bank •••• $last4' : 'Bank payout',
+                          style: AppTypography.font(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          when.isEmpty ? status : '$status • $when',
+                          style: AppTypography.font(
+                            color: AppColors.textTertiary,
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  OutlinePill(
-                    payout['status'] ?? 'PENDING',
-                    color: payout['status'] == 'PAID'
-                        ? AppColors.slateText
-                        : AppColors.warning,
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        _money(cents / 100.0),
+                        style: AppTypography.mono(
+                          size: 15,
+                          weight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      OutlinePill(
+                        status,
+                        color: status == 'PAID'
+                            ? AppColors.slateText
+                            : AppColors.warning,
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-        );
-      },
+            );
+          }),
+        const SizedBox(height: 40),
+      ],
     );
   }
 
@@ -556,7 +627,9 @@ class _ProviderPayoutsPaymentsScreenState
             ),
             child: Column(
               children: [
-                _buildFeeRow('Sporve commission', kPlatformCommissionLabel),
+                _buildFeeRow('Sporve — first booking', kPlatformIntroLabel),
+                const Divider(color: AppColors.hairline, height: 24),
+                _buildFeeRow('Sporve — recurring', kPlatformRecurringLabel),
                 const Divider(color: AppColors.hairline, height: 24),
                 _buildFeeRow('Stripe processing', kStripeProcessingFeeLabel),
                 const Divider(color: AppColors.hairline, height: 24),

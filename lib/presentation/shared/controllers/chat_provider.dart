@@ -15,6 +15,10 @@ class ChatProvider with ChangeNotifier {
   bool _isDrafting = false;
   String? _draftError;
 
+  // AI Front Office #8/#9 — resolving a "Suggested reply" (an automatic
+  // ai_draft) via Send / Edit / Discard.
+  bool _isResolvingDraft = false;
+
   List<dynamic> get conversations => _conversations;
   List<dynamic> get messages => _messages;
   bool get isLoadingConversations => _isLoadingConversations;
@@ -22,6 +26,19 @@ class ChatProvider with ChangeNotifier {
   String? get currentUserId => _currentUserId;
   bool get isDrafting => _isDrafting;
   String? get draftError => _draftError;
+  bool get isResolvingDraft => _isResolvingDraft;
+
+  /// AI Front Office #8 — pending "Suggested reply" cards for the currently
+  /// loaded thread: coach-only drafts (`status='ai_draft'`) written by the
+  /// automatic draft-reply pipeline, oldest first. The parent never receives
+  /// these rows in the first place (RLS), so no client-side filtering is
+  /// needed to keep them hidden from the parent's own list — this getter is
+  /// purely "which of MY loaded messages are a pending draft".
+  List<Map<String, dynamic>> get pendingDrafts => _messages
+      .whereType<Map>()
+      .where((m) => (m['status'] ?? '') == 'ai_draft')
+      .map((m) => Map<String, dynamic>.from(m))
+      .toList();
 
   /// Only coaches (providers) may draft replies — message-draft authorizes that
   /// the caller owns the provider, so the affordance is provider-only in the UI.
@@ -208,8 +225,17 @@ class ChatProvider with ChangeNotifier {
     });
     notifyListeners();
 
-    // Persist (append-only insert into messages).
-    final saved = await _repo.postMessage(conversationId, body);
+    // Persist (append-only insert into messages). A null return OR a thrown
+    // error (e.g. offline / network drop) both mean the write did NOT land —
+    // roll back the optimistic bubble and report failure so the caller shows a
+    // real error instead of leaving a message that looks sent but never was.
+    Map<String, dynamic>? saved;
+    try {
+      saved = await _repo.postMessage(conversationId, body);
+    } catch (e) {
+      debugPrint('ChatProvider.sendMessage postMessage threw: $e');
+      saved = null;
+    }
     if (saved == null) {
       _messages.removeWhere((m) => m['_id'] == tempId); // roll back optimistic
       notifyListeners();
@@ -224,6 +250,57 @@ class ChatProvider with ChangeNotifier {
     _bumpConversation(conversationId, saved);
     notifyListeners();
     return true;
+  }
+
+  /// AI Front Office #8/#9 — the coach's two buttons. Resolves ONE pending
+  /// "Suggested reply" ([draftId]) via [action] ('sent_as_is'|'edited'|
+  /// 'discarded'); [finalText] is required for 'edited'. The repo call writes
+  /// the message update AND the `draft_feedback` row together (#9 — feedback
+  /// can never be skipped). On success, updates the local cache in place so
+  /// the card disappears / the parent-visible bubble appears without a
+  /// reload. Returns false on failure — the CALLER must show a real error and
+  /// never treat it as a silent no-op (L-015).
+  Future<bool> resolveDraft({
+    required String draftId,
+    required String action,
+    String? finalText,
+  }) async {
+    _isResolvingDraft = true;
+    notifyListeners();
+
+    bool ok;
+    try {
+      ok = await _repo.resolveDraft(
+        draftId: draftId,
+        action: action,
+        finalText: finalText,
+      );
+    } catch (e) {
+      debugPrint('ChatProvider.resolveDraft failed: $e');
+      ok = false;
+    }
+
+    _isResolvingDraft = false;
+    if (ok) {
+      final i = _messages.indexWhere(
+        (m) => m is Map && m['_id']?.toString() == draftId,
+      );
+      if (i != -1) {
+        final updated = Map<String, dynamic>.from(_messages[i] as Map);
+        if (action == 'discarded') {
+          updated['status'] = 'discarded';
+        } else {
+          updated['status'] = 'sent';
+          updated['visibleToParent'] = true;
+          if (action == 'edited') {
+            updated['text'] = (finalText ?? '').trim();
+          }
+        }
+        _messages[i] = updated;
+      }
+    }
+    notifyListeners();
+    return ok;
   }
 
   // ── Realtime: live incoming messages for the open thread ──────────────────

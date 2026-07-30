@@ -1131,4 +1131,17 @@ class MockData {
     init();
     _box.write('mock_parent_updates', val);
   }
+
+  /// Grounded, backend-authored progress digests keyed by `athleteId`. Empty by
+  /// default (the offline fake backend seeds none — the timeline renders from
+  /// parent_updates alone); the real digests come from `progress_digests`.
+  static List<dynamic> get progressDigests {
+    init();
+    return _box.read<List<dynamic>>('mock_progress_digests') ?? [];
+  }
+
+  static set progressDigests(List<dynamic> val) {
+    init();
+    _box.write('mock_progress_digests', val);
+  }
 }

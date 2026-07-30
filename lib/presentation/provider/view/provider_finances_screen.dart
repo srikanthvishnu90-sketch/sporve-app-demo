@@ -1,19 +1,24 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:get/get.dart' hide Trans;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../controllers/provider_controller.dart';
+import '../../../core/config/env.dart';
+import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
-import '../../widgets/sporve_image.dart';
 
-/// Platform commission taken on each paid booking. Single source of truth for
-/// the fee shown in the finances breakdown — de-magicked so the percentage and
-/// the amount can never drift apart.
-const double kPlatformFeeRate = 0.10; // 10%
-final String kPlatformFeeLabel =
-    '${(kPlatformFeeRate * 100).toStringAsFixed(0)}%';
+// Platform fee shown on this screen is the TIERED schedule from the shared
+// source of truth core/utils/platform_fee.dart (mirrors platform_fees /
+// resolve_platform_fee_bps): intro on a family's first paid booking, thin
+// thereafter. No flat rate constant lives here anymore, so the display can never
+// drift from the fee model the server actually applies (L-021).
 
 class ProviderFinancesScreen extends StatefulWidget {
   const ProviderFinancesScreen({super.key});
@@ -26,15 +31,31 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  // Per-transaction fee itemization (money page #2), loaded once from the
+  // provider's own paid bookings. null = still loading; empty = nothing paid.
+  List<ProviderTxn>? _txns;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    // Load real bookings so revenue/earnings reflect actual paid sessions.
+    // Load real bookings + payouts + invoices so every tab reflects actual data.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ProviderController>().fetchProviderBookings();
+      final c = context.read<ProviderController>();
+      c.fetchProviderBookings();
+      c.fetchPayouts();
+      c.fetchInvoicing();
+      _loadTxns();
     });
   }
+
+  Future<void> _loadTxns() async {
+    final txns = await context.read<ProviderController>().transactionItemizations();
+    if (!mounted) return;
+    setState(() => _txns = txns);
+  }
+
+  String _money(double v) => '\$${v.toStringAsFixed(2)}';
 
   @override
   void dispose() {
@@ -140,6 +161,15 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     final revenue = c.revenue;
     final revenueStr = '\$${revenue.toStringAsFixed(0)}';
     final athletes = c.rosterAthletes.length;
+    // Tiered platform fee + net from the SAME itemization the Transactions tab
+    // and CSV use (single source of truth), so no surface disagrees. Null while
+    // still loading → shows 0 until the itemization lands.
+    var feeTotal = 0.0, netTotal = 0.0;
+    for (final t in (_txns ?? const <ProviderTxn>[])) {
+      feeTotal += t.fee;
+      netTotal += t.net;
+    }
+    final netStr = '\$${netTotal.toStringAsFixed(0)}';
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -166,9 +196,9 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                 trendColor: AppColors.textTertiary,
               ),
               _buildFinanceGridCard(
-                label: 'PENDING PAYOUT',
-                value: revenueStr,
-                trend: '—',
+                label: 'YOUR NET',
+                value: netStr,
+                trend: 'after fees',
                 trendColor: AppColors.textTertiary,
               ),
               _buildFinanceGridCard(
@@ -228,11 +258,56 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                 ),
                 const SizedBox(height: 16),
                 _buildProgressRow(
-                  label: 'PLATFORM FEE ($kPlatformFeeLabel)',
-                  amount:
-                      '\$${(revenue * kPlatformFeeRate).toStringAsFixed(0)}',
-                  progress: revenue > 0 ? kPlatformFeeRate : 0,
+                  label: 'PLATFORM FEE (PROJECTED)',
+                  amount: '\$${feeTotal.toStringAsFixed(0)}',
+                  progress: revenue > 0 ? (feeTotal / revenue) : 0,
                   color: AppColors.negative,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Coach OS tools (P0 #3): tax-season export + waitlist ──────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadii.card),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Coach tools',
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _coachToolRow(
+                  icon: Icons.download_outlined,
+                  title: 'Export for taxes',
+                  subtitle: 'One-tap CSV per tax year — gross, fee, net',
+                  onTap: _pickYearAndExport,
+                ),
+                const SizedBox(height: 10),
+                _coachToolRow(
+                  icon: Icons.people_alt_outlined,
+                  title: 'Manage waitlist',
+                  subtitle: 'Families waiting on your full programs',
+                  onTap: () => Get.toNamed(AppRoutes.providerWaitlist),
+                ),
+                const SizedBox(height: 10),
+                _coachToolRow(
+                  icon: Icons.event_repeat_outlined,
+                  title: 'Weekly slots',
+                  subtitle: 'Your standing weekly availability',
+                  onTap: () => Get.toNamed(AppRoutes.providerRecurringSlots),
                 ),
               ],
             ),
@@ -240,6 +315,272 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           const SizedBox(height: 40),
         ],
       ),
+    );
+  }
+
+  Widget _coachToolRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.tile),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.slateTint,
+                borderRadius: BorderRadius.circular(AppRadii.tile),
+              ),
+              child: Icon(icon, color: AppColors.slateText, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.textTertiary,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One tap per tax year (money page #3): pick a year (or all-time), then build
+  /// + present that year's paid-booking CSV. Honest "nothing yet" when empty.
+  Future<void> _pickYearAndExport() async {
+    final c = context.read<ProviderController>();
+    final years = await c.availableEarningYears();
+    if (!mounted) return;
+    if (years.isEmpty) {
+      Get.snackbar(
+        'Nothing to export',
+        'You have no paid sessions yet.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: AppColors.surface2,
+        colorText: AppColors.textPrimary,
+      );
+      return;
+    }
+    final int? choice = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface2,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Text(
+                'Export for taxes',
+                style: AppTypography.font(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            for (final y in years)
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined,
+                    color: AppColors.slateText, size: 20),
+                title: Text('$y',
+                    style: AppTypography.font(
+                        color: AppColors.textPrimary, fontSize: 15)),
+                onTap: () => Navigator.pop(sctx, y),
+              ),
+            ListTile(
+              leading: const Icon(Icons.all_inclusive,
+                  color: AppColors.slateText, size: 20),
+              title: Text('All time',
+                  style: AppTypography.font(
+                      color: AppColors.textPrimary, fontSize: 15)),
+              onTap: () => Navigator.pop(sctx, -1),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await _exportEarnings(choice == -1 ? null : choice);
+  }
+
+  /// Build the earnings CSV from REAL paid bookings for [year] (null = all-time)
+  /// and present it for export (copy + best-effort download). Read-only; no money.
+  Future<void> _exportEarnings([int? year]) async {
+    final result =
+        await context.read<ProviderController>().exportEarnings(year: year);
+    if (!mounted) return;
+    if (result == null) {
+      Get.snackbar(
+        'Nothing to export',
+        year == null
+            ? 'You have no paid sessions yet.'
+            : 'No paid sessions in $year.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: AppColors.surface2,
+        colorText: AppColors.textPrimary,
+      );
+      return;
+    }
+    final s = result.summary;
+    final gross = '\$${s.gross.toStringAsFixed(2)}';
+    showDialog<void>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: AppColors.surface2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.card),
+        ),
+        title: Text(
+          'Earnings export',
+          style: AppTypography.font(
+            color: AppColors.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${s.count} paid sessions · $gross gross',
+              style: AppTypography.font(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 180),
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.ink,
+                borderRadius: BorderRadius.circular(AppRadii.tile),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  result.csv,
+                  style: AppTypography.mono(
+                    size: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx),
+            child: Text(
+              'Close',
+              style: AppTypography.font(color: AppColors.textTertiary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: result.csv));
+              Navigator.pop(dctx);
+              Get.snackbar(
+                'Copied',
+                'Earnings CSV copied to clipboard.',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: AppColors.surface2,
+                colorText: AppColors.textPrimary,
+              );
+            },
+            child: Text(
+              'Copy CSV',
+              style: AppTypography.font(
+                color: AppColors.slateText,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dctx);
+              _downloadCsv(result.csv);
+            },
+            child: Text(
+              'Download',
+              style: AppTypography.font(
+                color: AppColors.slateText,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Best-effort download via a data: URI (opens/saves in the browser on web).
+  /// On failure we fall back to the clipboard so the export is never lost.
+  Future<void> _downloadCsv(String csv) async {
+    final uri = Uri.dataFromString(
+      csv,
+      mimeType: 'text/csv',
+      encoding: utf8,
+    );
+    var launched = false;
+    try {
+      launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('earnings CSV download failed, falling back to clipboard: $e');
+      launched = false;
+    }
+    if (!launched) {
+      await Clipboard.setData(ClipboardData(text: csv));
+    }
+    if (!mounted) return;
+    Get.snackbar(
+      launched ? 'Exported' : 'Copied',
+      launched
+          ? 'Earnings CSV opened for download.'
+          : 'Download unavailable — CSV copied to clipboard instead.',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: AppColors.surface2,
+      colorText: AppColors.textPrimary,
     );
   }
 
@@ -334,13 +675,18 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   }
 
   Widget _buildTransfersTab() {
+    final c = context.watch<ProviderController>();
+    final connected = c.stripeChargesEnabled;
+    final pending = c.pendingPayoutNet;
+    final payouts = c.payouts; // REAL Stripe payouts (empty until fn deployed)
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'AVAILABLE BALANCE',
+            'PENDING PAYOUT',
             style: AppTypography.font(
               color: AppColors.textTertiary,
               fontSize: 11,
@@ -350,46 +696,37 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            '\$0.00',
+            _money(pending),
             style: AppTypography.mono(
               size: 40,
               weight: FontWeight.bold,
               color: AppColors.textPrimary,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Your net from paid sessions, not yet paid out by Stripe. This is an '
+            'estimate from your bookings — actual transfers appear below.',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 12),
-
-          // Badge row
           Row(
-            children: [_buildTransfersBadge('NOT CONNECTED', isGreenDot: true)],
+            children: [
+              _buildTransfersBadge(
+                connected ? 'PAYOUTS ENABLED' : 'NOT CONNECTED',
+                isGreenDot: true,
+              ),
+            ],
           ),
           const SizedBox(height: 24),
 
-          // Bullet points
-          _buildBulletPoint(
-            'Payments aren\'t connected yet — your balance will appear here once payouts are live.',
-          ),
-          const SizedBox(height: 12),
-          _buildBulletPoint(
-            'Once live, withdrawals will be processed through your linked bank account.',
-          ),
-          const SizedBox(height: 32),
-
-          // Buttons
-          SporveButton(
-            'Bank payouts not enabled',
-            onPressed: null,
-            variant: SporveButtonVariant.primary,
-            icon: Icons.lock_outline,
-          ),
-          // TODO(payments): "Deposit cash" + "Add bank account" hidden — they
-          // only showed a "coming soon" snackbar and did nothing. Restore once
-          // payments/bank-linking are live.
-          const SizedBox(height: 32),
-
-          // Linked accounts
+          // ── Real payout history (money page #1) ──────────────────────────
           Text(
-            'LINKED ACCOUNTS',
+            'PAYOUTS TO YOUR BANK',
             style: AppTypography.font(
               color: AppColors.textTertiary,
               fontSize: 11,
@@ -397,26 +734,104 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
               letterSpacing: 1.0,
             ),
           ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.card),
-              border: Border.all(color: AppColors.hairline),
-            ),
-            child: Center(
-              child: Text(
-                'No bank accounts linked yet.',
-                style: AppTypography.font(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
+          const SizedBox(height: 12),
+          if (payouts.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadii.card),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              child: Center(
+                child: Text(
+                  connected
+                      ? 'No bank payouts yet. Stripe transfers will appear here.'
+                      : 'Connect payouts to start receiving transfers.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.font(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
               ),
+            )
+          else
+            ...payouts.map(_payoutRow),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  /// One REAL Stripe payout row (money page #1). Amount is minor units from
+  /// Stripe; status is Stripe's own (paid / pending / in_transit / failed) so a
+  /// pending transfer is never shown as completed.
+  Widget _payoutRow(Map<String, dynamic> p) {
+    final cents = (p['amountCents'] as num?)?.toInt() ?? 0;
+    final status = (p['status']?.toString() ?? 'pending').toUpperCase();
+    final isPaid = status == 'PAID';
+    final last4 = p['bankLast4']?.toString();
+    final arrival = p['arrivalDate'];
+    String when = '';
+    if (arrival is num) {
+      final d = DateTime.fromMillisecondsSinceEpoch(arrival.toInt() * 1000);
+      when = '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}';
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  last4 != null ? 'Bank •••• $last4' : 'Bank payout',
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  when.isEmpty ? status : '$status • $when',
+                  style: AppTypography.font(
+                    color: AppColors.textTertiary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 40),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _money(cents / 100.0),
+                style: AppTypography.mono(
+                  size: 15,
+                  weight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              OutlinePill(
+                status,
+                color: isPaid ? AppColors.slateText : AppColors.warning,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -458,39 +873,29 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     );
   }
 
-  Widget _buildBulletPoint(String text) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          margin: const EdgeInsets.only(top: 2),
-          decoration: const BoxDecoration(
-            color: AppColors.slateText,
-            shape: BoxShape.circle,
-          ),
-          padding: const EdgeInsets.all(3),
-          child: const Icon(Icons.check, color: AppColors.onSlate, size: 8),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            text,
-            style: AppTypography.font(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              height: 1.4,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildTransactionsTab() {
-    // No payments backend yet → no fabricated transactions. Real entries will
-    // populate here once payment processing is connected; until then the empty
-    // state below is shown.
-    final List<Map<String, dynamic>> transactions = [];
+    // Real per-transaction fee itemization (money page #2), derived from the
+    // provider's OWN paid bookings via the shared fee module. Gross → platform
+    // fee (intro 18% on a family's first booking, 4% thereafter — mirrors
+    // resolve_platform_fee_bps) → coach net. Read-only; moves no money (L-003).
+    final txns = _txns;
+    if (txns == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: CircularProgressIndicator(
+            color: AppColors.slateText,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    var gross = 0.0, fee = 0.0, net = 0.0;
+    for (final t in txns) {
+      gross += t.gross;
+      fee += t.fee;
+      net += t.net;
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -499,81 +904,33 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           Row(
             children: [
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(AppRadii.card),
-                    border: Border.all(color: AppColors.hairline),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'INCOME (30 DAYS)',
-                        style: AppTypography.font(
-                          color: AppColors.textTertiary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '\$0',
-                        style: AppTypography.mono(
-                          size: 24,
-                          weight: FontWeight.bold,
-                          color: AppColors.slateText,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: _txnSummaryCard(
+                  'GROSS (PAID)',
+                  _money(gross),
+                  AppColors.slateText,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(AppRadii.card),
-                    border: Border.all(color: AppColors.hairline),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'EXPENSES',
-                        style: AppTypography.font(
-                          color: AppColors.textTertiary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '\$0',
-                        style: AppTypography.mono(
-                          size: 24,
-                          weight: FontWeight.bold,
-                          color: AppColors.negative,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: _txnSummaryCard(
+                  'YOUR NET',
+                  _money(net),
+                  AppColors.successGreen,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          Text(
+            'Platform fees ${_money(fee)} · projected from the current fee '
+            'schedule. Your Stripe payout is the authoritative record.',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -581,12 +938,12 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
               borderRadius: BorderRadius.circular(AppRadii.card),
               border: Border.all(color: AppColors.hairline),
             ),
-            child: transactions.isEmpty
+            child: txns.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 40),
                     child: Center(
                       child: Text(
-                        'No transactions yet.',
+                        'No paid sessions yet.',
                         style: AppTypography.font(
                           color: AppColors.textSecondary,
                           fontSize: 13,
@@ -597,107 +954,10 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                 : ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: transactions.length,
+                    itemCount: txns.length,
                     separatorBuilder: (context, index) =>
-                        const Divider(color: AppColors.hairline, height: 28),
-                    itemBuilder: (context, index) {
-                      final tx = transactions[index];
-                      final bool isCompleted = tx['status'] == 'COMPLETED';
-
-                      return Row(
-                        children: [
-                          Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              ClipOval(
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: SporveImage(
-                                    tx['imageUrl'],
-                                    width: 44,
-                                    height: 44,
-                                    fit: BoxFit.cover,
-                                    fallbackIcon: Icons.person,
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                bottom: -2,
-                                right: -2,
-                                child: Container(
-                                  height: 14,
-                                  width: 14,
-                                  decoration: BoxDecoration(
-                                    color: tx['isIncome']
-                                        ? AppColors.successGreen
-                                        : AppColors.negative,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: AppColors.surface,
-                                      width: 2,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        tx['name'],
-                                        style: AppTypography.font(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    OutlinePill(
-                                      tx['status'],
-                                      color: isCompleted
-                                          ? AppColors.successGreen
-                                          : AppColors.warmAccent,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${tx['type']} • ${tx['time']}',
-                                  style: AppTypography.font(
-                                    color: AppColors.textTertiary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            tx['amount'],
-                            style: AppTypography.mono(
-                              size: 15,
-                              weight: FontWeight.bold,
-                              color: tx['isIncome']
-                                  ? AppColors.successGreen
-                                  : AppColors.textPrimary,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                        const Divider(color: AppColors.hairline, height: 24),
+                    itemBuilder: (context, index) => _txnRow(txns[index]),
                   ),
           ),
           const SizedBox(height: 40),
@@ -706,20 +966,145 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     );
   }
 
+  Widget _txnSummaryCard(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: AppTypography.mono(
+              size: 22,
+              weight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One itemized paid-booking row: gross → fee (with intro/recurring rate) → net.
+  /// This is the IDENTICAL itemization shape the org/trainer will later see.
+  Widget _txnRow(ProviderTxn t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t.program.isEmpty ? 'Training session' : t.program,
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if (t.athlete.isNotEmpty) t.athlete,
+                      t.date,
+                    ].join(' • '),
+                    style: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _money(t.net),
+              style: AppTypography.mono(
+                size: 15,
+                weight: FontWeight.bold,
+                color: AppColors.successGreen,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Itemization line: gross − fee (rate) = net.
+        Row(
+          children: [
+            OutlinePill(
+              t.isFirst ? 'INTRO ${t.ratePct}' : '${t.ratePct} FEE',
+              color: t.isFirst ? AppColors.warmAccent : AppColors.textTertiary,
+            ),
+            const Spacer(),
+            Text(
+              'Gross ${_money(t.gross)}   −   Fee ${_money(t.fee)}',
+              style: AppTypography.mono(
+                size: 11,
+                weight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildInvoicesTab() {
-    // No invoicing backend yet → no fabricated invoices. Real invoices will
-    // populate here once invoicing is live; until then the empty state shows.
-    final List<Map<String, dynamic>> invoices = [];
+    // Off-platform invoicing (money page #4): bill families Sporve did NOT
+    // source, through the coach OS. Creating/listing DRAFT invoices is real
+    // (coach-owned tables, RLS owner-scoped); the amount + near-zero SaaS fee are
+    // pinned SERVER-SIDE. The live Stripe charge/send is FLAGGED OFF
+    // (Env.offPlatformInvoicingCharge) with a test-mode plan (L-003) — a draft
+    // moves no money.
+    final c = context.watch<ProviderController>();
+    final invoices = c.invoices;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // TODO(payments): restore the "New invoice" action once invoice
-          // creation is backed by a real service (hidden — it only showed a
-          // "coming soon" snackbar and did nothing).
+          const SizedBox(height: 4),
+          Text(
+            'Bill families you brought yourself. Off-platform invoices carry only '
+            'a thin ~2.5% SaaS fee — never the intro rake.',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 16),
+          SporveButton(
+            'Create invoice',
+            onPressed: _createInvoiceDialog,
+            variant: SporveButtonVariant.primary,
+            icon: Icons.add,
+          ),
+          const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -745,104 +1130,321 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: invoices.length,
                     separatorBuilder: (context, index) =>
-                        const Divider(color: AppColors.hairline, height: 28),
-                    itemBuilder: (context, index) {
-                      final inv = invoices[index];
-                      Color statusColor;
-
-                      if (inv['status'] == 'PAID') {
-                        statusColor = AppColors.successGreen;
-                      } else if (inv['status'] == 'PENDING') {
-                        statusColor = AppColors.warmAccent;
-                      } else {
-                        statusColor = AppColors.negative;
-                      }
-
-                      return Row(
-                        children: [
-                          ClipOval(
-                            child: SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: SporveImage(
-                                inv['imageUrl'],
-                                width: 44,
-                                height: 44,
-                                fit: BoxFit.cover,
-                                fallbackIcon: Icons.person,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        inv['client'],
-                                        style: AppTypography.font(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    OutlinePill(
-                                      inv['status'],
-                                      color: statusColor,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${inv['service']} • ${inv['due']}',
-                                  style: AppTypography.font(
-                                    color: AppColors.textTertiary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                inv['amount'],
-                                style: AppTypography.mono(
-                                  size: 15,
-                                  weight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                inv['invNo'],
-                                style: AppTypography.mono(
-                                  size: 11,
-                                  weight: FontWeight.bold,
-                                  color: AppColors.textTertiary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
+                        const Divider(color: AppColors.hairline, height: 24),
+                    itemBuilder: (context, index) =>
+                        _invoiceRow(invoices[index]),
                   ),
           ),
           const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _invoiceRow(Map<String, dynamic> inv) {
+    final status = (inv['status']?.toString() ?? 'draft').toUpperCase();
+    final amount = ((inv['amountCents'] as num?)?.toInt() ?? 0) / 100.0;
+    final fee = ((inv['applicationFeeCents'] as num?)?.toInt() ?? 0) / 100.0;
+    Color statusColor;
+    switch (status) {
+      case 'PAID':
+        statusColor = AppColors.successGreen;
+        break;
+      case 'OPEN':
+        statusColor = AppColors.warmAccent;
+        break;
+      case 'VOID':
+      case 'UNCOLLECTIBLE':
+        statusColor = AppColors.negative;
+        break;
+      default: // DRAFT
+        statusColor = AppColors.textTertiary;
+    }
+    final isDraft = status == 'DRAFT';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    inv['contactName']?.toString() ?? 'Family',
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    inv['description']?.toString() ?? 'Off-platform',
+                    style: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _money(amount),
+                  style: AppTypography.mono(
+                    size: 15,
+                    weight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                OutlinePill(status, color: statusColor),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Text(
+              'SaaS fee ${_money(fee)} · you net ${_money(amount - fee)}',
+              style: AppTypography.font(
+                color: AppColors.textTertiary,
+                fontSize: 11,
+              ),
+            ),
+            const Spacer(),
+            if (isDraft)
+              TextButton(
+                onPressed: () => _sendInvoiceStub(inv),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 32),
+                ),
+                child: Text(
+                  Env.offPlatformInvoicingCharge ? 'Send' : 'Send (soon)',
+                  style: AppTypography.font(
+                    color: Env.offPlatformInvoicingCharge
+                        ? AppColors.slateText
+                        : AppColors.textTertiary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Sending/charging an off-platform invoice is behind a flag with a test-mode
+  /// plan (L-003). Until the flag + test proof land, this never charges — it
+  /// tells the coach the draft is saved and sending is coming.
+  void _sendInvoiceStub(Map<String, dynamic> inv) {
+    if (!Env.offPlatformInvoicingCharge) {
+      Get.snackbar(
+        'Draft saved',
+        'Sending invoices is being finalized — your draft is safe until then.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: AppColors.surface2,
+        colorText: AppColors.textPrimary,
+      );
+      return;
+    }
+    // Flag ON path (test mode only): the client would invoke coach-invoice-create
+    // here. Left intentionally un-wired to the live charge in this change set —
+    // the charge lands in the flagged, test-verified stripe-payments change.
+    Get.snackbar(
+      'Not available',
+      'Invoice sending is enabled in test mode only in this build.',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: AppColors.surface2,
+      colorText: AppColors.textPrimary,
+    );
+  }
+
+  /// Draft an off-platform invoice: capture the family + one line item, create a
+  /// coach contact + a DRAFT invoice (amount + SaaS fee pinned server-side). No
+  /// charge (L-003).
+  Future<void> _createInvoiceDialog() async {
+    final nameCtl = TextEditingController();
+    final emailCtl = TextEditingController();
+    final labelCtl = TextEditingController(text: 'Private session');
+    final amountCtl = TextEditingController();
+    final qtyCtl = TextEditingController(text: '1');
+    var busy = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, setDialog) => AlertDialog(
+          backgroundColor: AppColors.surface2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.card),
+          ),
+          title: Text(
+            'New invoice',
+            style: AppTypography.font(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _dialogField('Family name', nameCtl),
+                _dialogField('Email', emailCtl,
+                    keyboard: TextInputType.emailAddress),
+                _dialogField('What for', labelCtl),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dialogField('Amount (\$)', amountCtl,
+                          keyboard: TextInputType.number),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 70,
+                      child: _dialogField('Qty', qtyCtl,
+                          keyboard: TextInputType.number),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'A ~2.5% SaaS fee applies (server-computed). No charge until '
+                  'you send — sending is finalized separately.',
+                  style: AppTypography.font(
+                    color: AppColors.textTertiary,
+                    fontSize: 11,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(dctx),
+              child: Text('Cancel',
+                  style: AppTypography.font(color: AppColors.textTertiary)),
+            ),
+            TextButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final name = nameCtl.text.trim();
+                      final dollars = double.tryParse(amountCtl.text.trim());
+                      final qty = int.tryParse(qtyCtl.text.trim()) ?? 1;
+                      if (name.isEmpty || dollars == null || dollars <= 0) {
+                        Get.snackbar(
+                          'Check the details',
+                          'Enter a family name and a positive amount.',
+                          snackPosition: SnackPosition.BOTTOM,
+                          backgroundColor: AppColors.surface2,
+                          colorText: AppColors.textPrimary,
+                        );
+                        return;
+                      }
+                      setDialog(() => busy = true);
+                      final ctl = context.read<ProviderController>();
+                      final contactId = await ctl.createContact({
+                        'displayName': name,
+                        'email': emailCtl.text.trim(),
+                      });
+                      String? invId;
+                      if (contactId != null) {
+                        invId = await ctl.createInvoiceDraft({
+                          'contactId': contactId,
+                          'description': labelCtl.text.trim(),
+                          'currency': 'USD',
+                          'lineItems': [
+                            {
+                              'label': labelCtl.text.trim(),
+                              'qty': qty < 1 ? 1 : qty,
+                              'unit_amount_cents': (dollars * 100).round(),
+                            }
+                          ],
+                        });
+                      }
+                      if (!dctx.mounted) return;
+                      Navigator.pop(dctx);
+                      Get.snackbar(
+                        invId != null ? 'Draft created' : 'Could not save',
+                        invId != null
+                            ? 'Invoice drafted — no charge yet.'
+                            : 'Something went wrong. Please try again.',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: AppColors.surface2,
+                        colorText: AppColors.textPrimary,
+                      );
+                    },
+              child: Text(
+                busy ? 'Saving…' : 'Create draft',
+                style: AppTypography.font(
+                  color: AppColors.slateText,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    nameCtl.dispose();
+    emailCtl.dispose();
+    labelCtl.dispose();
+    amountCtl.dispose();
+    qtyCtl.dispose();
+  }
+
+  Widget _dialogField(
+    String label,
+    TextEditingController controller, {
+    TextInputType? keyboard,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: AppTypography.font(
+              color: AppColors.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.ink,
+              borderRadius: BorderRadius.circular(AppRadii.tile),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboard,
+              style:
+                  AppTypography.font(color: AppColors.textPrimary, fontSize: 14),
+              cursorColor: AppColors.slateText,
+              decoration: const InputDecoration(border: InputBorder.none),
+            ),
+          ),
         ],
       ),
     );

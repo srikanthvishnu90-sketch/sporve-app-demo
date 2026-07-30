@@ -20,9 +20,15 @@ import 'presentation/client/controllers/search_provider.dart';
 import 'presentation/client/controllers/match_provider.dart';
 import 'core/push/push_service.dart';
 import 'presentation/client/controllers/progress_updates_controller.dart';
+import 'presentation/client/controllers/athlete_timeline_controller.dart';
 import 'presentation/provider/controllers/provider_controller.dart';
 import 'presentation/provider/controllers/parent_update_controller.dart';
 import 'presentation/provider/controllers/lifecycle_controller.dart';
+import 'presentation/shared/controllers/waitlist_controller.dart';
+import 'presentation/provider/controllers/recurring_slots_controller.dart';
+import 'presentation/provider/controllers/supply_controller.dart';
+import 'presentation/provider/controllers/coach_policies_controller.dart';
+import 'presentation/provider/controllers/setup_interview_controller.dart';
 import 'presentation/authentication/controllers/auth_provider.dart';
 import 'presentation/shared/controllers/chat_provider.dart';
 import 'presentation/client/controllers/assistant_provider.dart';
@@ -75,9 +81,15 @@ void main() async {
         ChangeNotifierProvider(create: (_) => SearchProvider(repo)),
         ChangeNotifierProvider(create: (_) => MatchProvider(repo)),
         ChangeNotifierProvider(create: (_) => ProgressUpdatesController(repo)),
+        ChangeNotifierProvider(create: (_) => AthleteTimelineController(repo)),
         ChangeNotifierProvider(create: (_) => ProviderController(repo)),
         ChangeNotifierProvider(create: (_) => ParentUpdateController(repo)),
         ChangeNotifierProvider(create: (_) => LifecycleController(repo)),
+        ChangeNotifierProvider(create: (_) => WaitlistController(repo)),
+        ChangeNotifierProvider(create: (_) => RecurringSlotsController(repo)),
+        ChangeNotifierProvider(create: (_) => SupplyController(repo)),
+        ChangeNotifierProvider(create: (_) => CoachPoliciesController(repo)),
+        ChangeNotifierProvider(create: (_) => SetupInterviewController(repo)),
         ChangeNotifierProvider(create: (_) => AuthProvider(authService)),
         ChangeNotifierProvider(create: (_) => ChatProvider(repo, authService)),
         ChangeNotifierProvider(create: (_) => AssistantProvider(repo)),

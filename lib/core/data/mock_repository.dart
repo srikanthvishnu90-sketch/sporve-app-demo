@@ -112,6 +112,667 @@ class MockRepository implements AppRepository {
     return true;
   }
 
+  // ── Coach OS: waitlist (demo — in-memory, mirrors program_waitlist shape) ───
+  // static so the const MockRepository() constructor stays const (the demo repo
+  // is a stateless wrapper; this shared list is the demo's waitlist store).
+  static final List<Map<String, dynamic>> _waitlist = [];
+
+  @override
+  Future<String?> joinWaitlist(Map<String, dynamic> entry) async {
+    final id = 'wl-${DateTime.now().microsecondsSinceEpoch}';
+    _waitlist.add({
+      '_id': id,
+      'programId': entry['programId'],
+      'programTitle': entry['programTitle'] ?? '',
+      'sport': entry['sport'] ?? '',
+      'athleteId': entry['athleteId'],
+      'athleteFirstName': entry['athleteFirstName'] ?? '',
+      'athleteAgeBand': entry['athleteAgeBand'] ?? '',
+      'note': entry['note'] ?? '',
+      'status': 'waiting',
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return id;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyWaitlistEntries() =>
+      Future.value(List<Map<String, dynamic>>.from(_waitlist));
+
+  @override
+  Future<bool> cancelWaitlistEntry(String id) async {
+    final i = _waitlist.indexWhere((e) => e['_id'] == id);
+    if (i == -1) return false;
+    _waitlist[i]['status'] = 'cancelled';
+    return true;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getWaitlistForProvider() => Future.value(
+    _waitlist.where((e) => e['status'] == 'waiting' || e['status'] == 'offered').toList(),
+  );
+
+  @override
+  Future<bool> updateWaitlistStatus(String id, String status) async {
+    final i = _waitlist.indexWhere((e) => e['_id'] == id);
+    if (i == -1) return false;
+    _waitlist[i]['status'] = status;
+    return true;
+  }
+
+  // ── Coach OS: recurring weekly slots (demo — in-memory) ─────────────────────
+  // static so the const MockRepository() constructor stays const (L-013): the
+  // demo repo is a stateless wrapper, so slot + skip state lives in shared static
+  // lists that mirror the recurring_slots / slot_exceptions shapes.
+  static final List<Map<String, dynamic>> _recurringSlots = [];
+  static final List<Map<String, dynamic>> _slotExceptions = []; // {slotId,date,reason}
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyRecurringSlots() async {
+    final list = List<Map<String, dynamic>>.from(_recurringSlots);
+    // active first, then by weekday — mirrors the Supabase order.
+    list.sort((a, b) {
+      final act = ((b['active'] ?? true) ? 1 : 0) - ((a['active'] ?? true) ? 1 : 0);
+      if (act != 0) return act;
+      return ((a['dayOfWeek'] ?? 0) as int).compareTo((b['dayOfWeek'] ?? 0) as int);
+    });
+    return list;
+  }
+
+  @override
+  Future<String?> createRecurringSlot(Map<String, dynamic> slot) async {
+    final id = 'slot-${DateTime.now().microsecondsSinceEpoch}';
+    _recurringSlots.add({
+      '_id': id,
+      'providerId': 'mock-provider',
+      'dayOfWeek': slot['dayOfWeek'],
+      'startTime': slot['startTime'],
+      'durationMinutes': slot['durationMinutes'],
+      'capacity': slot['capacity'] ?? 1,
+      'priceCents': slot['priceCents'] ?? 0,
+      'currency': 'USD',
+      'active': slot['active'] ?? true,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return id;
+  }
+
+  @override
+  Future<bool> setRecurringSlotActive(String slotId, bool active) async {
+    final i = _recurringSlots.indexWhere((s) => s['_id'] == slotId);
+    if (i == -1) return false;
+    _recurringSlots[i]['active'] = active;
+    return true;
+  }
+
+  @override
+  Future<bool> skipRecurringSlotWeek(
+    String slotId,
+    String date, {
+    String? reason,
+  }) async {
+    final exists =
+        _slotExceptions.any((e) => e['slotId'] == slotId && e['date'] == date);
+    if (!exists) {
+      _slotExceptions.add({'slotId': slotId, 'date': date, 'reason': reason ?? ''});
+    }
+    return true;
+  }
+
+  @override
+  Future<List<String>> getSlotExceptions(String slotId) async =>
+      _slotExceptions
+          .where((e) => e['slotId'] == slotId)
+          .map((e) => e['date'].toString())
+          .toList()
+        ..sort();
+
+  // ── Provider Model Rebuild #1: Services / Availability / Locations (demo) ────
+  // static so const MockRepository() stays const (L-013). A SERVICE carries no
+  // times; ONE weekly _availability grid carries them; bookableSlots() multiplies
+  // — so the same edit to _availability re-shapes EVERY service's slots.
+  static const String _mockProviderId = 'mock-provider';
+  static final List<Map<String, dynamic>> _services = [];
+  static final List<Map<String, dynamic>> _availability = []; // {_id,dayOfWeek,startTime,endTime,isBlocked}
+  static final List<Map<String, dynamic>> _locations = [];
+  static final List<String> _availabilityExceptions = []; // yyyy-MM-dd
+  static int _mockBufferMinutes = 0;
+  static String? _mockVacationUntil;
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyServices() async {
+    final list = List<Map<String, dynamic>>.from(_services);
+    list.sort((a, b) {
+      final act = ((b['active'] ?? true) ? 1 : 0) - ((a['active'] ?? true) ? 1 : 0);
+      if (act != 0) return act;
+      return (b['createdAt'] ?? '').toString().compareTo((a['createdAt'] ?? '').toString());
+    });
+    return list;
+  }
+
+  @override
+  Future<String?> createService(Map<String, dynamic> service) async {
+    final id = 'svc-${DateTime.now().microsecondsSinceEpoch}';
+    _services.add({
+      '_id': id,
+      'providerId': _mockProviderId,
+      'serviceType': service['serviceType'] ?? 'private',
+      'title': service['title'],
+      'sport': service['sport'],
+      'durationMinutes': service['durationMinutes'] ?? 60,
+      'priceCents': service['priceCents'] ?? 0,
+      'capacity': service['capacity'] ?? 1,
+      'locationId': service['locationId'],
+      'active': service['active'] ?? true,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return id;
+  }
+
+  @override
+  Future<bool> updateService(String serviceId, Map<String, dynamic> patch) async {
+    final i = _services.indexWhere((s) => s['_id'] == serviceId);
+    if (i == -1) return false;
+    for (final k in const [
+      'title',
+      'sport',
+      'serviceType',
+      'durationMinutes',
+      'priceCents',
+      'capacity',
+      'locationId',
+      'active',
+    ]) {
+      if (patch.containsKey(k)) _services[i][k] = patch[k];
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> setServiceActive(String serviceId, bool active) async {
+    final i = _services.indexWhere((s) => s['_id'] == serviceId);
+    if (i == -1) return false;
+    _services[i]['active'] = active;
+    return true;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> bookableSlots({
+    required String providerId,
+    required String serviceId,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final svc = _services.firstWhere(
+      (s) => s['_id'] == serviceId,
+      orElse: () => const {},
+    );
+    if (svc.isEmpty || svc['active'] == false) return [];
+    final duration = (svc['durationMinutes'] ?? 60) as int;
+    final capacity = (svc['capacity'] ?? 1) as int;
+    final locationId = svc['locationId'];
+    final locName = _locations.firstWhere(
+      (l) => l['_id'] == locationId,
+      orElse: () => const {},
+    )['name'];
+    final from = DateTime.parse(fromDate);
+    final to = DateTime.parse(toDate);
+    final vacation =
+        _mockVacationUntil == null ? null : DateTime.parse(_mockVacationUntil!);
+    final out = <Map<String, dynamic>>[];
+    for (var d = from;
+        !d.isAfter(to);
+        d = d.add(const Duration(days: 1))) {
+      final iso = d.toIso8601String().substring(0, 10);
+      // 0=Sun..6=Sat (Dart weekday is 1=Mon..7=Sun)
+      final dow = d.weekday % 7;
+      if (vacation != null && !d.isAfter(vacation)) continue;
+      if (_availabilityExceptions.contains(iso)) continue;
+      final blocks = _availability.where(
+        (b) => b['dayOfWeek'] == dow && (b['isBlocked'] != true),
+      );
+      for (final b in blocks) {
+        final start = _parseHm(b['startTime']?.toString());
+        final end = _parseHm(b['endTime']?.toString());
+        if (start == null || end == null) continue;
+        final step = duration + _mockBufferMinutes;
+        for (var m = start; m + duration <= end; m += step == 0 ? duration : step) {
+          out.add({
+            'date': iso,
+            'startTime': _fmtHms(m),
+            'endTime': _fmtHms(m + duration),
+            'capacity': capacity,
+            'booked': 0,
+            'seatsRemaining': capacity,
+            'locationId': locationId,
+            'locationName': locName,
+          });
+        }
+      }
+    }
+    out.sort((a, b) {
+      final dc = (a['date'] as String).compareTo(b['date'] as String);
+      if (dc != 0) return dc;
+      return (a['startTime'] as String).compareTo(b['startTime'] as String);
+    });
+    return out;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> refineSetupBundle({
+    required String sport,
+    required List<Map<String, String>> transcript,
+    required Map<String, dynamic> template,
+  }) async {
+    // Offline mock: no AI. Return null so the controller uses the deterministic,
+    // template-derived bundle (the confirm path is fully offline + testable).
+    return null;
+  }
+
+  int? _parseHm(String? hm) {
+    if (hm == null) return null;
+    final parts = hm.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final mi = int.tryParse(parts[1]);
+    if (h == null || mi == null) return null;
+    return h * 60 + mi;
+  }
+
+  String _fmtHms(int minutes) {
+    final h = (minutes ~/ 60).toString().padLeft(2, '0');
+    final m = (minutes % 60).toString().padLeft(2, '0');
+    return '$h:$m:00';
+  }
+
+  // ── Provider Model Rebuild #2: group seats / recurring-on-service / packs ────
+  // static so const MockRepository() stays const (L-013). These lists are the
+  // demo's fake backend for the three multi-booking mechanisms; they mirror the
+  // 20260729_0002xx SQL (bookings.service_id/slot_date/slot_time,
+  // recurring_bookings.service_id, booking_credits) so the swap to Supabase is a
+  // binding change, not a rewrite.
+  static const String _mockSearcherId = 'mock-searcher';
+  // one row per claimed seat: {id, serviceId, slotDate, slotTime, searcherId,
+  // athleteId, athleteFirstName, athleteAgeBand, status, paymentStatus}
+  static final List<Map<String, dynamic>> _serviceBookings = [];
+  static final List<Map<String, dynamic>> _recurringClaims = [];
+  // pack ledger: {serviceId, searcherId, remaining}
+  static final List<Map<String, dynamic>> _packCredits = [];
+
+  int _serviceCapacity(String serviceId) {
+    final svc = _services.firstWhere(
+      (s) => s['_id'] == serviceId,
+      orElse: () => const {},
+    );
+    if (svc.isEmpty) return 0;
+    final cap = (svc['capacity'] ?? 1) as int;
+    return cap < 1 ? 1 : cap;
+  }
+
+  @override
+  Future<String?> claimGroupSeat({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    final capacity = _serviceCapacity(serviceId);
+    if (capacity == 0) return null; // no such service
+
+    bool sameSlot(Map<String, dynamic> b) =>
+        b['serviceId'] == serviceId &&
+        b['slotDate'] == slotDate &&
+        (b['slotTime'] ?? '') == slotTime &&
+        (b['status'] == 'pending' || b['status'] == 'confirmed');
+
+    // Idempotency: the same athlete already holds a seat on this slot -> return it.
+    final existing = _serviceBookings.firstWhere(
+      (b) =>
+          sameSlot(b) &&
+          b['searcherId'] == _mockSearcherId &&
+          b['athleteId'] == athleteId,
+      orElse: () => const {},
+    );
+    if (existing.isNotEmpty) return existing['id']?.toString();
+
+    // No-oversell: reject the N+1th claim.
+    final taken = _serviceBookings.where(sameSlot).length;
+    if (taken >= capacity) return null; // slot FULL — honest failure (L-015)
+
+    final id = 'gseat-${DateTime.now().microsecondsSinceEpoch}';
+    _serviceBookings.add({
+      'id': id,
+      'serviceId': serviceId,
+      'slotDate': slotDate,
+      'slotTime': slotTime,
+      'searcherId': _mockSearcherId,
+      'athleteId': athleteId,
+      'athleteFirstName': athleteFirstName,
+      'athleteAgeBand': athleteAgeBand,
+      'status': 'pending',
+      'paymentStatus': 'unpaid',
+    });
+    return id;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> groupSlotRoster({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+  }) async {
+    return _serviceBookings
+        .where((b) =>
+            b['serviceId'] == serviceId &&
+            b['slotDate'] == slotDate &&
+            (b['slotTime'] ?? '') == slotTime &&
+            (b['status'] == 'pending' || b['status'] == 'confirmed'))
+        .map((b) => <String, dynamic>{
+              'bookingId': b['id'],
+              'athleteFirstName': b['athleteFirstName'],
+              'athleteAgeBand': b['athleteAgeBand'],
+              'status': b['status'],
+              'paymentStatus': b['paymentStatus'],
+            })
+        .toList();
+  }
+
+  @override
+  Future<String?> createRecurringClaim(Map<String, dynamic> claim) async {
+    if (claim['serviceId'] == null) return null;
+    final id = 'rec-${DateTime.now().microsecondsSinceEpoch}';
+    _recurringClaims.add({
+      '_id': id,
+      'serviceId': claim['serviceId'],
+      'searcherId': _mockSearcherId,
+      'dayOfWeek': claim['dayOfWeek'],
+      'startTime': claim['startTime'],
+      'startDate': claim['startDate'],
+      'cadence': claim['cadence'] ?? 'weekly',
+      'occurrenceCount': claim['occurrenceCount'],
+      'endDate': claim['endDate'],
+      'billingModel': claim['billingModel'] ?? 'per_session',
+      'packageSize': claim['packageSize'],
+      'athleteId': claim['athleteId'],
+      'athleteFirstName': claim['athleteFirstName'],
+      'athleteAgeBand': claim['athleteAgeBand'],
+      'status': 'active',
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return id;
+  }
+
+  @override
+  Future<int> creditBalanceForService(String serviceId) async {
+    var total = 0;
+    for (final c in _packCredits) {
+      if (c['serviceId'] == serviceId && c['searcherId'] == _mockSearcherId) {
+        total += (c['remaining'] ?? 0) as int;
+      }
+    }
+    return total;
+  }
+
+  @override
+  Future<String?> redeemPackCredit({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    // No credit to redeem -> honest null (L-015).
+    if (await creditBalanceForService(serviceId) <= 0) return null;
+    // Book the seat (rides the same no-oversell claim rails).
+    final bookingId = await claimGroupSeat(
+      serviceId: serviceId,
+      slotDate: slotDate,
+      slotTime: slotTime,
+      athleteId: athleteId,
+      athleteFirstName: athleteFirstName,
+      athleteAgeBand: athleteAgeBand,
+    );
+    if (bookingId == null) return null; // slot full / failure
+    // Settle: decrement one credit from the first non-empty ledger (mirrors the
+    // server-side consume_credit; idempotent per booking because a booking is
+    // created once). Mark the seat paid/confirmed.
+    final ledger = _packCredits.firstWhere(
+      (c) =>
+          c['serviceId'] == serviceId &&
+          c['searcherId'] == _mockSearcherId &&
+          ((c['remaining'] ?? 0) as int) > 0,
+      orElse: () => const {},
+    );
+    if (ledger.isNotEmpty) {
+      ledger['remaining'] = ((ledger['remaining'] ?? 0) as int) - 1;
+      final seat = _serviceBookings.firstWhere(
+        (b) => b['id'] == bookingId,
+        orElse: () => const {},
+      );
+      if (seat.isNotEmpty) {
+        seat['paymentStatus'] = 'paid';
+        seat['status'] = 'confirmed';
+      }
+    }
+    return bookingId;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getWeeklyAvailability() async {
+    final list = List<Map<String, dynamic>>.from(_availability);
+    list.sort((a, b) {
+      final dc = ((a['dayOfWeek'] ?? 0) as int).compareTo((b['dayOfWeek'] ?? 0) as int);
+      if (dc != 0) return dc;
+      return (a['startTime'] ?? '').toString().compareTo((b['startTime'] ?? '').toString());
+    });
+    return list;
+  }
+
+  @override
+  Future<bool> setWeeklyAvailability(List<Map<String, dynamic>> blocks) async {
+    _availability.clear();
+    for (final b in blocks) {
+      if (b['dayOfWeek'] == null) continue;
+      _availability.add({
+        '_id': 'avail-${_availability.length}-${DateTime.now().microsecondsSinceEpoch}',
+        'dayOfWeek': b['dayOfWeek'],
+        'startTime': _normalizeHms(b['startTime']?.toString()),
+        'endTime': _normalizeHms(b['endTime']?.toString()),
+        'isBlocked': false,
+      });
+    }
+    return true;
+  }
+
+  // Accept "HH:mm" or "HH:mm:ss" and normalize to "HH:mm:ss" (Supabase TIME shape).
+  String? _normalizeHms(String? v) {
+    if (v == null) return null;
+    final parts = v.split(':');
+    if (parts.length == 2) return '$v:00';
+    return v;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getAvailabilitySettings() async => {
+        'bufferMinutes': _mockBufferMinutes,
+        'vacationUntil': _mockVacationUntil,
+      };
+
+  @override
+  Future<bool> setAvailabilitySettings(
+      {int? bufferMinutes, String? vacationUntil}) async {
+    if (bufferMinutes != null) _mockBufferMinutes = bufferMinutes;
+    _mockVacationUntil = vacationUntil;
+    return true;
+  }
+
+  @override
+  Future<List<String>> getAvailabilityExceptions() async =>
+      List<String>.from(_availabilityExceptions)..sort();
+
+  @override
+  Future<bool> addAvailabilityException(String date, {String? reason}) async {
+    if (!_availabilityExceptions.contains(date)) {
+      _availabilityExceptions.add(date);
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> removeAvailabilityException(String date) async {
+    _availabilityExceptions.remove(date);
+    return true;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyLocations() async {
+    final list = List<Map<String, dynamic>>.from(_locations);
+    list.sort((a, b) =>
+        (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString()));
+    return list;
+  }
+
+  @override
+  Future<String?> createLocation(Map<String, dynamic> location) async {
+    final id = 'loc-${DateTime.now().microsecondsSinceEpoch}';
+    _locations.add({
+      '_id': id,
+      'name': location['name'],
+      'addressLine1': location['addressLine1'],
+      'addressLine2': location['addressLine2'],
+      'city': location['city'],
+      'state': location['state'],
+      'zip': location['zip'],
+      'country': location['country'],
+      'lat': location['lat'],
+      'lng': location['lng'],
+      'active': true,
+    });
+    return id;
+  }
+
+  @override
+  Future<bool> updateLocation(String locationId, Map<String, dynamic> patch) async {
+    final i = _locations.indexWhere((l) => l['_id'] == locationId);
+    if (i == -1) return false;
+    for (final k in const [
+      'name',
+      'addressLine1',
+      'addressLine2',
+      'city',
+      'state',
+      'zip',
+      'country',
+      'lat',
+      'lng',
+      'active',
+    ]) {
+      if (patch.containsKey(k)) _locations[i][k] = patch[k];
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> deleteLocation(String locationId) async {
+    _locations.removeWhere((l) => l['_id'] == locationId);
+    // Un-pin any service that referenced it (mirror the DB SET NULL).
+    for (final s in _services) {
+      if (s['locationId'] == locationId) s['locationId'] = null;
+    }
+    return true;
+  }
+
+  // ── Coach OS: earnings (demo — derived from paid mock bookings) ─────────────
+  @override
+  Future<List<Map<String, dynamic>>> getProviderEarnings() async {
+    final out = <Map<String, dynamic>>[];
+    for (final b in MockData.bookings) {
+      final pay = (b['paymentStatus'] ?? '').toString();
+      if (pay != 'paid' && pay != 'partially_refunded') continue;
+      final prog = b['programId'];
+      final sess = b['sessionId'];
+      final ath = b['athleteId'];
+      final family =
+          (b['searcherId'] ?? (ath is Map ? ath['_id'] : null) ?? '').toString();
+      out.add({
+        'id': (b['_id'] ?? '').toString(),
+        'family': family,
+        'date': (sess is Map ? sess['startDate'] ?? sess['date'] : null) ?? b['createdAt'],
+        'createdAt': b['createdAt'],
+        'athlete': ath is Map ? (ath['firstName'] ?? '') : '',
+        'program': prog is Map ? (prog['title'] ?? '') : '',
+        'sport': prog is Map ? (prog['sport'] ?? '') : '',
+        'status': b['status'] ?? '',
+        'paymentStatus': pay,
+        'gross': b['finalPrice'] ?? 0,
+        'currency': b['currency'] ?? 'USD',
+      });
+    }
+    return out;
+  }
+
+  // ── Coach OS money page #1/#4: demo stubs (no real Stripe / bank rail) ───────
+  // MockRepository stays const (L-013), so demo invoice/contact state lives in
+  // process-shared static fields. No money moves; payouts are empty (honest —
+  // the demo has no connected Stripe account).
+  static final List<Map<String, dynamic>> _mockContacts = [];
+  static final List<Map<String, dynamic>> _mockInvoices = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getProviderPayouts() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getCoachContacts() async =>
+      List<Map<String, dynamic>>.from(_mockContacts);
+
+  @override
+  Future<String?> createCoachContact(Map<String, dynamic> contact) async {
+    final id = 'contact_${DateTime.now().millisecondsSinceEpoch}';
+    _mockContacts.insert(0, {'id': id, ...contact});
+    return id;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getCoachInvoices() async =>
+      List<Map<String, dynamic>>.from(_mockInvoices);
+
+  @override
+  Future<String?> createCoachInvoiceDraft(Map<String, dynamic> draft) async {
+    final id = 'inv_${DateTime.now().millisecondsSinceEpoch}';
+    // Mirror the server: sum the line items + derive the near-zero SaaS fee, so
+    // the demo shows the same numbers the DB trigger would pin.
+    final items = (draft['lineItems'] as List?) ?? const [];
+    var amount = 0;
+    for (final it in items) {
+      if (it is Map) {
+        final qty = (it['qty'] as num?)?.toInt() ?? 0;
+        final unit = (it['unit_amount_cents'] as num?)?.toInt() ?? 0;
+        amount += qty * unit;
+      }
+    }
+    final fee = (amount * 250 / 10000).round();
+    final contact = _mockContacts.firstWhere(
+      (c) => c['id'] == draft['contactId'],
+      orElse: () => const {'displayName': 'Family'},
+    );
+    _mockInvoices.insert(0, {
+      'id': id,
+      'contactId': draft['contactId'],
+      'contactName': contact['displayName'],
+      'description': draft['description'],
+      'lineItems': items,
+      'amountCents': amount,
+      'applicationFeeCents': fee,
+      'currency': draft['currency'] ?? 'USD',
+      'status': 'draft',
+      'dueDate': draft['dueDate'],
+    });
+    return id;
+  }
+
   // ── Session notes + parent updates (demo: echo back, no AI/network) ─────────
   @override
   Future<String?> createSessionNote(Map<String, dynamic> note) async =>
@@ -132,6 +793,35 @@ class MockRepository implements AppRepository {
     },
     'removed': const <String>[],
   };
+
+  @override
+  Future<Map<String, dynamic>> draftRecap(
+    Map<String, dynamic> payload,
+  ) async {
+    // Offline demo: a grounded recap built ONLY from the tapped facts (mirrors
+    // the draft-recap function's contract — nothing invented).
+    final name = (payload['childFirstName'] as String?)?.trim();
+    final skills = (payload['skills'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    final effort = payload['effort'] as int?;
+    final who = (name == null || name.isEmpty) ? 'Your athlete' : name;
+    final effortWord = switch (effort) {
+      1 => 'steady effort',
+      2 => 'solid effort',
+      3 => 'outstanding effort',
+      _ => null,
+    };
+    final skillPhrase =
+        skills.isEmpty ? 'the fundamentals' : skills.take(3).join(', ');
+    final recap = [
+      'Great session with $who today — we worked on $skillPhrase.',
+      if (effortWord != null) '$who showed $effortWord throughout.',
+    ].join(' ');
+    return {
+      'result': {'recap_text': recap},
+      'note': 'Draft only (mock).',
+    };
+  }
 
   // ── Lifecycle automated messaging (P4/P6) — in-memory demo ────────────────
   static final Map<String, String> _lifecyclePrefs = {};
@@ -657,6 +1347,66 @@ class MockRepository implements AppRepository {
   Future<void> saveProviderProfile(Map<String, dynamic> profile) async =>
       MockData.providerProfile = profile;
 
+  // ── Coach policies (AI front-office source of truth) ───────────────────────
+  // In-memory demo store (L-013: static so the const MockRepository() stays const;
+  // also keeps unit tests off GetStorage/MockData, matching every other mock
+  // store — waitlist, slots, etc.).
+  static final Map<String, dynamic> _coachPolicies = {};
+
+  @override
+  Future<Map<String, dynamic>> getCoachPolicies() async {
+    final p = _coachPolicies;
+    final faq = p['faq'];
+    return {
+      'cancellationPolicy': p['cancellationPolicy'],
+      'whatToBring': p['whatToBring'],
+      'travelRadius': p['travelRadius'],
+      'sessionNotes': p['sessionNotes'],
+      'faq': faq is List
+          ? faq
+              .whereType<Map>()
+              .map((e) => {
+                    'question': (e['question'] ?? '').toString(),
+                    'answer': (e['answer'] ?? '').toString(),
+                  })
+              .where((e) =>
+                  e['question']!.trim().isNotEmpty &&
+                  e['answer']!.trim().isNotEmpty)
+              .toList()
+          : const <Map<String, String>>[],
+    };
+  }
+
+  @override
+  Future<bool> saveCoachPolicies(Map<String, dynamic> policies) async {
+    String? nn(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    final faqIn = policies['faq'];
+    final cleanFaq = faqIn is List
+        ? faqIn
+            .whereType<Map>()
+            .map((e) => {
+                  'question': (e['question'] ?? '').toString().trim(),
+                  'answer': (e['answer'] ?? '').toString().trim(),
+                })
+            .where((e) =>
+                e['question']!.isNotEmpty && e['answer']!.isNotEmpty)
+            .toList()
+        : const <Map<String, String>>[];
+
+    _coachPolicies
+      ..['cancellationPolicy'] = nn(policies['cancellationPolicy'])
+      ..['whatToBring'] = nn(policies['whatToBring'])
+      ..['travelRadius'] = nn(policies['travelRadius'])
+      ..['sessionNotes'] = nn(policies['sessionNotes'])
+      ..['faq'] = cleanFaq;
+    return true;
+  }
+
   // ── Athletes ─────────────────────────────────────────────────────────────
   @override
   Future<List<dynamic>> getAthletes() => Future.value(MockData.athletes);
@@ -763,6 +1513,78 @@ class MockRepository implements AppRepository {
     String conversationId,
     void Function(Map<String, dynamic>) onMessage,
   ) async => () {}; // no realtime in the mock
+
+  // AI Front Office #9 — the coach-feedback corpus. L-013: MockRepository has
+  // a `const` constructor, so this MUST be `static final`, never an instance
+  // field. Mirrors `draft_feedback` (draftId/coachId/action/originalText/
+  // finalText/editedAt) for local demo/test parity.
+  static final List<Map<String, dynamic>> _draftFeedback = [];
+
+  /// Test-only read of the recorded feedback — mock parity check for #9
+  /// ("edit one draft -> the table holds both the original AI text and the
+  /// final edited text").
+  static List<Map<String, dynamic>> get draftFeedbackForTest =>
+      List.unmodifiable(_draftFeedback);
+
+  @override
+  Future<bool> resolveDraft({
+    required String draftId,
+    required String action,
+    String? finalText,
+  }) async {
+    if (action != 'sent_as_is' && action != 'edited' && action != 'discarded') {
+      return false;
+    }
+    // The mock has no single `messages` table — each conversation's thread is
+    // stored under its own key, so find the draft by scanning conversations
+    // (mirrors the RPC's `where id = p_draft_id` lookup).
+    for (final conv in MockData.conversations) {
+      if (conv is! Map) continue;
+      final convId = conv['_id']?.toString();
+      if (convId == null) continue;
+      final msgs = List<dynamic>.from(MockData.getMessages(convId));
+      final i = msgs.indexWhere(
+        (m) => m is Map && m['_id']?.toString() == draftId,
+      );
+      if (i == -1) continue;
+
+      final draft = Map<String, dynamic>.from(msgs[i] as Map);
+      if ((draft['status'] ?? '') != 'ai_draft') {
+        // Already resolved (double-tap / stale UI) — mirror the RPC's
+        // "not a pending draft" rejection rather than silently re-logging.
+        return false;
+      }
+
+      final originalText = (draft['text'] ?? '').toString();
+      String? finalBody;
+      if (action == 'discarded') {
+        draft['status'] = 'discarded';
+      } else {
+        finalBody = action == 'edited'
+            ? (finalText ?? '').trim()
+            : originalText;
+        if (finalBody.isEmpty) return false;
+        draft['status'] = 'sent';
+        draft['visibleToParent'] = true;
+        draft['text'] = finalBody;
+      }
+      msgs[i] = draft;
+      MockData.saveMessages(convId, msgs);
+
+      // #9 — recorded in the SAME call as the message mutation above, so it
+      // can never be skipped, mirroring the atomic `resolve_draft` RPC.
+      _draftFeedback.add({
+        'draftId': draftId,
+        'coachId': MockData.userProfile['_id'] ?? 'me',
+        'action': action,
+        'originalText': originalText,
+        'finalText': finalBody,
+        'editedAt': DateTime.now().toIso8601String(),
+      });
+      return true;
+    }
+    return false; // draft not found
+  }
 
   // ── Teams ────────────────────────────────────────────────────────────────
   @override
@@ -908,6 +1730,27 @@ class MockRepository implements AppRepository {
     'body': "Ball-handling improving (Coach D's notes)",
     'sessionsCounted': 8,
   };
+
+  @override
+  Future<List<Map<String, dynamic>>> getProgressDigestsForChild(
+    String athleteId,
+  ) async {
+    // Grounded over padded (L-010): the local fake backend seeds no digests, so
+    // the timeline renders from parent_updates alone offline. Returns [] rather
+    // than fabricating a child's development record.
+    final out = <Map<String, dynamic>>[];
+    for (final d in MockData.progressDigests) {
+      if (d is Map && d['athleteId']?.toString() == athleteId) {
+        out.add(Map<String, dynamic>.from(d));
+      }
+    }
+    out.sort(
+      (a, b) => (b['createdAt'] ?? '').toString().compareTo(
+        (a['createdAt'] ?? '').toString(),
+      ),
+    );
+    return out;
+  }
 
   /// Seeds up to 3 GROUNDED proposals for the Plan home so it renders end-to-end
   /// offline. Unlike the old blind `.take(3)`, this resolves the goal behind the

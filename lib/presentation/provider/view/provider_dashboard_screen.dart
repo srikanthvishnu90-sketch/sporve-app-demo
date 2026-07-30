@@ -333,6 +333,21 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 // Payouts (Stripe Connect) status / setup
                 _buildPayoutsCard(context, providerController),
 
+                // AI Front Office #10 — proactive post-session recap prompt: the
+                // most recent completed session with a child surfaces a one-tap
+                // "How did it go?" → the existing parent-update capture + rails.
+                Builder(
+                  builder: (_) {
+                    final done = providerController.sessions
+                        .where((s) =>
+                            s.isCompleted && s.childFirstName.trim().isNotEmpty)
+                        .toList()
+                      ..sort((a, b) => b.sessionDate.compareTo(a.sessionDate));
+                    if (done.isEmpty) return const SizedBox.shrink();
+                    return _buildRecapPromptCard(context, done.first);
+                  },
+                ),
+
                 // Summary Cards — computed from real bookings/listings.
                 Row(
                   children: [
@@ -672,6 +687,78 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
           ),
           const Icon(Icons.chevron_right, color: AppColors.textTertiary),
         ]),
+      ),
+    );
+  }
+
+  // AI Front Office #10 — the coach-home recap prompt. One tap into the existing
+  // parent-update capture (same args as the schedule's "Write parent update"),
+  // which drafts (draft-recap / summarize) and Sends through the existing rails.
+  Widget _buildRecapPromptCard(BuildContext context, ScheduledSession s) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GestureDetector(
+        onTap: () => Get.toNamed(
+          AppRoutes.parentUpdate,
+          arguments: {
+            'bookingId': s.id,
+            'childId': s.childId,
+            'childFirstName': s.childFirstName,
+            'sport': s.sport,
+          },
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            border: Border.all(color: AppColors.hairline),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.slateTint,
+                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                ),
+                child: const Icon(Icons.auto_awesome,
+                    color: AppColors.slateText, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'How did it go with ${s.childFirstName}?',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.font(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Three taps → a recap the parent will love.',
+                      style: AppTypography.font(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward,
+                  color: AppColors.slateText, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
