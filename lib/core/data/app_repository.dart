@@ -54,6 +54,37 @@ abstract class ProgramRepository {
   /// Remove a roster member (past bookings keep their history — fk SET NULL).
   Future<bool> deleteOrgMember(String id);
 
+  // ── Commission engine (#5): effective-dated rates + the two add-doors ───────
+  /// A trainer's effective-dated commission history (newest first). Reads
+  /// `commission_rates` (RLS: org admin or the trainer themself). Empty on any
+  /// failure or when only the legacy default applies.
+  Future<List<Map<String, dynamic>>> getCommissionRates(String memberId);
+
+  /// Append a NEW effective-dated commission rate for a trainer (never rewrites
+  /// past bookings — those keep their captured snapshot). Returns false on fail.
+  Future<bool> addCommissionRate(
+    String memberId, {
+    required String type, // 'percent' | 'flat'
+    required num value,
+  });
+
+  /// DOOR A lookup: find an EXISTING Sporve account by EXACT email/phone to
+  /// affiliate. Returns {profile_id, display_name} or null when no match (the UI
+  /// then offers Door B). Org-admin gated server-side.
+  Future<Map<String, dynamic>?> findAffiliatableAccount(String identifier);
+
+  /// DOOR A: send an affiliation invite to an existing account (creates a PENDING
+  /// roster link the person accepts). Returns the new member id, or null on fail.
+  Future<String?> affiliateExistingAccount(
+    String profileId, {
+    Map<String, dynamic>? trainerProfile,
+  });
+
+  /// DOOR B: invite a NEW person by email/phone into the standard funnel with the
+  /// org pre-attached (a coach_invites row, kind='trainer'). Returns the invite
+  /// token to share, or null on fail.
+  Future<String?> createTrainerInvite({String? email, String? phone});
+
   Future<List<dynamic>> getSessions();
   Future<void> saveSessions(List<dynamic> sessions);
 }
@@ -571,6 +602,22 @@ abstract class ServiceRepository {
     required List<Map<String, String>> transcript,
     required Map<String, dynamic> template,
   });
+
+  /// Provider Model Rebuild — item #6: ORG-LEVEL SERVICE staffing. Set whether a
+  /// service is org-`assignable` and REPLACE the set of rostered trainers who may
+  /// run it (`memberIds` = organization_members ids). Backed by services.assignable
+  /// + service_assignable_members (20260729_000610). Returns true on a confirmed
+  /// write, false on failure (L-015). Note: "any available trainer" (booking with
+  /// no trainer) is allowed ONLY for group/camp — never private (DB-enforced).
+  Future<bool> setServiceStaffing(
+    String serviceId, {
+    required bool assignable,
+    required List<String> memberIds,
+  });
+
+  /// Provider Model Rebuild — item #6: the organization_members ids currently
+  /// staffed on [serviceId]. Empty when none / on failure.
+  Future<List<String>> getServiceStaffing(String serviceId);
 }
 
 /// Provider Model Rebuild — Part 0 / item #1: the ONE weekly AVAILABILITY per
@@ -685,6 +732,173 @@ abstract class MultiBookingRepository {
     String? athleteFirstName,
     String? athleteAgeBand,
   });
+
+  /// Provider Model Rebuild — item #6: book ONE occurrence of an ORG service,
+  /// optionally pinning a specific trainer ([assignedMemberId]). The resource +
+  /// staffing invariants are DB-enforced (20260729_000600/000610) and mirrored in
+  /// the mock, so this returns NULL (honest failure, L-015) when:
+  ///   • the venue is already taken by a DIFFERENT service at this slot (double-book),
+  ///   • [assignedMemberId] is null on a PRIVATE assignable service ("any available"
+  ///     is group/camp only — never a 1-on-1),
+  ///   • [assignedMemberId] is a trainer not staffed on the service,
+  ///   • the slot is full.
+  /// Returns the new booking id on success. `slotDate` is `yyyy-MM-dd` (a calendar
+  /// day — never toLocal); `slotTime` is the canonical slot string ("HH:mm:ss").
+  Future<String?> bookAssignableService({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? assignedMemberId,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  });
+}
+
+/// Provider Model Rebuild — item #6: the ORG SCHEDULING grid. One scannable view
+/// of all trainers × venues × time across the org's services, with booked/capacity
+/// counts and a conflict flag. Backed by org_schedule_grid (20260729_000600),
+/// admin-gated. Folds into the provider schedule area — NO new nav tab.
+abstract class OrgSchedulingRepository {
+  /// Coach/org-admin: the occupied (venue × trainer × slot) rows over a date
+  /// window. Each map: `date` (yyyy-MM-dd — a calendar day, never toLocal),
+  /// `slotTime` ("HH:mm:ss"), `locationId`, `locationName`, `serviceId`,
+  /// `serviceTitle`, `assignedMemberId`, `trainerName`, `booked`, `capacity`,
+  /// `hasConflict`. Empty for a non-admin / on failure.
+  Future<List<Map<String, dynamic>>> orgScheduleGrid({
+    required String fromDate, // yyyy-MM-dd
+    required String toDate, // yyyy-MM-dd
+  });
+}
+
+/// Provider Model Rebuild — item #6: the SHARED ORG INBOX. Routes every org
+/// inquiry to the right trainer (by service/assignment) and attaches the draft the
+/// existing draft-reply pipeline already wrote — it does NOT generate drafts.
+/// Backed by org_inbox + route_conversation (20260729_000620), admin-gated.
+abstract class SharedInboxRepository {
+  /// Coach/org-admin: every org thread, routed, with its latest ai_draft. Each
+  /// map: `conversationId`, `parentFirstName` (L-005: first name only),
+  /// `serviceId`, `serviceTitle`, `assignedMemberId`, `trainerName`, `lastMessage`,
+  /// `lastMessageAt`, `hasPendingDraft`, `draftId`, `draftBody`, `draftIntent`,
+  /// `draftConfidence`. Empty for a non-admin / on failure.
+  Future<List<Map<String, dynamic>>> orgInbox();
+
+  /// Coach/org-admin: (re)route a thread to a service and/or a specific trainer.
+  /// Pass null to clear. Ownership is DB-validated. Returns true on success.
+  Future<bool> routeConversation({
+    required String conversationId,
+    String? serviceId,
+    String? memberId,
+  });
+}
+
+/// Provider Model Rebuild — item #7: CAMPS (a service type) + the ops layer.
+/// A camp is `service_type='camp'` on the SAME services table with a date range,
+/// daily hours, capacity, age band, and camp pricing (early-bird + deposit/balance).
+/// REGISTRATION rides the group-seat rails (capacity auto-close inherited). Backed by
+/// `20260729_000700_camps.sql` + `20260729_000701_camp_roster.sql`. No new nav tab.
+abstract class CampRepository {
+  /// Family-facing: the REAL, server-derived registration price for a camp as of a
+  /// date. Returns `{fullPriceCents, dueNowCents, balanceCents, isEarlyBird,
+  /// hasDeposit}` (all cents-exact), or NULL when the camp isn't visible / on
+  /// failure. The actual Stripe charge is design-only (docs/CAMP-CHARGE-DESIGN.md,
+  /// L-003) — this is display math. `asOf` is `yyyy-MM-dd`.
+  Future<Map<String, dynamic>?> campPriceDue({
+    required String serviceId,
+    required String asOf,
+  });
+
+  /// Family: register the caller's OWN athlete for a camp. Rides the group-seat
+  /// no-oversell claim, so a FULL camp returns NULL (honest failure, L-015). On the
+  /// real backend the emergency/medical PII is copied server-side from the owned
+  /// athlete; the optional hints below are only used by the demo/mock (mirrors the
+  /// `claimGroupSeat` athlete-hint pattern) and are IGNORED by the server. Returns
+  /// the registration booking id, or NULL when full / on failure. The seat is
+  /// created unpaid/pending — no money moves (L-003).
+  Future<String?> registerCampAthlete({
+    required String serviceId,
+    required String athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+    Map<String, dynamic>? emergencyContact,
+    String? medicalNotes,
+  });
+
+  /// STAFF-ONLY: the camp roster with emergency + allergy/medical fields, plus the
+  /// given day's check-in state. Each map: `rosterId, bookingId, athleteFirstName,
+  /// athleteAgeBand, emergencyContact, medicalNotes, checkedInAt`. On the real
+  /// backend a non-staff caller gets an EMPTY list (RLS/gate, L-005); [asStaff] is a
+  /// mock-only switch to exercise that gate in tests and is ignored by the server.
+  Future<List<Map<String, dynamic>>> campRoster({
+    required String serviceId,
+    required String day,
+    bool asStaff = true,
+  });
+
+  /// STAFF-ONLY: tap check-in for one roster entry on a day (one state per entry
+  /// per day; a re-tap refreshes it). Returns the check-in time, or NULL when the
+  /// caller isn't assigned staff / on failure (L-015).
+  Future<DateTime?> campCheckIn({
+    required String rosterId,
+    required String day,
+  });
+}
+
+/// Provider Model Rebuild #9 — TEAM BLOCKS. A team is a BUYER, not an account: a
+/// `team_block` is N sessions bought for a ROSTER of families, against a
+/// service_type='team_block' service. Two payment shapes — one payer, or a
+/// split-pay link per family. Redeeming a split share provisions that family as a
+/// COPPA-consented Sporve parent + child and generates their bookings ("one team
+/// deal onboards a dozen parents"). Money MOVEMENT is design-only (L-003): these
+/// methods author the STRUCTURE + share math, never a live charge. Backends:
+/// 20260729_000900_team_blocks.sql; share math: core/utils/team_split.dart.
+abstract class TeamBlockRepository {
+  /// Coach/org: create a team block against their own team_block service. Returns
+  /// the block id, or NULL on failure (L-015). No money moves — this is the buyer
+  /// construct + its session count / per-session price only.
+  Future<String?> createTeamBlock({
+    required String serviceId,
+    String? teamName,
+    required int sessionCount,
+    required int unitPriceCents,
+    required String paymentMode, // 'one_payer' | 'split_pay'
+    String? onePayerProfileId,
+  });
+
+  /// Coach: add a family to the block's ROSTER (email/phone/label — NO minor PII).
+  /// Returns the member id, or NULL on failure.
+  Future<String?> addTeamBlockMember({
+    required String teamBlockId,
+    String? invitedEmail,
+    String? invitedPhone,
+    String? memberLabel,
+  });
+
+  /// Coach (split_pay blocks): generate one payment link per roster family with a
+  /// penny-exact share (mirrors team_split.splitShares). Returns the number of links
+  /// created/refreshed, or NULL on failure. Turning a link into a real Stripe
+  /// payment link + capturing the charge is design-only behind a flag (L-003).
+  Future<int?> createSplitPayLinks({required String teamBlockId});
+
+  /// Family: redeem a split-pay link by TOKEN. Captures COPPA consent, provisions
+  /// the caller's athlete, marks the share paid, and generates the block's N session
+  /// bookings for the child (riding the existing bookings rail). Returns the count of
+  /// bookings generated, or NULL on failure (invalid/used token, missing consent).
+  /// No real charge (L-003) — bookings land unpaid; the link 'paid' is structure.
+  Future<int?> redeemSplitShare({
+    required String token,
+    required String athleteFirstName,
+    String? athleteDob, // yyyy-MM-dd
+    required String consentVersion,
+  });
+
+  /// Coach: the split-pay status view — one entry per roster family with its share,
+  /// paid/pending state, and onboarding state. Each map: `memberId, memberLabel,
+  /// invitedEmail, invitedPhone, shareAmountCents, platformFeeCents, linkStatus,
+  /// paidAt, memberStatus, athleteFirstName`. Empty to non-owners (owner gate).
+  Future<List<Map<String, dynamic>>> teamBlockSplitStatus({
+    required String teamBlockId,
+  });
 }
 
 abstract class AppRepository
@@ -692,6 +906,10 @@ abstract class AppRepository
         ProgramRepository,
         ServiceRepository,
         MultiBookingRepository,
+        CampRepository,
+        TeamBlockRepository,
+        OrgSchedulingRepository,
+        SharedInboxRepository,
         ProviderAvailabilityRepository,
         LocationRepository,
         RecurringSlotRepository,

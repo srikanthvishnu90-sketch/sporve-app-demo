@@ -367,6 +367,59 @@ class ProviderController with ChangeNotifier {
     return ok;
   }
 
+  // ── Commission engine (#5) ─────────────────────────────────────────────────
+  /// A trainer's effective-dated commission history (newest first). Read-only —
+  /// past rows are immutable, so this is safe to display beside a placed
+  /// booking's captured snapshot.
+  Future<List<Map<String, dynamic>>> commissionRates(String memberId) =>
+      _repo.getCommissionRates(memberId);
+
+  /// Append a NEW dated commission rate (effective now). Never rewrites past
+  /// bookings' snapshots. Also mirrors the value onto the roster tile so the
+  /// list reflects the current rate immediately.
+  Future<bool> setCommission(
+    String memberId, {
+    required String type,
+    required num value,
+  }) async {
+    final ok = await _repo.addCommissionRate(memberId, type: type, value: value);
+    if (ok) {
+      final i = _trainers.indexWhere((m) => m['id'] == memberId);
+      if (i >= 0) {
+        _trainers[i] = {
+          ..._trainers[i],
+          'commission_type': type,
+          'commission_value': value,
+        };
+        notifyListeners();
+      }
+    }
+    return ok;
+  }
+
+  /// DOOR A: look up an existing account to affiliate (null when none — the UI
+  /// then offers Door B).
+  Future<Map<String, dynamic>?> findAccountToAffiliate(String identifier) =>
+      _repo.findAffiliatableAccount(identifier);
+
+  /// DOOR A: send an affiliation invite to an existing account. On success the
+  /// pending member appears on the roster (accepts on their side).
+  Future<bool> affiliateExisting(
+    String profileId, {
+    Map<String, dynamic>? trainerProfile,
+  }) async {
+    final id = await _repo.affiliateExistingAccount(profileId,
+        trainerProfile: trainerProfile);
+    if (id == null) return false;
+    await loadTrainers();
+    return true;
+  }
+
+  /// DOOR B: invite a new person by email/phone into the funnel with the org
+  /// pre-attached. Returns the invite token to share, or null on fail.
+  Future<String?> inviteTrainerByContact({String? email, String? phone}) =>
+      _repo.createTrainerInvite(email: email, phone: phone);
+
   // Provider profile (incl. Stripe payouts status) — loaded from the data layer.
   Map<String, dynamic> _providerProfile = {};
   Map<String, dynamic> get providerProfile => _providerProfile;

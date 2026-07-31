@@ -10,6 +10,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../onboarding/controllers/onboarding_controller.dart';
 import '../widgets/create_listing_bottom_sheet.dart';
 import '../widgets/create_trainer_bottom_sheet.dart';
+import '../widgets/add_trainer_sheet.dart';
 import '../controllers/provider_controller.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
@@ -618,8 +619,8 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                   ],
                 const SizedBox(height: 8),
                 SporveButton(
-                  'Create new trainer',
-                  onPressed: () => _showCreateTrainer(context),
+                  'Add a trainer',
+                  onPressed: () => showAddTrainerChooser(context),
                   variant: SporveButtonVariant.secondary,
                   icon: Icons.person_add_alt_1,
                   onDark: true,
@@ -641,7 +642,35 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
     final val = (m['commission_value'] as num?)?.toDouble() ?? 0;
     final commission =
         type == 'percent' ? '${val.round()}% commission' : '\$${val.round()} / session';
-    final verified = (m['background_check_status'] ?? 'none') == 'verified';
+    final affiliation = (m['affiliation_status'] ?? 'active').toString();
+    final bg = (m['background_check_status'] ?? 'none').toString();
+    final active = (m['is_active'] ?? true) == true;
+    final profileDone = name.isNotEmpty && name != 'Trainer';
+    final verified = bg == 'verified';
+    final bookable = verified && active && affiliation == 'active';
+
+    // Package tracker: Accepted → Profile → Background check → Bookable. Honest —
+    // an org can never advance the background-check step (L-005): it is per-person.
+    final accepted = affiliation != 'pending' && affiliation != 'declined';
+    final steps = <_TrackStep>[
+      _TrackStep('Accepted', accepted),
+      _TrackStep('Profile', profileDone),
+      _TrackStep('Background check', verified),
+      _TrackStep('Bookable', bookable),
+    ];
+
+    final (pillLabel, pillColor) = affiliation == 'pending'
+        ? ('Invite sent', AppColors.warmAccent)
+        : affiliation == 'declined'
+            ? ('Declined', AppColors.negative)
+            : bookable
+                ? ('Bookable', AppColors.successGreen)
+                : verified
+                    ? ('Verified', AppColors.successGreen)
+                    : bg == 'pending'
+                        ? ('Check pending', AppColors.warmAccent)
+                        : ('Check needed', AppColors.warmAccent);
+
     return GestureDetector(
       onTap: () => _showCreateTrainer(context, member: m),
       child: Container(
@@ -651,41 +680,73 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
           borderRadius: BorderRadius.circular(AppRadii.tile),
           border: Border.all(color: AppColors.hairline),
         ),
-        child: Row(children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.surface2,
-            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: AppTypography.font(
-                    color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name,
+        child: Column(children: [
+          Row(children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: AppColors.surface2,
+              child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
                   style: AppTypography.font(
-                      fontSize: 15, fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Text(specialty.isEmpty ? commission : '$specialty · $commission',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: AppTypography.font(
-                      fontSize: 12, color: AppColors.textSecondary)),
-            ]),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: (verified ? AppColors.successGreen : AppColors.warmAccent)
-                  .withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(999),
+                      color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
             ),
-            child: Text(verified ? 'Verified' : 'Pending',
-                style: AppTypography.font(
-                    fontSize: 10, fontWeight: FontWeight.w800,
-                    color: verified ? AppColors.successGreen : AppColors.warmAccent)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(name,
+                    style: AppTypography.font(
+                        fontSize: 15, fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                const SizedBox(height: 2),
+                Text(specialty.isEmpty ? commission : '$specialty · $commission',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: AppTypography.font(
+                        fontSize: 12, color: AppColors.textSecondary)),
+              ]),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: pillColor.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(pillLabel,
+                  style: AppTypography.font(
+                      fontSize: 10, fontWeight: FontWeight.w800, color: pillColor)),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+          ]),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (var i = 0; i < steps.length; i++) ...[
+                Icon(
+                  steps[i].done
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  size: 13,
+                  color: steps[i].done
+                      ? AppColors.successGreen
+                      : AppColors.textTertiary,
+                ),
+                const SizedBox(width: 4),
+                Text(steps[i].label,
+                    style: AppTypography.font(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: steps[i].done
+                            ? AppColors.textSecondary
+                            : AppColors.textTertiary)),
+                if (i < steps.length - 1)
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      color: AppColors.hairline,
+                    ),
+                  ),
+              ],
+            ],
           ),
-          const Icon(Icons.chevron_right, color: AppColors.textTertiary),
         ]),
       ),
     );
@@ -1365,4 +1426,11 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
       ),
     );
   }
+}
+
+/// One step of the trainer package-tracker (Provider-Model-Rebuild #5).
+class _TrackStep {
+  final String label;
+  final bool done;
+  const _TrackStep(this.label, this.done);
 }

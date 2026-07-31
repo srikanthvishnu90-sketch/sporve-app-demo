@@ -397,6 +397,105 @@ class SupabaseRepository implements AppRepository {
     }
   }
 
+  // ── Commission engine (#5) ──────────────────────────────────────────────────
+  @override
+  Future<List<Map<String, dynamic>>> getCommissionRates(String memberId) async {
+    try {
+      final rows = await _db
+          .from('commission_rates')
+          .select()
+          .eq('organization_member_id', memberId)
+          .order('effective_from', ascending: false);
+      return (rows as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('getCommissionRates failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> addCommissionRate(
+    String memberId, {
+    required String type,
+    required num value,
+  }) async {
+    try {
+      // organization_id + created_by + effective_from are SERVER-derived by the
+      // guard trigger; we send only the member id + the rate.
+      await _db.from('commission_rates').insert({
+        'organization_member_id': memberId,
+        'commission_type': type,
+        'commission_value': value,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('addCommissionRate failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> findAffiliatableAccount(
+      String identifier) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      final rows = await _db.rpc('find_affiliatable_account', params: {
+        'p_provider': providerId,
+        'p_identifier': identifier,
+      });
+      final list = (rows as List?)?.cast<Map<String, dynamic>>() ?? const [];
+      return list.isEmpty ? null : list.first;
+    } catch (e) {
+      debugPrint('findAffiliatableAccount failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> affiliateExistingAccount(
+    String profileId, {
+    Map<String, dynamic>? trainerProfile,
+  }) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      final id = await _db.rpc('invite_existing_account', params: {
+        'p_provider': providerId,
+        'p_profile_id': profileId,
+        'p_trainer_profile': trainerProfile ?? const {},
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('affiliateExistingAccount failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> createTrainerInvite({String? email, String? phone}) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      // The guard trigger forces the token/status; invite_kind='trainer' pre-
+      // attaches this org. Return the server-generated token to share.
+      final inserted = await _db
+          .from('coach_invites')
+          .insert({
+            'provider_id': providerId,
+            'invited_email': email,
+            'invited_phone': phone,
+            'invite_kind': 'trainer',
+          })
+          .select('token')
+          .single();
+      return inserted['token']?.toString();
+    } catch (e) {
+      debugPrint('createTrainerInvite failed: $e');
+      return null;
+    }
+  }
+
   /// A new listing needs bookable sessions or the booking flow shows "no
   /// upcoming sessions". Seed a DAILY session for the next 90 days so a program
   /// effectively never runs out of bookable slots (the calendar stays full).
@@ -1012,6 +1111,7 @@ class SupabaseRepository implements AppRepository {
         'priceCents': row['price'], // services.price is integer CENTS
         'capacity': row['capacity'] ?? row['max_athletes'] ?? 1,
         'locationId': row['location_id'],
+        'assignable': row['assignable'] ?? false,
         'active': row['is_active'] ?? true,
         'createdAt': row['created_at'],
       };
@@ -1052,15 +1152,77 @@ class SupabaseRepository implements AppRepository {
       'capacity': service['capacity'] ?? 1,
       'max_athletes': service['capacity'] ?? 1,
       if (_isUuid(service['locationId'])) 'location_id': service['locationId'],
+      if (service['assignable'] != null) 'assignable': service['assignable'] == true,
       'is_active': service['active'] ?? true,
+      // Item #7 camp facets — the DB CHECK (services_camp_facets_only_on_camp)
+      // rejects these on a non-camp, so only send them for a camp service.
+      if (service['serviceType'] == 'camp') ...{
+        if (service['startsOn'] != null) 'starts_on': service['startsOn'],
+        if (service['endsOn'] != null) 'ends_on': service['endsOn'],
+        if (service['dailyStartTime'] != null) 'daily_start_time': service['dailyStartTime'],
+        if (service['dailyEndTime'] != null) 'daily_end_time': service['dailyEndTime'],
+        if (service['ageBand'] != null) 'age_band': service['ageBand'],
+        if (service['earlyBirdPriceCents'] != null) 'early_bird_price_cents': service['earlyBirdPriceCents'],
+        if (service['earlyBirdCutoff'] != null) 'early_bird_cutoff': service['earlyBirdCutoff'],
+        if (service['depositCents'] != null) 'deposit_cents': service['depositCents'],
+      },
     };
     try {
       final inserted =
           await _db.from('services').insert(payload).select('id').single();
-      return (inserted as Map)['id']?.toString();
+      final id = (inserted as Map)['id']?.toString();
+      // Item #6: org staffing — link the assignable trainers, if any.
+      final ids = (service['assignableMemberIds'] as List?)?.cast<String>();
+      if (id != null && service['assignable'] == true && ids != null && ids.isNotEmpty) {
+        await setServiceStaffing(id, assignable: true, memberIds: ids);
+      }
+      return id;
     } catch (e) {
       debugPrint('createService failed: $e');
       return null;
+    }
+  }
+
+  @override
+  Future<bool> setServiceStaffing(
+    String serviceId, {
+    required bool assignable,
+    required List<String> memberIds,
+  }) async {
+    if (!_isUuid(serviceId)) return false;
+    try {
+      await _db.from('services').update({'assignable': assignable}).eq('id', serviceId);
+      // Replace the staffing set: clear then insert the current members.
+      await _db.from('service_assignable_members').delete().eq('service_id', serviceId);
+      final rows = memberIds
+          .where(_isUuid)
+          .map((m) => {'service_id': serviceId, 'organization_member_id': m})
+          .toList();
+      if (rows.isNotEmpty) {
+        await _db.from('service_assignable_members').insert(rows);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('setServiceStaffing failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> getServiceStaffing(String serviceId) async {
+    if (!_isUuid(serviceId)) return [];
+    try {
+      final rows = await _db
+          .from('service_assignable_members')
+          .select('organization_member_id')
+          .eq('service_id', serviceId);
+      return (rows as List)
+          .map((r) => (r as Map)['organization_member_id']?.toString())
+          .whereType<String>()
+          .toList();
+    } catch (e) {
+      debugPrint('getServiceStaffing failed: $e');
+      return [];
     }
   }
 
@@ -1101,6 +1263,7 @@ class SupabaseRepository implements AppRepository {
     if (patch.containsKey('locationId')) {
       upd['location_id'] = _isUuid(patch['locationId']) ? patch['locationId'] : null;
     }
+    if (patch.containsKey('assignable')) upd['assignable'] = patch['assignable'] == true;
     if (patch.containsKey('active')) upd['is_active'] = patch['active'];
     if (upd.isEmpty) return true;
     try {
@@ -1332,6 +1495,363 @@ class SupabaseRepository implements AppRepository {
       athleteFirstName: athleteFirstName,
       athleteAgeBand: athleteAgeBand,
     );
+  }
+
+  // ── Provider Model Rebuild #7: CAMPS (a service type) + the ops layer ────────
+  // All money-neutral (L-003): a registration is created unpaid/pending; the
+  // deposit/balance Stripe charge is deferred (docs/CAMP-CHARGE-DESIGN.md).
+  @override
+  Future<Map<String, dynamic>?> campPriceDue({
+    required String serviceId,
+    required String asOf,
+  }) async {
+    if (!_isUuid(serviceId)) return null;
+    try {
+      // camp_price_due returns a set (0 or 1 row); Supabase gives a List.
+      final rows = await _db.rpc('camp_price_due', params: {
+        'p_service': serviceId,
+        'p_as_of': asOf,
+      });
+      final row = (rows is List && rows.isNotEmpty) ? rows.first as Map : null;
+      if (row == null) return null; // not visible (unverified / not a camp)
+      return <String, dynamic>{
+        'fullPriceCents': row['full_price_cents'],
+        'dueNowCents': row['due_now_cents'],
+        'balanceCents': row['balance_cents'],
+        'isEarlyBird': row['is_early_bird'] == true,
+        'hasDeposit': row['has_deposit'] == true,
+      };
+    } catch (e) {
+      debugPrint('campPriceDue failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> registerCampAthlete({
+    required String serviceId,
+    required String athleteId,
+    // Server derives the roster PII from the owned athlete — these mock-only hints
+    // are ignored on the real backend (see the interface doc).
+    String? athleteFirstName,
+    String? athleteAgeBand,
+    Map<String, dynamic>? emergencyContact,
+    String? medicalNotes,
+  }) async {
+    if (!_isUuid(serviceId) || !_isUuid(athleteId)) return null;
+    try {
+      // Atomic no-oversell lives in claim_group_seat (wrapped by
+      // register_camp_athlete); a FULL camp RAISES -> we surface null (L-015).
+      final id = await _db.rpc('register_camp_athlete', params: {
+        'p_service': serviceId,
+        'p_athlete': athleteId,
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('registerCampAthlete failed (full/blocked): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> campRoster({
+    required String serviceId,
+    required String day,
+    bool asStaff = true, // server enforces staff-only; hint ignored here
+  }) async {
+    if (!_isUuid(serviceId)) return [];
+    try {
+      // A non-staff caller gets 0 rows from the DB (RLS + internal gate, L-005).
+      final rows = await _db.rpc('camp_roster_view', params: {
+        'p_service': serviceId,
+        'p_day': day,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'rosterId': m['roster_id'],
+          'bookingId': m['booking_id'],
+          'athleteFirstName': m['athlete_first_name'],
+          'athleteAgeBand': m['athlete_age_band'],
+          'emergencyContact': m['emergency_contact'],
+          'medicalNotes': m['medical_notes'],
+          'checkedInAt': m['checked_in_at'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('campRoster failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<DateTime?> campCheckIn({
+    required String rosterId,
+    required String day,
+  }) async {
+    if (!_isUuid(rosterId)) return null;
+    try {
+      final at = await _db.rpc('camp_check_in', params: {
+        'p_roster': rosterId,
+        'p_day': day,
+      });
+      if (at == null) return null;
+      return DateTime.tryParse(at.toString());
+    } catch (e) {
+      debugPrint('campCheckIn failed (not staff / blocked): $e');
+      return null;
+    }
+  }
+
+  // ── Provider Model Rebuild #9: TEAM BLOCKS (buyer construct, split-pay) ───────
+  // Money is structure-only (L-003): no stripe_* fields, no charge. Redeem
+  // provisions a consented parent/child + bookings on the existing rail.
+  @override
+  Future<String?> createTeamBlock({
+    required String serviceId,
+    String? teamName,
+    required int sessionCount,
+    required int unitPriceCents,
+    required String paymentMode,
+    String? onePayerProfileId,
+  }) async {
+    if (!_isUuid(serviceId)) return null;
+    if (sessionCount <= 0 || unitPriceCents < 0) return null;
+    try {
+      // created_by is pinned to the caller by enforce_team_block_service; RLS
+      // requires created_by = auth.uid(); the trigger validates service ownership.
+      final row = await _db.from('team_blocks').insert({
+        'service_id': serviceId,
+        'team_name': teamName,
+        'session_count': sessionCount,
+        'unit_price_cents': unitPriceCents,
+        'payment_mode': paymentMode,
+        if (onePayerProfileId != null && _isUuid(onePayerProfileId))
+          'one_payer_profile_id': onePayerProfileId,
+      }).select('id').single();
+      return row['id']?.toString();
+    } catch (e) {
+      debugPrint('createTeamBlock failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> addTeamBlockMember({
+    required String teamBlockId,
+    String? invitedEmail,
+    String? invitedPhone,
+    String? memberLabel,
+  }) async {
+    if (!_isUuid(teamBlockId)) return null;
+    try {
+      final row = await _db.from('team_block_members').insert({
+        'team_block_id': teamBlockId,
+        'invited_email': invitedEmail,
+        'invited_phone': invitedPhone,
+        'member_label': memberLabel,
+      }).select('id').single();
+      return row['id']?.toString();
+    } catch (e) {
+      debugPrint('addTeamBlockMember failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> createSplitPayLinks({required String teamBlockId}) async {
+    if (!_isUuid(teamBlockId)) return null;
+    try {
+      final n = await _db.rpc('create_split_pay_links', params: {
+        'p_block': teamBlockId,
+      });
+      return (n as num?)?.toInt();
+    } catch (e) {
+      debugPrint('createSplitPayLinks failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> redeemSplitShare({
+    required String token,
+    required String athleteFirstName,
+    String? athleteDob,
+    required String consentVersion,
+  }) async {
+    if (token.isEmpty || consentVersion.trim().isEmpty) return null;
+    try {
+      // Server captures consent + provisions the child + generates the N bookings;
+      // a missing-consent / used-token redeem RAISES -> null (honest failure, L-015).
+      final n = await _db.rpc('redeem_split_share', params: {
+        'p_token': token,
+        'p_athlete_first': athleteFirstName,
+        'p_athlete_dob': athleteDob,
+        'p_consent_version': consentVersion,
+      });
+      return (n as num?)?.toInt();
+    } catch (e) {
+      debugPrint('redeemSplitShare failed (used/invalid/no consent): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> teamBlockSplitStatus({
+    required String teamBlockId,
+  }) async {
+    if (!_isUuid(teamBlockId)) return [];
+    try {
+      final rows = await _db.rpc('team_block_split_status', params: {
+        'p_block': teamBlockId,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'memberId': m['member_id'],
+          'memberLabel': m['member_label'],
+          'invitedEmail': m['invited_email'],
+          'invitedPhone': m['invited_phone'],
+          'shareAmountCents': m['share_amount_cents'],
+          'platformFeeCents': m['platform_fee_cents'],
+          'linkStatus': m['link_status'],
+          'paidAt': m['paid_at'],
+          'memberStatus': m['member_status'],
+          'athleteFirstName': m['athlete_first_name'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('teamBlockSplitStatus failed: $e');
+      return [];
+    }
+  }
+
+  // ── Provider Model Rebuild #6: org booking, scheduling grid, shared inbox ────
+  @override
+  Future<String?> bookAssignableService({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? assignedMemberId,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null || !_isUuid(serviceId)) return null;
+    // Direct bookings insert: every BEFORE trigger governs — the venue-conflict
+    // guard (20260729_000600), the any-available / staffing rule (20260729_000610),
+    // the verify gate + member-org guard. A rejected write RAISES -> we surface
+    // null (L-015): a double-book / bad assignment is an honest failure, not a win.
+    final payload = <String, dynamic>{
+      'searcher_id': uid,
+      'service_id': serviceId,
+      'slot_date': slotDate,
+      'slot_time': slotTime,
+      if (_isUuid(assignedMemberId)) 'assigned_member_id': assignedMemberId,
+      if (_isUuid(athleteId)) 'athlete_id': athleteId,
+      'athlete_first_name': ?athleteFirstName,
+      'athlete_age_band': ?athleteAgeBand,
+      'status': 'pending',
+      'payment_status': 'unpaid',
+    };
+    try {
+      final inserted =
+          await _db.from('bookings').insert(payload).select('id').single();
+      return (inserted as Map)['id']?.toString();
+    } catch (e) {
+      debugPrint('bookAssignableService failed (conflict/assignment/full): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> orgScheduleGrid({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db.rpc('org_schedule_grid', params: {
+        'p_org': providerId,
+        'p_from': fromDate,
+        'p_to': toDate,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'date': m['slot_date'].toString(),
+          'slotTime': m['slot_time']?.toString(),
+          'locationId': m['location_id'],
+          'locationName': m['location_name'],
+          'serviceId': m['service_id'],
+          'serviceTitle': m['service_title'],
+          'assignedMemberId': m['assigned_member_id'],
+          'trainerName': m['trainer_name'],
+          'booked': m['booked'],
+          'capacity': m['capacity'],
+          'hasConflict': m['has_conflict'] ?? false,
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('orgScheduleGrid failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> orgInbox() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db.rpc('org_inbox', params: {'p_org': providerId});
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'conversationId': m['conversation_id'],
+          'parentFirstName': m['parent_first_name'],
+          'serviceId': m['service_id'],
+          'serviceTitle': m['service_title'],
+          'assignedMemberId': m['assigned_member_id'],
+          'trainerName': m['trainer_name'],
+          'lastMessage': m['last_message'],
+          'lastMessageAt': m['last_message_at'],
+          'hasPendingDraft': m['has_pending_draft'] ?? false,
+          'draftId': m['draft_id'],
+          'draftBody': m['draft_body'],
+          'draftIntent': m['draft_intent'],
+          'draftConfidence': m['draft_confidence'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('orgInbox failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> routeConversation({
+    required String conversationId,
+    String? serviceId,
+    String? memberId,
+  }) async {
+    if (!_isUuid(conversationId)) return false;
+    try {
+      await _db.rpc('route_conversation', params: {
+        'p_conversation': conversationId,
+        'p_service': _isUuid(serviceId) ? serviceId : null,
+        'p_member': _isUuid(memberId) ? memberId : null,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('routeConversation failed: $e');
+      return false;
+    }
   }
 
   // ── Weekly availability (ONE grid per provider) + settings + exceptions ─────

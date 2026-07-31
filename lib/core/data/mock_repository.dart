@@ -2,6 +2,8 @@ import '../mock/mock_data.dart';
 import '../models/query_intent.dart';
 import '../models/query_intent_parser.dart';
 import '../matching/provider_matcher.dart';
+import '../utils/platform_fee.dart';
+import '../utils/team_split.dart';
 import 'policies.dart';
 import 'app_repository.dart';
 
@@ -80,6 +82,76 @@ class MockRepository implements AppRepository {
     _orgMembers.removeWhere((m) => m['id'] == id);
     return true;
   }
+
+  // ── Commission engine (#5) — process-shared demo state (L-013: static) ──────
+  static final List<Map<String, dynamic>> _commissionRates = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getCommissionRates(String memberId) async {
+    final rows = _commissionRates
+        .where((r) => r['organization_member_id'] == memberId)
+        .map((r) => Map<String, dynamic>.from(r))
+        .toList()
+      ..sort((a, b) => (b['effective_from'] ?? '')
+          .toString()
+          .compareTo((a['effective_from'] ?? '').toString()));
+    return rows;
+  }
+
+  @override
+  Future<bool> addCommissionRate(
+    String memberId, {
+    required String type,
+    required num value,
+  }) async {
+    _commissionRates.insert(0, {
+      'id': 'cr_${DateTime.now().microsecondsSinceEpoch}',
+      'organization_member_id': memberId,
+      'commission_type': type,
+      'commission_value': value,
+      'effective_from': DateTime.now().toUtc().toIso8601String(),
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    // Mirror the legacy default onto the member so the roster tile stays in sync.
+    final i = _orgMembers.indexWhere((m) => m['id'] == memberId);
+    if (i >= 0) {
+      _orgMembers[i] = {
+        ..._orgMembers[i],
+        'commission_type': type,
+        'commission_value': value,
+      };
+    }
+    return true;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> findAffiliatableAccount(
+      String identifier) async {
+    // Offline demo: no user directory to search — always "no match" so the UI
+    // falls through to Door B (invite by email).
+    return null;
+  }
+
+  @override
+  Future<String?> affiliateExistingAccount(
+    String profileId, {
+    Map<String, dynamic>? trainerProfile,
+  }) async {
+    final id = 'mem_${DateTime.now().millisecondsSinceEpoch}';
+    _orgMembers.insert(0, {
+      'id': id,
+      'member_user_id': profileId,
+      'trainer_profile': trainerProfile ?? const {},
+      'role': 'trainer',
+      'affiliation_status': 'pending',
+      'background_check_status': 'none',
+    });
+    return id;
+  }
+
+  @override
+  Future<String?> createTrainerInvite({String? email, String? phone}) async =>
+      'demo_${DateTime.now().millisecondsSinceEpoch}';
 
   @override
   Future<List<dynamic>> getSessions() => Future.value(MockData.sessions);
@@ -263,11 +335,48 @@ class MockRepository implements AppRepository {
       'priceCents': service['priceCents'] ?? 0,
       'capacity': service['capacity'] ?? 1,
       'locationId': service['locationId'],
+      'assignable': service['assignable'] ?? false,
       'active': service['active'] ?? true,
+      // Item #7 camp facets (only meaningful when serviceType == 'camp').
+      'startsOn': service['startsOn'],
+      'endsOn': service['endsOn'],
+      'dailyStartTime': service['dailyStartTime'],
+      'dailyEndTime': service['dailyEndTime'],
+      'ageBand': service['ageBand'],
+      'earlyBirdPriceCents': service['earlyBirdPriceCents'],
+      'earlyBirdCutoff': service['earlyBirdCutoff'],
+      'depositCents': service['depositCents'],
       'createdAt': DateTime.now().toIso8601String(),
     });
+    // Item #6: org staffing — which trainers may run this service.
+    final ids = (service['assignableMemberIds'] as List?)?.cast<String>();
+    if (ids != null && ids.isNotEmpty) _serviceStaffing[id] = List<String>.from(ids);
     return id;
   }
+
+  // Item #6: service_assignable_members mirror (serviceId -> [organization_member id]).
+  static final Map<String, List<String>> _serviceStaffing = {};
+
+  @override
+  Future<bool> setServiceStaffing(
+    String serviceId, {
+    required bool assignable,
+    required List<String> memberIds,
+  }) async {
+    final i = _services.indexWhere((s) => s['_id'] == serviceId);
+    if (i == -1) return false;
+    _services[i]['assignable'] = assignable;
+    if (assignable) {
+      _serviceStaffing[serviceId] = List<String>.from(memberIds);
+    } else {
+      _serviceStaffing.remove(serviceId);
+    }
+    return true;
+  }
+
+  @override
+  Future<List<String>> getServiceStaffing(String serviceId) async =>
+      List<String>.from(_serviceStaffing[serviceId] ?? const []);
 
   @override
   Future<bool> updateService(String serviceId, Map<String, dynamic> patch) async {
@@ -281,6 +390,7 @@ class MockRepository implements AppRepository {
       'priceCents',
       'capacity',
       'locationId',
+      'assignable',
       'active',
     ]) {
       if (patch.containsKey(k)) _services[i][k] = patch[k];
@@ -399,14 +509,50 @@ class MockRepository implements AppRepository {
   // pack ledger: {serviceId, searcherId, remaining}
   static final List<Map<String, dynamic>> _packCredits = [];
 
+  Map<String, dynamic> _serviceOf(String serviceId) => _services.firstWhere(
+        (s) => s['_id'] == serviceId,
+        orElse: () => const {},
+      );
+
   int _serviceCapacity(String serviceId) {
-    final svc = _services.firstWhere(
-      (s) => s['_id'] == serviceId,
-      orElse: () => const {},
-    );
+    final svc = _serviceOf(serviceId);
     if (svc.isEmpty) return 0;
     final cap = (svc['capacity'] ?? 1) as int;
     return cap < 1 ? 1 : cap;
+  }
+
+  // Item #6 resource layer (mirrors enforce_booking_venue_conflict, 20260729_000600):
+  // a DIFFERENT service already occupying the same (venue, date, time) is a
+  // double-book. Same service_id (group seats sharing one slot) is NOT a conflict.
+  bool _venueTaken(String serviceId, String? locationId, String slotDate, String slotTime) {
+    if (locationId == null) return false; // no venue -> nothing to conflict on
+    return _serviceBookings.any((b) =>
+        b['locationId'] == locationId &&
+        b['slotDate'] == slotDate &&
+        (b['slotTime'] ?? '') == slotTime &&
+        b['serviceId'] != serviceId &&
+        (b['status'] == 'pending' || b['status'] == 'confirmed'));
+  }
+
+  // Item #6 staffing rule (mirrors enforce_service_assignment, 20260729_000610):
+  // returns null when the (serviceId, assignedMemberId) pair is ALLOWED, else an
+  // honest failure reason string. Only ASSIGNABLE (org) services carry the rule.
+  String? _assignmentReject(String serviceId, String? assignedMemberId) {
+    final svc = _serviceOf(serviceId);
+    if (svc['assignable'] != true) return null; // solo service — no staffing rule
+    final type = (svc['serviceType'] ?? 'private').toString();
+    if (assignedMemberId == null) {
+      // "any available trainer" — group/camp ONLY, never a private 1-on-1.
+      if (type != 'group' && type != 'camp') {
+        return 'any-available not allowed for a private service';
+      }
+      return null;
+    }
+    final staffed = _serviceStaffing[serviceId] ?? const [];
+    if (!staffed.contains(assignedMemberId)) {
+      return 'trainer not staffed on this service';
+    }
+    return null;
   }
 
   @override
@@ -418,8 +564,62 @@ class MockRepository implements AppRepository {
     String? athleteFirstName,
     String? athleteAgeBand,
   }) async {
+    // Group seats never pin a trainer (any-available). Route through the shared
+    // booking path so the venue + any-available + capacity rules all apply.
+    return _bookServiceOccurrence(
+      serviceId: serviceId,
+      slotDate: slotDate,
+      slotTime: slotTime,
+      assignedMemberId: null,
+      athleteId: athleteId,
+      athleteFirstName: athleteFirstName,
+      athleteAgeBand: athleteAgeBand,
+      idPrefix: 'gseat',
+    );
+  }
+
+  @override
+  Future<String?> bookAssignableService({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? assignedMemberId,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    return _bookServiceOccurrence(
+      serviceId: serviceId,
+      slotDate: slotDate,
+      slotTime: slotTime,
+      assignedMemberId: assignedMemberId,
+      athleteId: athleteId,
+      athleteFirstName: athleteFirstName,
+      athleteAgeBand: athleteAgeBand,
+      idPrefix: 'svcbk',
+    );
+  }
+
+  // The one mock booking path for a SERVICE occurrence — mirrors the DB triggers'
+  // order: staffing/any-available rule, then venue conflict, then capacity, with
+  // the venue DERIVED from the service (as enforce_booking_venue_conflict does).
+  Future<String?> _bookServiceOccurrence({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    required String? assignedMemberId,
+    required String? athleteId,
+    required String? athleteFirstName,
+    required String? athleteAgeBand,
+    required String idPrefix,
+  }) async {
     final capacity = _serviceCapacity(serviceId);
     if (capacity == 0) return null; // no such service
+
+    // Staffing / any-available rule (private assignable requires a named trainer).
+    if (_assignmentReject(serviceId, assignedMemberId) != null) return null;
+
+    final locationId = _serviceOf(serviceId)['locationId'] as String?;
 
     bool sameSlot(Map<String, dynamic> b) =>
         b['serviceId'] == serviceId &&
@@ -437,16 +637,21 @@ class MockRepository implements AppRepository {
     );
     if (existing.isNotEmpty) return existing['id']?.toString();
 
+    // Venue double-book: a DIFFERENT service on the same court+time is rejected.
+    if (_venueTaken(serviceId, locationId, slotDate, slotTime)) return null;
+
     // No-oversell: reject the N+1th claim.
     final taken = _serviceBookings.where(sameSlot).length;
     if (taken >= capacity) return null; // slot FULL — honest failure (L-015)
 
-    final id = 'gseat-${DateTime.now().microsecondsSinceEpoch}';
+    final id = '$idPrefix-${DateTime.now().microsecondsSinceEpoch}';
     _serviceBookings.add({
       'id': id,
       'serviceId': serviceId,
       'slotDate': slotDate,
       'slotTime': slotTime,
+      'locationId': locationId, // derived venue occupancy
+      'assignedMemberId': assignedMemberId,
       'searcherId': _mockSearcherId,
       'athleteId': athleteId,
       'athleteFirstName': athleteFirstName,
@@ -558,6 +763,495 @@ class MockRepository implements AppRepository {
       }
     }
     return bookingId;
+  }
+
+  // ── Provider Model Rebuild #7: CAMPS (a service type) + the ops layer ────────
+  // static so const MockRepository() stays const (L-013). Mirrors the SQL:
+  //   camp_roster (staff-only PII), camp_checkins (per entry per day). Registration
+  //   rides the group-seat rails, so capacity auto-close is inherited from
+  //   _bookServiceOccurrence — not re-implemented here.
+  // {rosterId, serviceId, bookingId, athleteId, athleteFirstName, athleteAgeBand,
+  //  emergencyContact, medicalNotes}
+  static final List<Map<String, dynamic>> _campRoster = [];
+  // {rosterId, day, checkedInAt}
+  static final List<Map<String, dynamic>> _campCheckins = [];
+
+  @override
+  Future<Map<String, dynamic>?> campPriceDue({
+    required String serviceId,
+    required String asOf,
+  }) async {
+    final svc = _serviceOf(serviceId);
+    if (svc.isEmpty || (svc['serviceType'] ?? 'private') != 'camp') return null;
+    final full = (svc['priceCents'] ?? 0) as int;
+    final ebPrice = svc['earlyBirdPriceCents'] as int?;
+    final ebCutoff = svc['earlyBirdCutoff'] as String?;
+    final deposit = svc['depositCents'] as int?;
+    // early-bird applies when set AND asOf <= cutoff (date compare, no toLocal).
+    final isEarlyBird = ebPrice != null &&
+        ebCutoff != null &&
+        !DateTime.parse(asOf).isAfter(DateTime.parse(ebCutoff));
+    final effectiveFull = isEarlyBird ? ebPrice : full;
+    final dueNow = deposit ?? effectiveFull;
+    final balance = (effectiveFull - dueNow) < 0 ? 0 : (effectiveFull - dueNow);
+    return <String, dynamic>{
+      'fullPriceCents': effectiveFull,
+      'dueNowCents': dueNow,
+      'balanceCents': balance,
+      'isEarlyBird': isEarlyBird,
+      'hasDeposit': deposit != null,
+    };
+  }
+
+  @override
+  Future<String?> registerCampAthlete({
+    required String serviceId,
+    required String athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+    Map<String, dynamic>? emergencyContact,
+    String? medicalNotes,
+  }) async {
+    final svc = _serviceOf(serviceId);
+    if (svc.isEmpty || (svc['serviceType'] ?? 'private') != 'camp') return null;
+    final startsOn = svc['startsOn'] as String?;
+    if (startsOn == null) return null; // a camp needs a start date to register
+    // Ride the group-seat rails at the canonical camp-slot identity
+    // (service, starts_on, '') — capacity auto-close is INHERITED (L-020).
+    final bookingId = await claimGroupSeat(
+      serviceId: serviceId,
+      slotDate: startsOn,
+      slotTime: '',
+      athleteId: athleteId,
+      athleteFirstName: athleteFirstName,
+      athleteAgeBand: athleteAgeBand,
+    );
+    if (bookingId == null) return null; // camp FULL — honest failure (L-015)
+    // Upsert the staff roster row (idempotent on bookingId — no duplicate on re-tap).
+    final existing = _campRoster.firstWhere(
+      (r) => r['bookingId'] == bookingId,
+      orElse: () => const {},
+    );
+    if (existing.isNotEmpty) {
+      existing['emergencyContact'] = emergencyContact;
+      existing['medicalNotes'] = medicalNotes;
+      return bookingId;
+    }
+    _campRoster.add({
+      'rosterId': 'croster-${DateTime.now().microsecondsSinceEpoch}',
+      'serviceId': serviceId,
+      'bookingId': bookingId,
+      'athleteId': athleteId,
+      'athleteFirstName': athleteFirstName,
+      'athleteAgeBand': athleteAgeBand,
+      'emergencyContact': emergencyContact,
+      'medicalNotes': medicalNotes,
+    });
+    return bookingId;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> campRoster({
+    required String serviceId,
+    required String day,
+    bool asStaff = true,
+  }) async {
+    // Staff-ONLY (L-005): a non-staff caller sees NOTHING, exactly as the DB RLS
+    // returns 0 rows to a parent/other-org (the real backend enforces this; the
+    // asStaff switch exercises that gate in the demo/tests).
+    if (!asStaff) return const [];
+    return _campRoster.where((r) => r['serviceId'] == serviceId).map((r) {
+      final checkin = _campCheckins.firstWhere(
+        (c) => c['rosterId'] == r['rosterId'] && c['day'] == day,
+        orElse: () => const {},
+      );
+      return <String, dynamic>{
+        'rosterId': r['rosterId'],
+        'bookingId': r['bookingId'],
+        'athleteFirstName': r['athleteFirstName'],
+        'athleteAgeBand': r['athleteAgeBand'],
+        'emergencyContact': r['emergencyContact'],
+        'medicalNotes': r['medicalNotes'],
+        'checkedInAt': checkin.isEmpty ? null : checkin['checkedInAt'],
+      };
+    }).toList();
+  }
+
+  @override
+  Future<DateTime?> campCheckIn({
+    required String rosterId,
+    required String day,
+  }) async {
+    final row = _campRoster.firstWhere(
+      (r) => r['rosterId'] == rosterId,
+      orElse: () => const {},
+    );
+    if (row.isEmpty) return null; // no such roster entry
+    final now = DateTime.now();
+    final existing = _campCheckins.firstWhere(
+      (c) => c['rosterId'] == rosterId && c['day'] == day,
+      orElse: () => const {},
+    );
+    if (existing.isNotEmpty) {
+      existing['checkedInAt'] = now; // re-tap refreshes
+    } else {
+      _campCheckins.add({'rosterId': rosterId, 'day': day, 'checkedInAt': now});
+    }
+    return now;
+  }
+
+  // ── Provider Model Rebuild #9: TEAM BLOCKS (buyer construct, split-pay) ───────
+  // Static demo stores (L-013: const constructor -> no instance fields). Money is
+  // structure-only here (L-003): redeem provisions a consented parent/child +
+  // bookings; no charge is wired (bookings land unpaid).
+  static final List<Map<String, dynamic>> _teamBlocks = [];
+  static final List<Map<String, dynamic>> _teamBlockMembers = [];
+  static final List<Map<String, dynamic>> _splitPayLinks = [];
+  static final List<Map<String, dynamic>> _teamBlockAthletes = []; // provisioned kids
+
+  /// Test-only view of the provisioned (COPPA-consented) athletes.
+  static List<Map<String, dynamic>> get teamBlockAthletesForTest =>
+      List.unmodifiable(_teamBlockAthletes);
+
+  /// Test-only view of the split-pay links (a family redeems by their link token;
+  /// the token is the link secret, never surfaced on the coach status view).
+  static List<Map<String, dynamic>> get splitPayLinksForTest =>
+      List.unmodifiable(_splitPayLinks);
+
+  /// Test-only view of the team-session bookings generated by redemptions.
+  static List<Map<String, dynamic>> get teamBlockBookingsForTest =>
+      _serviceBookings.where((b) => b['teamBlockId'] != null).toList();
+
+  @override
+  Future<String?> createTeamBlock({
+    required String serviceId,
+    String? teamName,
+    required int sessionCount,
+    required int unitPriceCents,
+    required String paymentMode,
+    String? onePayerProfileId,
+  }) async {
+    if (sessionCount <= 0 || unitPriceCents < 0) return null; // honest failure
+    if (paymentMode != 'one_payer' && paymentMode != 'split_pay') return null;
+    final id = 'tblock-${DateTime.now().microsecondsSinceEpoch}';
+    _teamBlocks.add({
+      'id': id,
+      'serviceId': serviceId,
+      'teamName': teamName,
+      'sessionCount': sessionCount,
+      'unitPriceCents': unitPriceCents,
+      'totalCents': sessionCount * unitPriceCents,
+      'paymentMode': paymentMode,
+      'onePayerProfileId': onePayerProfileId,
+      'status': 'draft',
+      'currency': 'USD',
+    });
+    return id;
+  }
+
+  @override
+  Future<String?> addTeamBlockMember({
+    required String teamBlockId,
+    String? invitedEmail,
+    String? invitedPhone,
+    String? memberLabel,
+  }) async {
+    if (!_teamBlocks.any((b) => b['id'] == teamBlockId)) return null;
+    final id = 'tbm-${DateTime.now().microsecondsSinceEpoch}-${_teamBlockMembers.length}';
+    _teamBlockMembers.add({
+      'id': id,
+      'teamBlockId': teamBlockId,
+      'invitedEmail': invitedEmail,
+      'invitedPhone': invitedPhone,
+      'memberLabel': memberLabel,
+      'status': 'pending',
+      'redeemedBy': null,
+      'athleteId': null,
+      'athleteFirstName': null,
+      'athleteAgeBand': null,
+    });
+    return id;
+  }
+
+  @override
+  Future<int?> createSplitPayLinks({required String teamBlockId}) async {
+    final block = _teamBlocks.firstWhere(
+      (b) => b['id'] == teamBlockId,
+      orElse: () => const {},
+    );
+    if (block.isEmpty || block['paymentMode'] != 'split_pay') return null;
+    final members = _teamBlockMembers
+        .where((m) => m['teamBlockId'] == teamBlockId && m['status'] != 'removed')
+        .toList();
+    if (members.isEmpty) return 0;
+    // Penny-exact split — SAME math as team_split.splitShares / the DB function.
+    final shares = splitShares(block['totalCents'] as int, members.length);
+    var count = 0;
+    for (var i = 0; i < members.length; i++) {
+      final memberId = members[i]['id'];
+      final share = shares[i];
+      final existing = _splitPayLinks.firstWhere(
+        (l) => l['memberId'] == memberId,
+        orElse: () => const {},
+      );
+      if (existing.isNotEmpty) {
+        existing['shareAmountCents'] = share; // refresh, keep token + status
+        existing['platformFeeCents'] = feeCentsFor(share, kFirstBookingFeeBps);
+      } else {
+        _splitPayLinks.add({
+          'id': 'spl-${DateTime.now().microsecondsSinceEpoch}-$i',
+          'teamBlockId': teamBlockId,
+          'memberId': memberId,
+          'invitedEmail': members[i]['invitedEmail'],
+          'invitedPhone': members[i]['invitedPhone'],
+          'shareAmountCents': share,
+          'platformFeeCents': feeCentsFor(share, kFirstBookingFeeBps),
+          'currency': 'USD',
+          'token': 'tok-${DateTime.now().microsecondsSinceEpoch}-$i',
+          'status': 'pending',
+          'paidAt': null,
+          'payerProfileId': null,
+        });
+      }
+      count++;
+    }
+    return count;
+  }
+
+  @override
+  Future<int?> redeemSplitShare({
+    required String token,
+    required String athleteFirstName,
+    String? athleteDob,
+    required String consentVersion,
+  }) async {
+    // COPPA gate (L-005): consent MUST be captured before any athlete/booking.
+    if (consentVersion.trim().isEmpty) return null;
+    if (athleteFirstName.trim().isEmpty) return null;
+    final link = _splitPayLinks.firstWhere(
+      (l) => l['token'] == token,
+      orElse: () => const {},
+    );
+    if (link.isEmpty || link['status'] != 'pending') return null; // used/invalid
+    final block = _teamBlocks.firstWhere(
+      (b) => b['id'] == link['teamBlockId'],
+      orElse: () => const {},
+    );
+    if (block.isEmpty) return null;
+
+    final parentId = _demoParentId; // the caller's (new) parent account
+    // Provision the athlete WITH consent captured now (gate satisfied, not bypassed).
+    final athleteId = 'ath-${DateTime.now().microsecondsSinceEpoch}';
+    final band = _ageBand(athleteDob);
+    _teamBlockAthletes.add({
+      'id': athleteId,
+      'parentId': parentId,
+      'firstName': athleteFirstName.trim(),
+      'dateOfBirth': athleteDob,
+      'parentConsent': true,
+      'consentVersion': consentVersion.trim(),
+      'consentAt': DateTime.now().toIso8601String(),
+    });
+
+    // Mark the share paid (structure — no real charge, L-003) + record the payer.
+    link['status'] = 'paid';
+    link['paidAt'] = DateTime.now().toIso8601String();
+    link['payerProfileId'] = parentId;
+
+    // Attach the roster member to the new parent + child.
+    final member = _teamBlockMembers.firstWhere(
+      (m) => m['id'] == link['memberId'],
+      orElse: () => const {},
+    );
+    if (member.isNotEmpty) {
+      member['status'] = 'onboarded';
+      member['redeemedBy'] = parentId;
+      member['athleteId'] = athleteId;
+      member['athleteFirstName'] = athleteFirstName.trim();
+      member['athleteAgeBand'] = band;
+    }
+
+    // Generate the block's N session bookings for this child (existing rail; unpaid).
+    final n = block['sessionCount'] as int;
+    for (var i = 0; i < n; i++) {
+      _serviceBookings.add({
+        'id': 'tbk-${DateTime.now().microsecondsSinceEpoch}-$i',
+        'searcherId': parentId,
+        'serviceId': block['serviceId'],
+        'teamBlockId': block['id'],
+        'athleteId': athleteId,
+        'athleteFirstName': athleteFirstName.trim(),
+        'athleteAgeBand': band,
+        'status': 'confirmed',
+        'paymentStatus': 'unpaid',
+      });
+    }
+    if (block['status'] == 'draft') block['status'] = 'active';
+    return n;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> teamBlockSplitStatus({
+    required String teamBlockId,
+  }) async {
+    return _teamBlockMembers
+        .where((m) => m['teamBlockId'] == teamBlockId && m['status'] != 'removed')
+        .map((m) {
+      final link = _splitPayLinks.firstWhere(
+        (l) => l['memberId'] == m['id'],
+        orElse: () => const {},
+      );
+      return <String, dynamic>{
+        'memberId': m['id'],
+        'memberLabel': m['memberLabel'],
+        'invitedEmail': m['invitedEmail'],
+        'invitedPhone': m['invitedPhone'],
+        'shareAmountCents': link.isEmpty ? null : link['shareAmountCents'],
+        'platformFeeCents': link.isEmpty ? null : link['platformFeeCents'],
+        'linkStatus': link.isEmpty ? null : link['status'],
+        'paidAt': link.isEmpty ? null : link['paidAt'],
+        'memberStatus': m['status'],
+        'athleteFirstName': m['athleteFirstName'],
+      };
+    }).toList();
+  }
+
+  static const String _demoParentId = 'demo-parent';
+  String? _ageBand(String? dob) {
+    if (dob == null) return null;
+    final born = DateTime.tryParse(dob);
+    if (born == null) return null;
+    final age = (DateTime.now().difference(born).inDays / 365.25).floor();
+    if (age < 6) return 'under 6';
+    if (age < 9) return '6-8';
+    if (age < 12) return '9-11';
+    if (age < 15) return '12-14';
+    if (age < 18) return '15-17';
+    return '18+';
+  }
+
+  // ── Provider Model Rebuild #6: org scheduling grid + shared inbox ────────────
+  String _memberName(String memberId) {
+    final m = _orgMembers.firstWhere((x) => x['id'] == memberId, orElse: () => const {});
+    return (m['name'] ?? m['displayName'] ?? m['trainer_profile']?['display_name'] ?? 'Trainer')
+        .toString();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> orgScheduleGrid({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    // Group the org's service bookings by (venue, trainer, slot) — mirrors
+    // org_schedule_grid (20260729_000600). One row per occupied cell.
+    final agg = <String, Map<String, dynamic>>{};
+    for (final b in _serviceBookings) {
+      final status = b['status'];
+      if (status != 'pending' && status != 'confirmed') continue;
+      final date = b['slotDate']?.toString();
+      if (date == null || date.compareTo(fromDate) < 0 || date.compareTo(toDate) > 0) {
+        continue;
+      }
+      final locId = b['locationId'];
+      if (locId == null) continue; // no venue -> not in the grid
+      final svcId = b['serviceId']?.toString() ?? '';
+      final time = (b['slotTime'] ?? '').toString();
+      final member = b['assignedMemberId'];
+      final key = '$locId|$time|$svcId|$date|$member';
+      final cell = agg.putIfAbsent(key, () {
+        final svc = _serviceOf(svcId);
+        final loc = _locations.firstWhere((l) => l['_id'] == locId, orElse: () => const {});
+        final trainerName = member == null ? 'Any available' : _memberName(member);
+        return <String, dynamic>{
+          'date': date,
+          'slotTime': time,
+          'locationId': locId,
+          'locationName': loc['name'],
+          'serviceId': svcId,
+          'serviceTitle': svc['title'],
+          'assignedMemberId': member,
+          'trainerName': trainerName,
+          'booked': 0,
+          'capacity': _serviceCapacity(svcId),
+          'hasConflict': false,
+        };
+      });
+      cell['booked'] = (cell['booked'] as int) + 1;
+    }
+    // Conflict flag: 2+ distinct services on one (venue, date, time). The guard
+    // prevents this being persisted; the flag is honest (false) for guarded data.
+    for (final cell in agg.values) {
+      final peers = agg.values.where((o) =>
+          o['locationId'] == cell['locationId'] &&
+          o['date'] == cell['date'] &&
+          o['slotTime'] == cell['slotTime']);
+      final distinctServices = peers.map((o) => o['serviceId']).toSet();
+      cell['hasConflict'] = distinctServices.length > 1;
+    }
+    final rows = agg.values.toList();
+    rows.sort((a, b) {
+      final dc = (a['date'] as String).compareTo(b['date'] as String);
+      if (dc != 0) return dc;
+      return (a['slotTime'] as String).compareTo(b['slotTime'] as String);
+    });
+    return rows;
+  }
+
+  // Shared inbox demo store: {conversationId, parentFirstName, serviceId,
+  // assignedMemberId, lastMessage, lastMessageAt, draftId, draftBody, ...}
+  static final List<Map<String, dynamic>> _orgConversations = [];
+
+  @override
+  Future<bool> routeConversation({
+    required String conversationId,
+    String? serviceId,
+    String? memberId,
+  }) async {
+    // Auto-route (mirrors enforce_conversation_routing): when a service is named
+    // and no trainer is chosen, default to the SOLE staffed trainer if there is
+    // exactly one.
+    var member = memberId;
+    if (member == null && serviceId != null) {
+      final staffed = _serviceStaffing[serviceId] ?? const [];
+      if (staffed.length == 1) member = staffed.first;
+    }
+    final i = _orgConversations.indexWhere((c) => c['conversationId'] == conversationId);
+    final svc = serviceId == null ? const {} : _serviceOf(serviceId);
+    final row = <String, dynamic>{
+      'conversationId': conversationId,
+      'serviceId': serviceId,
+      'serviceTitle': svc['title'],
+      'assignedMemberId': member,
+      'trainerName': member == null ? 'Unassigned' : _memberName(member),
+    };
+    if (i == -1) {
+      _orgConversations.add({
+        'parentFirstName': null,
+        'lastMessage': null,
+        'lastMessageAt': null,
+        'hasPendingDraft': false,
+        'draftId': null,
+        'draftBody': null,
+        'draftIntent': null,
+        'draftConfidence': null,
+        ...row,
+      });
+    } else {
+      _orgConversations[i].addAll(row);
+    }
+    return true;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> orgInbox() async {
+    final rows = List<Map<String, dynamic>>.from(_orgConversations);
+    rows.sort((a, b) {
+      final dp = ((b['hasPendingDraft'] ?? false) ? 1 : 0) -
+          ((a['hasPendingDraft'] ?? false) ? 1 : 0);
+      if (dp != 0) return dp;
+      return (b['lastMessageAt'] ?? '').toString().compareTo((a['lastMessageAt'] ?? '').toString());
+    });
+    return rows;
   }
 
   @override
