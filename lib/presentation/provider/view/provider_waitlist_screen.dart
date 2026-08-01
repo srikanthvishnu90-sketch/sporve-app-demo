@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide Trans;
 import 'package:provider/provider.dart';
@@ -20,12 +22,26 @@ class ProviderWaitlistScreen extends StatefulWidget {
 }
 
 class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
+  // Live-refreshes the offer countdown text (Provider Model Rebuild #8). No
+  // animation/motion is used for the countdown itself — plain text re-render —
+  // so this is unaffected by prefers-reduced-motion.
+  Timer? _countdownTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WaitlistController>().loadForProvider();
     });
+    _countdownTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -148,6 +164,10 @@ class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
     final note = e['note']?.toString() ?? '';
     final status = e['status']?.toString() ?? 'waiting';
     final offered = status == 'offered';
+    // Provider Model Rebuild #8 — the offer LEDGER row for this entry (if any):
+    // surfaces the drafted/sent/accepted state + the 24h countdown independent
+    // of the entry's own status column.
+    final offer = c.offerForEntry(id);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -199,6 +219,10 @@ class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
               ),
             ),
           ],
+          if (offered && offer != null) ...[
+            const SizedBox(height: 12),
+            _offerStatusRow(offer),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -228,9 +252,98 @@ class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
               ),
             ],
           ),
+          if (offered && offer != null && offer['status'] == 'drafted') ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: _actionBtn(
+                label: 'Draft the offer message',
+                filled: true,
+                onTap: () async {
+                  final offerId = offer['_id']?.toString() ?? '';
+                  if (offerId.isEmpty) return;
+                  final res = await c.draftOffer(offerId);
+                  if (res['error'] != null) {
+                    _toast(res['error'].toString());
+                  } else if (res['skipped'] != null) {
+                    _toast(res['skipped'].toString());
+                  } else {
+                    _toast('Draft ready — review and send it from your inbox.');
+                  }
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Provider Model Rebuild #8 — offer state pill + expiry countdown. States:
+  /// drafted (agent wrote the message, not yet sent to the family), sent (the
+  /// family can now see + accept it), accepted (they claimed the seat).
+  Widget _offerStatusRow(Map<String, dynamic> offer) {
+    final offerStatus = offer['status']?.toString() ?? 'drafted';
+    final label = switch (offerStatus) {
+      'sent' => 'OFFER SENT',
+      'accepted' => 'ACCEPTED',
+      _ => 'DRAFTING OFFER',
+    };
+    final color = offerStatus == 'accepted'
+        ? AppColors.slateText
+        : AppColors.warmAccent;
+    final countdown = offerStatus == 'accepted'
+        ? null
+        : _countdownText(offer['expiresAt']?.toString());
+    return Semantics(
+      label: countdown != null ? '$label, $countdown' : label,
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppRadii.chip),
+            ),
+            child: Text(
+              label,
+              style: AppTypography.font(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          if (countdown != null)
+            Text(
+              countdown,
+              style: AppTypography.font(
+                color: AppColors.textTertiary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// "3h 12m left" / "42m left" / "Offer expired" — never throws on a bad/missing
+  /// timestamp (falls back to an empty countdown so the pill alone still shows).
+  String? _countdownText(String? expiresAtIso) {
+    if (expiresAtIso == null || expiresAtIso.isEmpty) return null;
+    final t = DateTime.tryParse(expiresAtIso);
+    if (t == null) return null;
+    final remaining = t.difference(DateTime.now());
+    if (remaining.isNegative) return 'Offer expired';
+    final hours = remaining.inHours;
+    final minutes = remaining.inMinutes % 60;
+    if (hours > 0) return '${hours}h ${minutes}m left';
+    return '${remaining.inMinutes}m left';
   }
 
   Widget _statusPill(bool offered) {
@@ -262,7 +375,7 @@ class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
       borderRadius: BorderRadius.circular(AppRadii.tile),
       onTap: onTap,
       child: Container(
-        height: 42,
+        height: 44,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: filled ? AppColors.slate : Colors.transparent,

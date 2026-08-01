@@ -778,6 +778,87 @@ class SupabaseRepository implements AppRepository {
     }
   }
 
+  // ── Provider Model Rebuild #8: WAITLIST OFFERS ──────────────────────────────
+  // waitlist_offers is the OFFER LEDGER (20260729_000800): server-created by
+  // open_waitlist_seat when a seat frees, drafted by the `waitlist-offer-draft`
+  // edge fn, accepted/declined via the DEFINER RPCs (which reuse
+  // claim_group_seat — no new booking path). RLS scopes reads per-caller.
+  Map<String, dynamic> _mapWaitlistOffer(Map row) => {
+    '_id': row['id'],
+    'entryId': row['entry_id'],
+    'status': row['status'],
+    'serviceId': row['service_id'],
+    'slotDate': row['slot_date'],
+    'slotTime': row['slot_time'],
+    'expiresAt': row['expires_at'],
+    'draftMessageId': row['draft_message_id'],
+    'createdAt': row['created_at'],
+  };
+
+  @override
+  Future<List<Map<String, dynamic>>> getWaitlistOffers({String? providerId}) async {
+    try {
+      var q = _db.from('waitlist_offers').select();
+      if (providerId != null && _isUuid(providerId)) {
+        q = q.eq('provider_id', providerId);
+      }
+      final rows = await q.order('created_at', ascending: false);
+      return (rows as List).map((r) => _mapWaitlistOffer(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getWaitlistOffers failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> draftWaitlistOffer(String offerId) async {
+    try {
+      final res = await _db.functions.invoke('waitlist-offer-draft', body: {
+        'offer_id': offerId,
+      });
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('draftWaitlistOffer FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the offer (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('draftWaitlistOffer failed: $e');
+      return {'error': 'Could not draft the offer. Please try again.'};
+    }
+  }
+
+  @override
+  Future<String?> acceptWaitlistOffer(String offerId, {String? athleteId}) async {
+    if (!_isUuid(offerId)) return null;
+    try {
+      // Raises honestly (expired / already taken / not open) — the DEFINER
+      // function reuses claim_group_seat, so no new booking path (L-015).
+      final id = await _db.rpc('accept_waitlist_offer', params: {
+        'p_offer_id': offerId,
+        'p_athlete': _isUuid(athleteId) ? athleteId : null,
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('acceptWaitlistOffer failed (expired/taken/not open): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> declineWaitlistOffer(String offerId) async {
+    if (!_isUuid(offerId)) return false;
+    try {
+      await _db.rpc('decline_waitlist_offer', params: {'p_offer_id': offerId});
+      return true;
+    } catch (e) {
+      debugPrint('declineWaitlistOffer failed: $e');
+      return false;
+    }
+  }
+
   @override
   Future<bool> updateWaitlistStatus(String id, String status) async {
     try {
@@ -1601,6 +1682,60 @@ class SupabaseRepository implements AppRepository {
     } catch (e) {
       debugPrint('campCheckIn failed (not staff / blocked): $e');
       return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> campRecapDraft({
+    required String serviceId,
+    required String day,
+    List<String> skills = const [],
+    int? effort,
+    String? note,
+  }) async {
+    try {
+      final res = await _db.functions.invoke('camp-recap', body: {
+        'serviceId': serviceId,
+        'day': day,
+        if (skills.isNotEmpty) 'skills': skills,
+        'effort': ?effort,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      });
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('campRecapDraft FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the recap (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('campRecapDraft failed: $e');
+      return {'error': 'Could not draft the recap. Please try again.'};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> campBroadcast({
+    required String serviceId,
+    required String message,
+  }) async {
+    try {
+      final res = await _db.functions.invoke('camp-broadcast', body: {
+        'serviceId': serviceId,
+        'message': message,
+      });
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('campBroadcast FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the broadcast (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('campBroadcast failed: $e');
+      return {'error': 'Could not draft the broadcast. Please try again.'};
     }
   }
 

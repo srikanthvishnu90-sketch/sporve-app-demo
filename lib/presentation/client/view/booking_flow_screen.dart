@@ -16,6 +16,7 @@ import '../controllers/home_controller.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../widgets/add_child_sheet.dart';
+import '../widgets/multi_booking_sheet.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   const BookingFlowScreen({super.key});
@@ -746,6 +747,48 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     );
   }
 
+  /// Minimal entry point into the multi-booking sheet (group seat / recurring
+  /// claim / pack credit — docs/PROVIDER-UI-FOLLOWUPS.md #1). Only renders
+  /// once the program is wired to a `serviceId` (the Provider-Model-Rebuild
+  /// service, not this legacy "program"); hidden otherwise so nothing changes
+  /// for today's demo data. Deliberately NOT part of the existing booking
+  /// flow's write path — it opens a self-contained sheet with its own state.
+  Widget _buildMultiBookingEntryPoint() {
+    final serviceId = _program?['serviceId']?.toString();
+    if (serviceId == null || serviceId.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => showMultiBookingSheet(
+            context,
+            providerId: _program?['providerRowId']?.toString() ?? '',
+            serviceId: serviceId,
+            serviceTitle: _sessionTitle,
+          ),
+          icon: const Icon(
+            Icons.grid_view_rounded,
+            size: 16,
+            color: AppColors.slateText,
+          ),
+          label: Text(
+            'More booking options',
+            style: AppTypography.font(
+              color: AppColors.slateText,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+          ),
+        ),
+      ),
+    );
+  }
+
   // Build a booking from the user's selections and persist it so it appears on
   // Home "Coming Up" and the Schedule calendar.
   Future<void> _persistBooking() async {
@@ -1078,6 +1121,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 _buildChildSelector(),
                 _buildTrainerPicker(),
                 _buildSessionPicker(),
+                _buildMultiBookingEntryPoint(),
                 // Month header with prev/next navigation. Prev is disabled +
                 // dimmed in the current month so users can't book in the past.
                 Row(

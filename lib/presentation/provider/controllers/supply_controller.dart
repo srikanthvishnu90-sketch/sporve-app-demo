@@ -81,6 +81,16 @@ class SupplyController extends ChangeNotifier {
     required int priceCents,
     int capacity = 1,
     String? locationId,
+    // Item #7 camp facets — only meaningful (and only sent) when
+    // serviceType == 'camp'; the DB rejects them on any other type.
+    String? startsOn, // yyyy-MM-dd
+    String? endsOn, // yyyy-MM-dd
+    String? dailyStartTime, // HH:mm:ss
+    String? dailyEndTime, // HH:mm:ss
+    String? ageBand,
+    int? earlyBirdPriceCents,
+    String? earlyBirdCutoff, // yyyy-MM-dd
+    int? depositCents,
   }) async {
     _saving = true;
     notifyListeners();
@@ -93,6 +103,16 @@ class SupplyController extends ChangeNotifier {
         'priceCents': priceCents,
         'capacity': capacity,
         'locationId': locationId,
+        if (serviceType == 'camp') ...{
+          'startsOn': startsOn,
+          'endsOn': endsOn,
+          'dailyStartTime': dailyStartTime,
+          'dailyEndTime': dailyEndTime,
+          'ageBand': ageBand,
+          'earlyBirdPriceCents': earlyBirdPriceCents,
+          'earlyBirdCutoff': earlyBirdCutoff,
+          'depositCents': depositCents,
+        },
       });
       if (id != null) await _reload();
       return id != null;

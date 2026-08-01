@@ -11,10 +11,14 @@ import '../../onboarding/controllers/onboarding_controller.dart';
 import '../widgets/create_listing_bottom_sheet.dart';
 import '../widgets/create_trainer_bottom_sheet.dart';
 import '../widgets/add_trainer_sheet.dart';
+import '../widgets/org_service_staffing_sheet.dart';
 import '../controllers/provider_controller.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
+import 'provider_org_grid_screen.dart';
+import 'provider_shared_inbox_screen.dart';
+import 'provider_team_block_screen.dart';
 
 class ProviderDashboardScreen extends StatefulWidget {
   const ProviderDashboardScreen({super.key});
@@ -572,6 +576,22 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                   icon: Icons.add,
                   onDark: true,
                 ),
+                const SizedBox(height: 8),
+                // Provider Model Rebuild #9 — team blocks (buyer construct,
+                // one-payer vs split-pay). Minimal, always-visible entry; no
+                // new nav tab (see docs/PROVIDER-UI-FOLLOWUPS.md #5).
+                SporveButton(
+                  'Team blocks',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProviderTeamBlockScreen(),
+                    ),
+                  ),
+                  variant: SporveButtonVariant.tertiary,
+                  icon: Icons.groups_outlined,
+                  onDark: true,
+                ),
 
                 // ── Trainers (Booksy model) ──────────────────────────────
                 const SizedBox(height: 28),
@@ -594,6 +614,48 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                     style: AppTypography.font(
                         fontSize: 12, color: AppColors.textSecondary)),
                 const SizedBox(height: 12),
+                // Org scheduling surfaces (Provider Model Rebuild #6) — only
+                // meaningful once the org has a roster.
+                if (providerController.trainers.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _orgQuickAction(
+                          icon: Icons.grid_view_outlined,
+                          label: 'Schedule grid',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProviderOrgGridScreen(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _orgQuickAction(
+                          icon: Icons.forum_outlined,
+                          label: 'Shared inbox',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProviderSharedInboxScreen(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _orgQuickAction(
+                          icon: Icons.assignment_ind_outlined,
+                          label: 'Staff a service',
+                          onTap: () => OrgServiceStaffingSheet.show(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (!providerController.trainersLoaded)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 10),
@@ -628,6 +690,48 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 const SizedBox(height: 20),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _orgQuickAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        onTap: onTap,
+        child: Container(
+          height: 64,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.tile),
+            border: Border.all(color: AppColors.hairlineStrong),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: AppColors.slateText),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.font(
+                  color: AppColors.textSecondary,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
       ),

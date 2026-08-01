@@ -462,6 +462,42 @@ abstract class WaitlistRepository {
   /// Coach-side: move an entry through its lifecycle (offered/cancelled/expired/
   /// converted). Promotion to a real booking still rides the addBooking path.
   Future<bool> updateWaitlistStatus(String id, String status);
+
+  // ── Provider Model Rebuild #8: WAITLIST OFFERS ──────────────────────────────
+  // Backend: 20260729_000800_waitlist_offers.sql (waitlist_offers ledger,
+  // open_waitlist_seat, roll_expired_waitlist_offers) + the deployed
+  // `waitlist-offer-draft` edge fn. A seat-opens trigger already creates the
+  // OFFER server-side (open_waitlist_seat); these methods READ that offer state
+  // and let the coach (re)draft the agent's offer message. No new booking path:
+  // accept rides the EXISTING claim_group_seat inside accept_waitlist_offer.
+
+  /// Active/recent OFFERS (`drafted`/`sent`/`accepted`), one row per
+  /// `waitlist_offers` entry. RLS scopes to the caller: the coach sees every
+  /// offer for providers they own (incl. coach-only `drafted`); a family sees
+  /// only their own entry's offers once `sent`. [providerId] narrows a coach's
+  /// read to one provider; null returns everything the caller may see. Each map:
+  /// `_id, entryId, status, serviceId, slotDate, slotTime, expiresAt,
+  /// draftMessageId, createdAt`.
+  Future<List<Map<String, dynamic>>> getWaitlistOffers({String? providerId});
+
+  /// Coach: (re)draft the offer's coach-only ai_draft message via the
+  /// `waitlist-offer-draft` edge function (idempotent — re-firing a
+  /// already-drafted offer is a server-side no-op). Returns the function's JSON
+  /// body (`{result, offer_id, draft_id, ...}` or `{skipped: ...}`), or
+  /// `{'error': ...}` on failure (never throws — honest failure, L-015). This
+  /// call NEVER sends anything — the coach still approves/sends the resulting
+  /// ai_draft through the EXISTING draft card (L-003).
+  Future<Map<String, dynamic>> draftWaitlistOffer(String offerId);
+
+  /// Family: accept a `sent` offer. Rides the EXISTING `claim_group_seat`
+  /// (invoked inside the DB's `accept_waitlist_offer`) — no new booking path.
+  /// Returns the new booking id, or null on failure (expired / already taken /
+  /// not open, L-015) — the caller surfaces the real reason honestly.
+  Future<String?> acceptWaitlistOffer(String offerId, {String? athleteId});
+
+  /// Family: decline a `drafted`/`sent` offer; the DB rolls the freed seat to
+  /// the next eligible match. Returns true on success.
+  Future<bool> declineWaitlistOffer(String offerId);
 }
 
 /// Coach OS — read-only FINANCE reads for tax-season export (P0 #3). Derives from
@@ -841,6 +877,31 @@ abstract class CampRepository {
   Future<DateTime?> campCheckIn({
     required String rosterId,
     required String day,
+  });
+
+  /// Coach: end-of-day recap — the coach taps the day's skills/effort/note ONCE
+  /// and the `camp-recap` Edge Function drafts a warm, grounded per-family recap
+  /// into `parent_updates` (status='draft') for every registered family, via the
+  /// EXISTING parent-update send rails. This DRAFTS ONLY — nothing is sent; the
+  /// coach reviews and sends each from the existing screen (never auto-send,
+  /// L-012). Returns `{created, skipped, recapText}` on success, or `{'error':
+  /// ...}` on failure (never throws — honest failure, L-015).
+  Future<Map<String, dynamic>> campRecapDraft({
+    required String serviceId,
+    required String day,
+    List<String> skills = const [],
+    int? effort, // 1..3
+    String? note,
+  });
+
+  /// Coach: bulk-message every registered family via the `camp-broadcast` Edge
+  /// Function. Each family gets a coach-only DRAFT message in their existing
+  /// thread (visible_to_parent=false) — never auto-sent (L-012); the coach
+  /// approves + sends each from the shared inbox. Returns `{drafted, families,
+  /// skipped}` on success, or `{'error': ...}` on failure (never throws).
+  Future<Map<String, dynamic>> campBroadcast({
+    required String serviceId,
+    required String message,
   });
 }
 

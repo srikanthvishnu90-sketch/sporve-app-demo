@@ -24,6 +24,13 @@ class WaitlistController extends ChangeNotifier {
   bool _error = false;
   bool get error => _error;
 
+  // Provider Model Rebuild #8 — active OFFERS (drafted/sent/accepted), keyed to
+  // program_waitlist entries by entryId. Supplementary to the entries list: a
+  // failure here degrades to "no offer info shown" rather than a hard error,
+  // since the entries themselves still loaded fine.
+  List<Map<String, dynamic>> _offers = [];
+  List<Map<String, dynamic>> get offers => List.unmodifiable(_offers);
+
   Future<void> loadForProvider() async {
     _loading = true;
     _error = false;
@@ -37,6 +44,33 @@ class WaitlistController extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+    await loadOffers();
+  }
+
+  Future<void> loadOffers() async {
+    try {
+      _offers = await _repo.getWaitlistOffers();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('WaitlistController.loadOffers failed: $e');
+    }
+  }
+
+  /// The most relevant live/recent offer for one waitlist entry, or null.
+  Map<String, dynamic>? offerForEntry(String entryId) {
+    Map<String, dynamic>? found;
+    for (final o in _offers) {
+      if (o['entryId'] == entryId) found = o;
+    }
+    return found;
+  }
+
+  /// Coach: (re)draft the offer's ai_draft message. Returns the repo's JSON
+  /// body so the caller can toast the outcome; always reloads offers after.
+  Future<Map<String, dynamic>> draftOffer(String offerId) async {
+    final res = await _repo.draftWaitlistOffer(offerId);
+    await loadOffers();
+    return res;
   }
 
   Future<void> loadMine() async {

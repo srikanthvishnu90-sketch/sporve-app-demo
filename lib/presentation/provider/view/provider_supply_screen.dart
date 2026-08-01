@@ -7,6 +7,7 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../controllers/supply_controller.dart';
 import '../../widgets/common_widgets.dart';
+import 'camp_roster_screen.dart';
 
 /// Provider Model Rebuild — Part 0 / item #1. The single provider surface that
 /// replaces per-listing calendars: define a SERVICE (no times), set the ONE
@@ -265,6 +266,24 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
               ),
             ],
           ),
+          if (s['serviceType'] == 'camp') ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: _actionBtn(
+                label: 'Roster & check-in',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CampRosterScreen(
+                      serviceId: id,
+                      campTitle: (s['title'] ?? '').toString(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -456,6 +475,16 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
     int capacity = 1;
     String? locationId;
 
+    // Item #7 camp facets — only read/sent when type == 'camp'.
+    String? campStartsOn;
+    String? campEndsOn;
+    TimeOfDay campDailyStart = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay campDailyEnd = const TimeOfDay(hour: 15, minute: 0);
+    final ageBandCtrl = TextEditingController();
+    final earlyBirdPriceCtrl = TextEditingController();
+    String? earlyBirdCutoff;
+    final depositCtrl = TextEditingController();
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -539,7 +568,7 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
                     const SizedBox(height: 16),
                     _fieldLabel('Price per session'),
                     const SizedBox(height: 6),
-                    _priceField(priceCtrl),
+                    _priceField(priceCtrl, onChanged: (_) => setSheet(() {})),
                     if (type != 'private') ...[
                       const SizedBox(height: 16),
                       _fieldLabel('Capacity'),
@@ -548,6 +577,137 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
                         const [2, 4, 6, 8, 12],
                         capacity < 2 ? 2 : capacity,
                         (v) => setSheet(() => capacity = v),
+                      ),
+                    ],
+                    if (type == 'camp') ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _fieldLabel('Starts on'),
+                                const SizedBox(height: 6),
+                                _dateField(
+                                  campStartsOn,
+                                  'Pick a date',
+                                  () async {
+                                    final d = await _pickCampDate(context);
+                                    if (d != null) setSheet(() => campStartsOn = d);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _fieldLabel('Ends on'),
+                                const SizedBox(height: 6),
+                                _dateField(
+                                  campEndsOn,
+                                  'Pick a date',
+                                  () async {
+                                    final d = await _pickCampDate(context);
+                                    if (d != null) setSheet(() => campEndsOn = d);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _fieldLabel('Daily start'),
+                                const SizedBox(height: 6),
+                                _timeField(campDailyStart, () async {
+                                  final t = await showTimePicker(
+                                    context: context,
+                                    initialTime: campDailyStart,
+                                    helpText: 'Daily start time',
+                                  );
+                                  if (t != null) setSheet(() => campDailyStart = t);
+                                }),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _fieldLabel('Daily end'),
+                                const SizedBox(height: 6),
+                                _timeField(campDailyEnd, () async {
+                                  final t = await showTimePicker(
+                                    context: context,
+                                    initialTime: campDailyEnd,
+                                    helpText: 'Daily end time',
+                                  );
+                                  if (t != null) setSheet(() => campDailyEnd = t);
+                                }),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _fieldLabel('Age band'),
+                      const SizedBox(height: 6),
+                      _textField(ageBandCtrl, 'e.g. 9-11'),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _fieldLabel('Early-bird price (optional)'),
+                                const SizedBox(height: 6),
+                                _priceField(earlyBirdPriceCtrl,
+                                    onChanged: (_) => setSheet(() {})),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _fieldLabel('Cutoff date'),
+                                const SizedBox(height: 6),
+                                _dateField(
+                                  earlyBirdCutoff,
+                                  'Pick a date',
+                                  () async {
+                                    final d = await _pickCampDate(context);
+                                    if (d != null) setSheet(() => earlyBirdCutoff = d);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _fieldLabel('Deposit due now (optional)'),
+                      const SizedBox(height: 6),
+                      _priceField(depositCtrl, onChanged: (_) => setSheet(() {})),
+                      const SizedBox(height: 16),
+                      _campPricePreview(
+                        priceCtrl: priceCtrl,
+                        earlyBirdPriceCtrl: earlyBirdPriceCtrl,
+                        earlyBirdCutoff: earlyBirdCutoff,
+                        depositCtrl: depositCtrl,
                       ),
                     ],
                     if (c.locations.isNotEmpty) ...[
@@ -572,6 +732,14 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
                       }
                       final dollars =
                           double.tryParse(priceCtrl.text.trim()) ?? 0;
+                      if (type == 'camp' && campStartsOn == null) {
+                        _toast('A camp needs a start date.');
+                        return;
+                      }
+                      final ebDollars =
+                          double.tryParse(earlyBirdPriceCtrl.text.trim());
+                      final depositDollars =
+                          double.tryParse(depositCtrl.text.trim());
                       final ok = await c.addService(
                         serviceType: type,
                         title: titleCtrl.text.trim(),
@@ -582,6 +750,22 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
                         priceCents: (dollars * 100).round(),
                         capacity: type == 'private' ? 1 : capacity,
                         locationId: locationId,
+                        startsOn: type == 'camp' ? campStartsOn : null,
+                        endsOn: type == 'camp' ? campEndsOn : null,
+                        dailyStartTime:
+                            type == 'camp' ? _hmsFromTod(campDailyStart) : null,
+                        dailyEndTime:
+                            type == 'camp' ? _hmsFromTod(campDailyEnd) : null,
+                        ageBand: type == 'camp' && ageBandCtrl.text.trim().isNotEmpty
+                            ? ageBandCtrl.text.trim()
+                            : null,
+                        earlyBirdPriceCents: type == 'camp' && ebDollars != null
+                            ? (ebDollars * 100).round()
+                            : null,
+                        earlyBirdCutoff: type == 'camp' ? earlyBirdCutoff : null,
+                        depositCents: type == 'camp' && depositDollars != null
+                            ? (depositDollars * 100).round()
+                            : null,
                       );
                       if (sheetCtx.mounted) Navigator.pop(sheetCtx);
                       _toast(ok
@@ -599,6 +783,132 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
     titleCtrl.dispose();
     sportCtrl.dispose();
     priceCtrl.dispose();
+    ageBandCtrl.dispose();
+    earlyBirdPriceCtrl.dispose();
+    depositCtrl.dispose();
+  }
+
+  Future<String?> _pickCampDate(BuildContext ctx) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: ctx,
+      initialDate: now,
+      firstDate: now.subtract(const Duration(days: 30)),
+      lastDate: now.add(const Duration(days: 730)),
+      helpText: 'Camp date',
+    );
+    if (picked == null) return null;
+    return _iso(picked);
+  }
+
+  String _hmsFromTod(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+
+  Widget _dateField(String? iso, String hint, VoidCallback onTap) => InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        onTap: onTap,
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.centerLeft,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.tile),
+            border: Border.all(color: AppColors.hairlineStrong),
+          ),
+          child: Text(
+            iso == null ? hint : _fmtDate(iso),
+            style: AppTypography.font(
+              color: iso == null ? AppColors.textTertiary : AppColors.textPrimary,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      );
+
+  Widget _timeField(TimeOfDay t, VoidCallback onTap) => InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        onTap: onTap,
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.centerLeft,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.tile),
+            border: Border.all(color: AppColors.hairlineStrong),
+          ),
+          child: Text(
+            _fmtTime(_hmFromTod(t)),
+            style: AppTypography.font(color: AppColors.textPrimary, fontSize: 14),
+          ),
+        ),
+      );
+
+  /// Client-side preview of `campPriceDue`'s math (early-bird + deposit → due
+  /// now/balance), evaluated "as of today" — labeled a PREVIEW, not a quote.
+  /// The real, server-derived number (`campPriceDue`) is read once the camp
+  /// actually exists (families see it at registration).
+  Widget _campPricePreview({
+    required TextEditingController priceCtrl,
+    required TextEditingController earlyBirdPriceCtrl,
+    required String? earlyBirdCutoff,
+    required TextEditingController depositCtrl,
+  }) {
+    final fullDollars = double.tryParse(priceCtrl.text.trim()) ?? 0;
+    final ebDollars = double.tryParse(earlyBirdPriceCtrl.text.trim());
+    final depositDollars = double.tryParse(depositCtrl.text.trim());
+    final today = DateTime.now();
+    final isEarlyBird = ebDollars != null &&
+        earlyBirdCutoff != null &&
+        !today.isAfter(DateTime.parse(earlyBirdCutoff));
+    final effectiveFull = isEarlyBird ? ebDollars : fullDollars;
+    final dueNow = depositDollars ?? effectiveFull;
+    final balance = (effectiveFull - dueNow) < 0 ? 0.0 : (effectiveFull - dueNow);
+    String money(double d) => '\$${d.toStringAsFixed(d == d.roundToDouble() ? 0 : 2)}';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.slateTint,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.slateBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'PREVIEW — DUE AT REGISTRATION TODAY',
+            style: AppTypography.font(
+              color: AppColors.slateText,
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${money(dueNow)} due now'
+            '${balance > 0 ? ' · ${money(balance)} balance' : ''}'
+            '${isEarlyBird ? ' · early-bird price' : ''}',
+            style: AppTypography.font(
+              color: AppColors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'A projection from what you\'ve entered — not a charge. Families '
+            'see the real, server-calculated number when they register.',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 10.5,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Section 2: Weekly availability ──────────────────────────────────────────
@@ -1186,7 +1496,7 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
         ),
       );
 
-  Widget _priceField(TextEditingController ctrl) => Container(
+  Widget _priceField(TextEditingController ctrl, {ValueChanged<String>? onChanged}) => Container(
         height: 46,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
@@ -1209,6 +1519,7 @@ class _ProviderSupplyScreenState extends State<ProviderSupplyScreen> {
                 controller: ctrl,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
+                onChanged: onChanged,
                 style: AppTypography.font(
                   color: AppColors.textPrimary,
                   fontSize: 15,

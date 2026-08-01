@@ -229,6 +229,101 @@ class MockRepository implements AppRepository {
     final i = _waitlist.indexWhere((e) => e['_id'] == id);
     if (i == -1) return false;
     _waitlist[i]['status'] = status;
+    // Mirrors open_waitlist_seat (20260729_000800): a coach moving an entry to
+    // 'offered' is the demo's stand-in for "a seat opened" — create the OFFER
+    // ledger row (24h window) if this entry doesn't already have a live one.
+    if (status == 'offered') {
+      final already = _waitlistOffers.any(
+        (o) =>
+            o['entryId'] == id &&
+            (o['status'] == 'drafted' || o['status'] == 'sent'),
+      );
+      if (!already) {
+        _waitlistOffers.add({
+          '_id': 'wloffer-${DateTime.now().microsecondsSinceEpoch}',
+          'entryId': id,
+          'status': 'drafted',
+          'serviceId': _waitlist[i]['programId'],
+          'slotDate': null,
+          'slotTime': null,
+          'expiresAt': DateTime.now().add(const Duration(hours: 24)).toIso8601String(),
+          'draftMessageId': null,
+          'createdAt': DateTime.now().toIso8601String(),
+        });
+      }
+    }
+    return true;
+  }
+
+  // ── Provider Model Rebuild #8: WAITLIST OFFERS (demo — in-memory ledger) ────
+  // static so const MockRepository() stays const (L-013). Mirrors waitlist_offers.
+  static final List<Map<String, dynamic>> _waitlistOffers = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getWaitlistOffers({String? providerId}) async =>
+      _waitlistOffers
+          .where((o) => o['status'] != 'declined' && o['status'] != 'expired')
+          .toList();
+
+  @override
+  Future<Map<String, dynamic>> draftWaitlistOffer(String offerId) async {
+    final i = _waitlistOffers.indexWhere((o) => o['_id'] == offerId);
+    if (i == -1) return {'error': 'Offer not found.'};
+    final offer = _waitlistOffers[i];
+    if (offer['status'] != 'drafted') {
+      return {'skipped': 'offer status is ${offer['status']}, not drafted.'};
+    }
+    if (offer['draftMessageId'] != null) {
+      return {'skipped': 'offer already has a draft.'};
+    }
+    final entry = _waitlist.firstWhere(
+      (e) => e['_id'] == offer['entryId'],
+      orElse: () => const {},
+    );
+    final program = (entry['programTitle']?.toString().trim().isNotEmpty ?? false)
+        ? entry['programTitle'].toString()
+        : 'the program';
+    final name = entry['athleteFirstName']?.toString();
+    final draftId = 'msg-${DateTime.now().microsecondsSinceEpoch}';
+    offer['draftMessageId'] = draftId;
+    final replyText =
+        'Good news — a spot just opened in $program'
+        '${(name != null && name.isNotEmpty) ? ' for $name' : ''}. '
+        "It's yours if you'd like it — this holds for about 24 hours before it "
+        'goes to the next family. Just tap to claim your spot.';
+    return {
+      'result': 'drafted',
+      'offer_id': offerId,
+      'draft_id': draftId,
+      'reply_text': replyText,
+      'note': 'Draft saved (coach-only, demo). Review and send from the '
+          'existing draft card — never auto-sent.',
+    };
+  }
+
+  @override
+  Future<String?> acceptWaitlistOffer(String offerId, {String? athleteId}) async {
+    final i = _waitlistOffers.indexWhere((o) => o['_id'] == offerId);
+    if (i == -1) return null;
+    final offer = _waitlistOffers[i];
+    if (offer['status'] != 'sent') return null; // honest failure, L-015
+    final expiresAt = DateTime.tryParse(offer['expiresAt']?.toString() ?? '');
+    if (expiresAt != null && expiresAt.isBefore(DateTime.now())) return null;
+    offer['status'] = 'accepted';
+    final ei = _waitlist.indexWhere((e) => e['_id'] == offer['entryId']);
+    if (ei != -1) _waitlist[ei]['status'] = 'converted';
+    return 'booking-${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  @override
+  Future<bool> declineWaitlistOffer(String offerId) async {
+    final i = _waitlistOffers.indexWhere((o) => o['_id'] == offerId);
+    if (i == -1) return false;
+    final offer = _waitlistOffers[i];
+    if (offer['status'] != 'drafted' && offer['status'] != 'sent') return false;
+    offer['status'] = 'declined';
+    final ei = _waitlist.indexWhere((e) => e['_id'] == offer['entryId']);
+    if (ei != -1) _waitlist[ei]['status'] = 'waiting';
     return true;
   }
 
@@ -898,6 +993,72 @@ class MockRepository implements AppRepository {
       _campCheckins.add({'rosterId': rosterId, 'day': day, 'checkedInAt': now});
     }
     return now;
+  }
+
+  @override
+  Future<Map<String, dynamic>> campRecapDraft({
+    required String serviceId,
+    required String day,
+    List<String> skills = const [],
+    int? effort,
+    String? note,
+  }) async {
+    if (skills.isEmpty && effort == null && (note == null || note.trim().isEmpty)) {
+      return {'error': 'Tap at least one skill, an effort level, or a note.'};
+    }
+    final svc = _serviceOf(serviceId);
+    if (svc.isEmpty || (svc['serviceType'] ?? 'private') != 'camp') {
+      return {'error': 'Camp not found.'};
+    }
+    // Grounded ONLY in the taps (mirrors camp-recap's contract) — no invented
+    // facts, no per-child claims beyond first name (L-005/L-012).
+    final effortWord = switch (effort) {
+      1 => 'steady effort',
+      2 => 'solid effort',
+      3 => 'outstanding effort',
+      _ => null,
+    };
+    final skillPhrase = skills.isEmpty ? null : skills.take(4).join(', ');
+    final recap = [
+      if (skillPhrase != null) 'Great day at camp — the group worked on $skillPhrase.'
+      else 'Great day at camp today.',
+      if (effortWord != null) 'The group showed $effortWord throughout.',
+      if (note != null && note.trim().isNotEmpty) note.trim(),
+    ].join(' ');
+    final registrants = _campRoster.where((r) => r['serviceId'] == serviceId).toList();
+    return {
+      'created': registrants.length,
+      'skipped': 0,
+      'recap_text': recap,
+      'note': 'Drafts only (mock) — the coach reviews and sends each through '
+          'the existing parent-update rails. Nothing was sent.',
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> campBroadcast({
+    required String serviceId,
+    required String message,
+  }) async {
+    if (message.trim().isEmpty) {
+      return {'error': 'serviceId and message are required.'};
+    }
+    final svc = _serviceOf(serviceId);
+    if (svc.isEmpty || (svc['serviceType'] ?? 'private') != 'camp') {
+      return {'error': 'Camp not found.'};
+    }
+    final families = _campRoster
+        .where((r) => r['serviceId'] == serviceId)
+        .map((r) => r['athleteId'])
+        .toSet()
+        .length;
+    return {
+      'drafted': families,
+      'families': families,
+      'skipped': 0,
+      'note': 'Drafts only (mock) — each family gets a coach-only draft. '
+          'Nothing was sent; the coach approves + sends from the inbox.',
+    };
   }
 
   // ── Provider Model Rebuild #9: TEAM BLOCKS (buyer construct, split-pay) ───────
