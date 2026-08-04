@@ -221,8 +221,23 @@ class _SearchScreenState extends State<SearchScreen> {
           final index = entry.key;
           final program = entry.value;
           final gallery = _list(program['gallery']);
-          final image = gallery.isNotEmpty ? gallery.first.toString() : '';
+          final coverImg = program['coverImage']?.toString().trim();
+          final progImg = program['image']?.toString().trim();
           final provider = _map(program['providerId']);
+          final provImg = provider?['profileImage']?.toString().trim();
+          final sportType = program['sportType']?.toString();
+          final rawImage = (coverImg != null && coverImg.isNotEmpty)
+              ? coverImg
+              : (progImg != null && progImg.isNotEmpty)
+                  ? progImg
+                  : (gallery.isNotEmpty && gallery.first.toString().isNotEmpty)
+                      ? gallery.first.toString()
+                      : (provImg != null && provImg.isNotEmpty)
+                          ? provImg
+                          : '';
+          final image = rawImage.isNotEmpty
+              ? rawImage
+              : SportColors.fallbackImageOf(sportType);
           final providerName =
               provider?['businessName']?.toString().trim() ?? '';
           final coach = providerName.isEmpty ? 'Academy' : providerName;
@@ -301,16 +316,6 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   Row(
                     children: [
-                      // Back Button
-                      SporveIconButton(
-                        Icons.arrow_back_ios_new,
-                        semanticLabel: 'Back',
-                        onTap: () => Get.back(),
-                        size: 56,
-                        iconSize: 20,
-                        circle: true,
-                      ),
-                      const SizedBox(width: 12),
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -962,7 +967,6 @@ class _SearchScreenState extends State<SearchScreen> {
     HomeProvider homeProvider,
   ) {
     if (opps.isEmpty) return const [];
-
     // Available this week — a real upcoming session within 7 days.
     final availableThisWeek = <Opportunity>[];
     for (final o in opps) {
@@ -1350,6 +1354,12 @@ class _SearchScreenState extends State<SearchScreen> {
           icon: Icons.search_off_outlined,
           title: 'No matches yet',
           message: 'Try removing a filter above, or widen your search.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: UnservedWaitlistCard(
+            sport: search.constraints['sport']?.toString(),
+          ),
         ),
       ] else
         Padding(

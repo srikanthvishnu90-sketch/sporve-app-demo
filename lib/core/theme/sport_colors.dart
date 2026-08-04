@@ -331,4 +331,34 @@ class SportColors {
         return iconOf(emoji);
     }
   }
+
+  /// High-quality HD sport imagery fallback when no cover image is uploaded yet in the database.
+  static String fallbackImageOf(String? sport) {
+    final s = sport?.toLowerCase() ?? '';
+    if (s.contains('basketball')) {
+      return 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80';
+    }
+    if (s.contains('soccer') || s.contains('football (soccer)') || s.contains('futbol')) {
+      return 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=800&q=80';
+    }
+    if (s.contains('football') || s.contains('american football')) {
+      return 'https://images.unsplash.com/photo-1566577739112-5180d4bf9390?w=800&q=80';
+    }
+    if (s.contains('tennis')) {
+      return 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?w=800&q=80';
+    }
+    if (s.contains('baseball') || s.contains('softball')) {
+      return 'https://images.unsplash.com/photo-1562077772-3bd90403f7f0?w=800&q=80';
+    }
+    if (s.contains('speed') || s.contains('track') || s.contains('sprint') || s.contains('run')) {
+      return 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=800&q=80';
+    }
+    if (s.contains('swimming') || s.contains('pool')) {
+      return 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=800&q=80';
+    }
+    if (s.contains('golf')) {
+      return 'https://images.unsplash.com/photo-1535131749006-b7f58c99034b?w=800&q=80';
+    }
+    return 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80';
+  }
 }

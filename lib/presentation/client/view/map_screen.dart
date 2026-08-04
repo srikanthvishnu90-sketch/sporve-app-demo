@@ -102,7 +102,10 @@ class _MapScreenState extends State<MapScreen> {
     return r * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
   }
 
+  DateTime? _lastPinTap;
+
   void _select(_Pin pin) {
+    _lastPinTap = DateTime.now();
     setState(() => _selected = pin.data);
     _map.move(pin.pos, math.max(_map.camera.zoom, 13));
   }
@@ -128,7 +131,14 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: center,
               initialZoom: 11.5,
-              onTap: (_, _) => setState(() => _selected = null),
+              onTap: (_, _) {
+                if (_lastPinTap != null &&
+                    DateTime.now().difference(_lastPinTap!).inMilliseconds <
+                        400) {
+                  return;
+                }
+                setState(() => _selected = null);
+              },
             ),
             children: [
               TileLayer(
@@ -155,7 +165,9 @@ class _MapScreenState extends State<MapScreen> {
                         child: _PricePin(
                           sport: pin.data['sportType']?.toString(),
                           price: pin.data['price'],
-                          selected: identical(_selected, pin.data),
+                          selected: _selected != null &&
+                              (_selected!['_id'] != null &&
+                                  _selected!['_id'] == pin.data['_id']),
                         ),
                       ),
                     ),
@@ -170,13 +182,6 @@ class _MapScreenState extends State<MapScreen> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  SporveIconButton(
-                    Icons.arrow_back,
-                    semanticLabel: 'Back',
-                    onTap: () => Get.back(),
-                    filled: true,
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -262,7 +267,9 @@ class _MapScreenState extends State<MapScreen> {
           // Recenter FAB
           Positioned(
             right: 16,
-            bottom: _selected != null ? 150 : 32,
+            bottom: _selected != null
+                ? MediaQuery.of(context).padding.bottom + 150
+                : MediaQuery.of(context).padding.bottom + 32,
             child: _RoundButton(
               icon: _userLatLng != null
                   ? Icons.my_location
@@ -275,7 +282,7 @@ class _MapScreenState extends State<MapScreen> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: 24,
+              bottom: MediaQuery.of(context).padding.bottom + 24,
               child: _ListingCard(
                 program: _selected!,
                 distanceKm: _userLatLng == null
@@ -547,17 +554,29 @@ class _ListingCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.card),
-          border: Border(
-            left: BorderSide(color: SportColors.of(sport), width: 3),
-            top: const BorderSide(color: AppColors.hairline),
-            right: const BorderSide(color: AppColors.hairline),
-            bottom: const BorderSide(color: AppColors.hairline),
-          ),
+          border: Border.all(color: AppColors.hairlineStrong),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black87,
+              blurRadius: 16,
+              spreadRadius: 2,
+              offset: Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            SportIconTile(sport ?? '', size: 46),
-            const SizedBox(width: 14),
+            Container(
+              width: 4,
+              height: 42,
+              decoration: BoxDecoration(
+                color: SportColors.of(sport),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SportIconTile(sport ?? '', size: 44),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

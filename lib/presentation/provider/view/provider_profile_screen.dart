@@ -23,8 +23,8 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
   bool _isLoading = true;
   String _displayName = 'Loading...';
   String _verificationStatus = 'pending';
-  String _city = 'CHICAGO';
-  String _state = 'IL';
+  String _city = '';
+  String _state = '';
   String _logoUrl = '';
 
   @override
@@ -62,10 +62,10 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
 
           final address = providerData['address'];
           if (address != null) {
-            _city = address['city'] ?? 'CHICAGO';
-            _state = address['state'] ?? 'IL';
+            _city = address['city'] ?? '';
+            _state = address['state'] ?? '';
           } else {
-            final locationStr = providerData['location'] ?? 'CHICAGO, IL';
+            final locationStr = providerData['location'] ?? '';
             final parts = locationStr.split(',');
             if (parts.length == 2) {
               _city = parts[0].trim();

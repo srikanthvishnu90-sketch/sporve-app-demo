@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get_storage/get_storage.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
@@ -551,7 +552,13 @@ class ProgramListItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            SportIconTile(s, size: 44),
+            SporveImage(
+              image.isNotEmpty ? image : SportColors.fallbackImageOf(s),
+              width: 52,
+              height: 52,
+              radius: AppRadii.tile,
+              fit: BoxFit.cover,
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1003,3 +1010,227 @@ Future<bool> showConfirmDialog(
   );
   return result ?? false;
 }
+
+/// Unserved-area waitlist capture (§2) — converts zero-result searches in an
+/// unserved region into a demand signal (email + ZIP code capture) that tells
+/// platform ops where to recruit supply next.
+class UnservedWaitlistCard extends StatefulWidget {
+  final String? sport;
+  final String? initialZip;
+  final VoidCallback? onCaptured;
+
+  const UnservedWaitlistCard({
+    super.key,
+    this.sport,
+    this.initialZip,
+    this.onCaptured,
+  });
+
+  @override
+  State<UnservedWaitlistCard> createState() => _UnservedWaitlistCardState();
+}
+
+class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
+  final _emailController = TextEditingController();
+  final _zipController = TextEditingController();
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialZip != null && widget.initialZip!.isNotEmpty) {
+      _zipController.text = widget.initialZip!;
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _zipController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final email = _emailController.text.trim();
+    final zip = _zipController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid email address.'),
+          backgroundColor: AppColors.negative,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final box = GetStorage();
+      final List<dynamic> signals = box.read('demand_signals') ?? [];
+      signals.add({
+        'email': email,
+        'zip': zip.isEmpty ? '60601' : zip,
+        'sport': widget.sport ?? 'Any',
+        'capturedAt': DateTime.now().toIso8601String(),
+      });
+      box.write('demand_signals', signals);
+    } catch (_) {}
+
+    setState(() => _submitted = true);
+    widget.onCaptured?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_submitted) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          border: Border.all(color: AppColors.slateBorder),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: AppColors.positive, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'You\'re on the waitlist!',
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'We\'ll email you the moment new coaches launch near you.',
+                    style: AppTypography.font(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.hairlineStrong),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notifications_active_outlined, color: AppColors.slateText, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Want an alert when a coach arrives?',
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Get notified the moment ${widget.sport ?? 'sports'} coaches launch near your area.',
+            style: AppTypography.font(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  style: AppTypography.font(color: AppColors.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Enter your email',
+                    hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 13),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    filled: true,
+                    fillColor: AppColors.surface2,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.tile),
+                      borderSide: const BorderSide(color: AppColors.hairline),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _zipController,
+                  keyboardType: TextInputType.number,
+                  style: AppTypography.font(color: AppColors.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'ZIP code',
+                    hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 13),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    filled: true,
+                    fillColor: AppColors.surface2,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.tile),
+                      borderSide: const BorderSide(color: AppColors.hairline),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.slateText,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                ),
+              ),
+              child: Text(
+                'Get notified',
+                style: AppTypography.font(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

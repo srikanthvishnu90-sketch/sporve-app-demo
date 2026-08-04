@@ -350,9 +350,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     else
                       ...homeProvider.programs.map((program) {
                         final gallery = program['gallery'];
-                        final image = (gallery is List && gallery.isNotEmpty)
-                            ? gallery[0].toString()
-                            : '';
+                        final coverImg = program['coverImage']?.toString().trim();
+                        final progImg = program['image']?.toString().trim();
+                        final provider = program['providerId'];
+                        final provImg = provider is Map ? provider['profileImage']?.toString().trim() : null;
+                        final sportType = program['sportType']?.toString();
+                        final rawImage = (coverImg != null && coverImg.isNotEmpty)
+                            ? coverImg
+                            : (progImg != null && progImg.isNotEmpty)
+                                ? progImg
+                                : (gallery is List && gallery.isNotEmpty && gallery[0].toString().isNotEmpty)
+                                    ? gallery[0].toString()
+                                    : (provImg != null && provImg.isNotEmpty)
+                                        ? provImg
+                                        : '';
+                        final image = rawImage.isNotEmpty
+                            ? rawImage
+                            : SportColors.fallbackImageOf(sportType);
                         // Grounded: a real rating or an honest "New" — never a
                         // fabricated 0.0★.
                         final avgRating = program['averageRating'];
@@ -365,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           programId: program['_id']?.toString(),
                           title: program['title'] ?? 'Program',
                           coach:
-                              program['providerId']?['businessName'] ??
+                              (provider is Map ? provider['businessName'] : null) ??
                               'Academy',
                           price: '\$${program['price'] ?? 0}',
                           rating: rating,

@@ -159,7 +159,7 @@ class _FindCoachScreenState extends State<FindCoachScreen> {
               ),
             ),
             Text(
-              'Deterministic ranking · safety-checked · Chicago',
+              'Deterministic ranking · safety-checked · nationwide',
               style: AppTypography.font(
                 color: AppColors.textTertiary,
                 fontSize: 12,
@@ -185,27 +185,32 @@ class _FindCoachScreenState extends State<FindCoachScreen> {
         }
         if (!m.hasSearched) return const SizedBox.shrink();
         if (m.matches.isEmpty) {
-          return Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.card),
-              border: Border.all(color: AppColors.hairline),
-            ),
-            child: Text(
-              m.note.isNotEmpty
-                  ? m.note
-                  : 'No verified, age-appropriate matches within your filters. '
-                        'Try widening distance or budget — we never relax the '
-                        'safety or age gates.',
-              style: AppTypography.font(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-                height: 1.35,
+          return Column(
+            children: [
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadii.card),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: Text(
+                  m.note.isNotEmpty
+                      ? m.note
+                      : 'No verified, age-appropriate matches within your filters. '
+                            'Try widening distance or budget — we never relax the '
+                            'safety or age gates.',
+                  style: AppTypography.font(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
               ),
-            ),
+              UnservedWaitlistCard(sport: _sport),
+            ],
           );
         }
         return Column(

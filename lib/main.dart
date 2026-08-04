@@ -52,7 +52,7 @@ void main() async {
   } else if (useMockRepo) {
     await Supabase.initialize(
       url: 'https://mock.supabase.co',
-      anonKey: 'mock_anon_key',
+      publishableKey: 'mock_anon_key',
     );
   }
 
