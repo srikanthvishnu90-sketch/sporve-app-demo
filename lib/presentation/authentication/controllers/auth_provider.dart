@@ -91,6 +91,13 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Resets transient UI state (loading, error) when entering auth screens.
+  void resetState() {
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   /// Home route for the authoritative profile role.
   String routeForRole(String? role) =>
       role == 'provider' ? AppRoutes.providerMainNav : AppRoutes.mainNav;

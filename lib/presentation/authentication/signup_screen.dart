@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_structure/core/theme/app_typography.dart';
 import 'package:get/get.dart';
@@ -27,6 +28,16 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _privacyAcknowledged = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<AuthProvider>().resetState();
+      }
+    });
+  }
 
   Future<void> _openPrivacyPolicy() async {
     final current = Uri.base;
@@ -353,43 +364,28 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              'I have read Sporve\'s ',
-                              style: AppTypography.font(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                                height: 1.4,
-                              ),
+                        child: Text.rich(
+                          TextSpan(
+                            style: AppTypography.font(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              height: 1.4,
                             ),
-                            TextButton(
-                              onPressed: _openPrivacyPolicy,
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 2,
-                                ),
-                                minimumSize: const Size(44, 44),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: Text(
-                                'Privacy Policy',
+                            children: [
+                              const TextSpan(text: "I have read Sporve's "),
+                              TextSpan(
+                                text: 'Privacy Policy',
                                 style: AppTypography.font(
                                   color: AppColors.slateText,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = _openPrivacyPolicy,
                               ),
-                            ),
-                            Text(
-                              '.',
-                              style: AppTypography.font(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
+                              const TextSpan(text: '.'),
+                            ],
+                          ),
                         ),
                       ),
                     ],

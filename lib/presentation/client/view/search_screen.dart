@@ -82,24 +82,42 @@ class _SearchScreenState extends State<SearchScreen> {
   String _browseSort = 'default';
   final TextEditingController _searchController = TextEditingController();
 
-  // Reference point for distance. No live location yet (Geolocator is out of a
-  // lib-only scope), so we fall back to the Chicago area — the same anchor the
-  // goal-intake constraints default to — until a real location is wired.
-  static const double _refLat = 41.8781;
-  static const double _refLng = -87.6298;
+  // US Metro anchor coordinates for dynamic distance computation across any US location.
+  static const Map<String, List<double>> _metroAnchors = {
+    'chicago': [41.8781, -87.6298],
+    'new york': [40.7128, -74.0060],
+    'nyc': [40.7128, -74.0060],
+    'los angeles': [34.0522, -118.2437],
+    'la': [34.0522, -118.2437],
+    'miami': [25.7617, -80.1918],
+    'dallas': [32.7767, -96.7970],
+  };
 
-  /// Great-circle distance (km) from the reference point to [o], or null when
-  /// the program has no coordinates. Never fabricated.
+  /// Great-circle distance (km) from dynamic reference point to [o], or null when
+  /// the program has no coordinates. Dynamically matches search metro/location.
   double? _distanceKm(Opportunity o) {
     final lat = o.latitude, lng = o.longitude;
     if (lat == null || lng == null) return null;
+    
+    // Resolve dynamic reference lat/lng based on active search constraints or default
+    double refLat = 41.8781;
+    double refLng = -87.6298;
+    try {
+      final search = context.read<SearchProvider>();
+      final metroKey = search.constraints['metro']?.toString().toLowerCase().trim();
+      if (metroKey != null && _metroAnchors.containsKey(metroKey)) {
+        refLat = _metroAnchors[metroKey]![0];
+        refLng = _metroAnchors[metroKey]![1];
+      }
+    } catch (_) {}
+
     const r = 6371.0; // Earth radius, km
     double rad(double d) => d * math.pi / 180.0;
-    final dLat = rad(lat - _refLat);
-    final dLng = rad(lng - _refLng);
+    final dLat = rad(lat - refLat);
+    final dLng = rad(lng - refLng);
     final a =
         math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(rad(_refLat)) *
+        math.cos(rad(refLat)) *
             math.cos(rad(lat)) *
             math.sin(dLng / 2) *
             math.sin(dLng / 2);
@@ -717,17 +735,24 @@ class _SearchScreenState extends State<SearchScreen> {
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
-                                vertical: 40,
+                                vertical: 20,
                               ),
-                              child: Center(
-                                child: Text(
-                                  'No matches — try adjusting your filters.',
-                                  textAlign: TextAlign.center,
-                                  style: AppTypography.font(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 13,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const EmptyState(
+                                    icon: Icons.search_off_outlined,
+                                    title: 'No verified coaches in this area',
+                                    message:
+                                        'No verified coaches currently match your search filters or region. Try adjusting your query or join the waitlist below.',
                                   ),
-                                ),
+                                  const SizedBox(height: 16),
+                                  UnservedWaitlistCard(
+                                    sport: _searchController.text.trim().isEmpty
+                                        ? null
+                                        : _searchController.text.trim(),
+                                  ),
+                                ],
                               ),
                             )
                           else

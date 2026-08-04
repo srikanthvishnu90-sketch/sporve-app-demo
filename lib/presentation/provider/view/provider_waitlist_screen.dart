@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide Trans;
+import 'package:get_storage/get_storage.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -145,11 +146,90 @@ class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
     return RefreshIndicator(
       color: AppColors.slateText,
       onRefresh: () => c.loadForProvider(),
-      child: ListView.separated(
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-        itemCount: entries.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (_, i) => _entryCard(c, entries[i]),
+        children: [
+          for (final entry in entries) ...[
+            _entryCard(c, entry),
+            const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 16),
+          _demandSignalsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _demandSignalsSection() {
+    List<dynamic> signals = [];
+    try {
+      final box = GetStorage();
+      signals = box.read('demand_signals') ?? [];
+    } catch (_) {}
+
+    if (signals.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_searching, color: AppColors.positive, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'UNSERVED AREA DEMAND SIGNALS (${signals.length})',
+                style: AppTypography.font(
+                  color: AppColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Parents requesting coaches in regions where supply is thin:',
+            style: AppTypography.font(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final s in signals.take(5)) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${s['sport'] ?? 'Any'} · ZIP ${s['zip'] ?? '60601'}',
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    s['email']?.toString() ?? '',
+                    style: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: AppColors.hairline, height: 8),
+          ],
+        ],
       ),
     );
   }

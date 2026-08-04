@@ -66,8 +66,39 @@ class ProviderMatcher {
     'high': 3,
   };
 
+  /// Catalog of high-risk sports requiring strict age/intensity safety ceilings.
+  static const Set<String> _highRiskSports = {
+    'boxing',
+    'combat',
+    'martial_arts',
+    'mma',
+    'wrestling',
+    'gymnastics',
+    'cheer',
+    'tackle_football',
+    'football',
+    'rugby',
+    'karate',
+    'taekwondo',
+    'judo',
+    'jiu_jitsu',
+    'bjj',
+    'kickboxing',
+  };
+
   /// Age-appropriate intensity ceiling: young athletes cap at low/medium.
-  static int _ceilingForAge(int age) => age < 8 ? 1 : (age <= 12 ? 2 : 3);
+  /// For high-risk sports (combat/contact/gymnastics), stricter ceilings apply across catalog:
+  /// age < 10 caps at tier 1 (low/fundamentals only), age <= 13 caps at tier 2 (medium).
+  static int _ceilingForAge(int age, {String? sport}) {
+    final s = sport?.toLowerCase().trim() ?? '';
+    final isHighRisk = _highRiskSports.any((hr) => s.contains(hr));
+    if (isHighRisk) {
+      if (age < 10) return 1;
+      if (age <= 13) return 2;
+      return 3;
+    }
+    return age < 8 ? 1 : (age <= 12 ? 2 : 3);
+  }
 
   /// G4 intensity tier for a service, coalescing the two shapes this app sees:
   /// the server/Supabase path carries a numeric `intensity_tier`; the Flutter
@@ -166,7 +197,7 @@ class ProviderMatcher {
         // level), failing CLOSED only on genuinely unknown intensity (treat as
         // 4 = highest), mirroring the server (coalesce(intensity_tier,4) <=
         // max_tier) and the React matcher.
-        if (_intensityTier(s) > _ceilingForAge(intent.age!)) continue;
+        if (_intensityTier(s) > _ceilingForAge(intent.age!, sport: sport)) continue;
       }
 
       // Budget.

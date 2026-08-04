@@ -187,28 +187,16 @@ class _FindCoachScreenState extends State<FindCoachScreen> {
         if (m.matches.isEmpty) {
           return Column(
             children: [
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(AppRadii.card),
-                  border: Border.all(color: AppColors.hairline),
-                ),
-                child: Text(
-                  m.note.isNotEmpty
-                      ? m.note
-                      : 'No verified, age-appropriate matches within your filters. '
-                            'Try widening distance or budget — we never relax the '
-                            'safety or age gates.',
-                  style: AppTypography.font(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
-                ),
+              EmptyState(
+                icon: Icons.search_off_outlined,
+                title: 'No verified matches in this area',
+                message: m.note.isNotEmpty
+                    ? m.note
+                    : 'No verified, age-appropriate matches within your filters. '
+                          'Try widening distance or budget — we never relax the '
+                          'safety or age gates.',
               ),
+              const SizedBox(height: 12),
               UnservedWaitlistCard(sport: _sport),
             ],
           );

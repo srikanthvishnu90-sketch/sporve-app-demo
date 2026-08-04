@@ -1,0 +1,1 @@
+{"demand_signals":[{"email":"ny_parent@example.com","zip":"10001","sport":"Tennis"},{"email":"la_parent@example.com","zip":"90001","sport":"Soccer"}]}

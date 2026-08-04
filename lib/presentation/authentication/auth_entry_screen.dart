@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_structure/core/theme/app_typography.dart';
 import 'package:get/get.dart';
@@ -172,42 +173,30 @@ class AuthEntryScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 20),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      'By continuing, you acknowledge Sporve\'s ',
+                Center(
+                  child: Text.rich(
+                    TextSpan(
                       style: AppTypography.font(
                         color: ink.withValues(alpha: 0.5),
                         fontSize: 11,
                       ),
-                    ),
-                    TextButton(
-                      onPressed: _openPrivacyPolicy,
-                      style: TextButton.styleFrom(
-                        foregroundColor: ink,
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        minimumSize: const Size(44, 44),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        'Privacy Policy',
-                        style: AppTypography.font(
-                          color: ink,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                      children: [
+                        const TextSpan(text: 'By continuing, you acknowledge Sporve\'s '),
+                        TextSpan(
+                          text: 'Privacy Policy',
+                          style: AppTypography.font(
+                            color: ink,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = _openPrivacyPolicy,
                         ),
-                      ),
+                        const TextSpan(text: '.'),
+                      ],
                     ),
-                    Text(
-                      '.',
-                      style: AppTypography.font(
-                        color: ink.withValues(alpha: 0.5),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: 20),
               ],

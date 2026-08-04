@@ -36,14 +36,19 @@ import 'presentation/client/controllers/assistant_provider.dart';
 import 'presentation/client/controllers/goal_intake_provider.dart';
 import 'presentation/client/controllers/plan_provider.dart';
 
+import 'package:flutter/foundation.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init(); // Must be called before any token read/write
 
-  const useMockRepo = bool.fromEnvironment(
-    'USE_MOCK_REPO',
-    defaultValue: false,
-  );
+  // Kill the offline demo in production (Pre-launch item 0.6):
+  // USE_MOCK_REPO is force-false in kReleaseMode so fake payment paths & mock mode are unreachable in production.
+  const useMockRepo = !kReleaseMode &&
+      bool.fromEnvironment(
+        'USE_MOCK_REPO',
+        defaultValue: false,
+      );
 
   if (!useMockRepo && (Env.supabaseUrl.isEmpty || Env.supabaseAnonKey.isEmpty)) {
     runApp(const _ConfigurationErrorApp());
