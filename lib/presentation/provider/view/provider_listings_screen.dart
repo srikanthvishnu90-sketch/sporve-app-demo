@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/sport_colors.dart';
+import '../../../core/routes/app_routes.dart';
 import '../controllers/provider_controller.dart';
 import '../widgets/create_listing_bottom_sheet.dart';
 import '../../widgets/common_widgets.dart';
@@ -87,6 +88,55 @@ class _ProviderListingsScreenState extends State<ProviderListingsScreen> {
                     fullWidth: false,
                   ),
                 ],
+              ),
+            ),
+
+            // Services / availability / locations — the new supply model that
+            // replaces per-listing calendars. Folded in here (no new nav tab).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadii.card),
+                onTap: () => Get.toNamed(AppRoutes.providerSupply),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(AppRadii.card),
+                    border: Border.all(color: AppColors.hairline),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.tune, color: AppColors.slateText, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Services, availability & locations',
+                              style: AppTypography.font(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Set your weekly hours once — every service uses them.',
+                              style: AppTypography.font(
+                                color: AppColors.textTertiary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right,
+                          color: AppColors.textTertiary, size: 20),
+                    ],
+                  ),
+                ),
               ),
             ),
 
@@ -337,7 +387,10 @@ class _ProviderListingsScreenState extends State<ProviderListingsScreen> {
               DateTime? startDate;
               try {
                 startDate = DateTime.parse(startDateStr);
-              } catch (_) {}
+              } catch (e) {
+                debugPrint('provider_listings: bad session startDate '
+                    '"$startDateStr": $e');
+              }
               
               final dateLabel = startDate != null
                   ? '${startDate.year}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}'

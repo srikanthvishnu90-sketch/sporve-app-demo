@@ -2,6 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/data/app_repository.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/earnings_csv.dart';
+import '../../../core/utils/platform_fee.dart';
+
+/// One itemized paid-booking row for the money page's Transactions view:
+/// gross → platform fee → coach net, with the first-vs-recurring rate label.
+/// Dollars for display; the underlying math is cents (platform_fee.dart).
+class ProviderTxn {
+  final String date;
+  final String athlete;
+  final String program;
+  final String sport;
+  final String paymentStatus;
+  final double gross;
+  final double fee;
+  final double net;
+  final int feeBps;
+  final String ratePct;
+  final bool isFirst;
+  final String currency;
+  const ProviderTxn({
+    required this.date,
+    required this.athlete,
+    required this.program,
+    required this.sport,
+    required this.paymentStatus,
+    required this.gross,
+    required this.fee,
+    required this.net,
+    required this.feeBps,
+    required this.ratePct,
+    required this.isFirst,
+    required this.currency,
+  });
+}
 
 class ProviderListing {
   // ── Server identity ──────────────────────────────────────────────
@@ -298,7 +332,10 @@ class ProviderController with ChangeNotifier {
       _trainers
         ..clear()
         ..addAll(rows);
-    } catch (_) {/* keep whatever we had */}
+    } catch (e) {
+      // Read path: keep whatever roster we already had, but never fail silently.
+      debugPrint('loadTrainers failed: $e');
+    }
     _trainersLoaded = true;
     notifyListeners();
   }
@@ -330,6 +367,59 @@ class ProviderController with ChangeNotifier {
     return ok;
   }
 
+  // ── Commission engine (#5) ─────────────────────────────────────────────────
+  /// A trainer's effective-dated commission history (newest first). Read-only —
+  /// past rows are immutable, so this is safe to display beside a placed
+  /// booking's captured snapshot.
+  Future<List<Map<String, dynamic>>> commissionRates(String memberId) =>
+      _repo.getCommissionRates(memberId);
+
+  /// Append a NEW dated commission rate (effective now). Never rewrites past
+  /// bookings' snapshots. Also mirrors the value onto the roster tile so the
+  /// list reflects the current rate immediately.
+  Future<bool> setCommission(
+    String memberId, {
+    required String type,
+    required num value,
+  }) async {
+    final ok = await _repo.addCommissionRate(memberId, type: type, value: value);
+    if (ok) {
+      final i = _trainers.indexWhere((m) => m['id'] == memberId);
+      if (i >= 0) {
+        _trainers[i] = {
+          ..._trainers[i],
+          'commission_type': type,
+          'commission_value': value,
+        };
+        notifyListeners();
+      }
+    }
+    return ok;
+  }
+
+  /// DOOR A: look up an existing account to affiliate (null when none — the UI
+  /// then offers Door B).
+  Future<Map<String, dynamic>?> findAccountToAffiliate(String identifier) =>
+      _repo.findAffiliatableAccount(identifier);
+
+  /// DOOR A: send an affiliation invite to an existing account. On success the
+  /// pending member appears on the roster (accepts on their side).
+  Future<bool> affiliateExisting(
+    String profileId, {
+    Map<String, dynamic>? trainerProfile,
+  }) async {
+    final id = await _repo.affiliateExistingAccount(profileId,
+        trainerProfile: trainerProfile);
+    if (id == null) return false;
+    await loadTrainers();
+    return true;
+  }
+
+  /// DOOR B: invite a new person by email/phone into the funnel with the org
+  /// pre-attached. Returns the invite token to share, or null on fail.
+  Future<String?> inviteTrainerByContact({String? email, String? phone}) =>
+      _repo.createTrainerInvite(email: email, phone: phone);
+
   // Provider profile (incl. Stripe payouts status) — loaded from the data layer.
   Map<String, dynamic> _providerProfile = {};
   Map<String, dynamic> get providerProfile => _providerProfile;
@@ -342,8 +432,10 @@ class ProviderController with ChangeNotifier {
   Future<void> fetchProviderProfile() async {
     try {
       _providerProfile = await _repo.getProviderProfile();
-    } catch (_) {
-      /* leave prior value; UI shows setup state */
+    } catch (e) {
+      // Leave the prior value; UI shows setup state. Log so a persistent
+      // fetch failure is diagnosable instead of invisible.
+      debugPrint('fetchProviderProfile failed: $e');
     }
     notifyListeners();
   }
@@ -428,7 +520,9 @@ class ProviderController with ChangeNotifier {
       if (_providerProfile.isEmpty) {
         try {
           _providerProfile = await _repo.getProviderProfile();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('fetchMyPrograms: provider profile scope lookup failed: $e');
+        }
       }
       final myBiz = (_providerProfile['businessName'] ?? '').toString().trim();
       _listings.clear();
@@ -477,7 +571,11 @@ class ProviderController with ChangeNotifier {
                   (prov is Map) && prov['verificationStatus'] == 'verified',
             ),
           );
-        } catch (_) {}
+        } catch (e) {
+          // Skip a single malformed listing row rather than dropping the whole
+          // list — but log it so bad data upstream is visible.
+          debugPrint('fetchMyPrograms: skipped a malformed listing row: $e');
+        }
       }
       notifyListeners();
       await _fetchAllDetails();
@@ -796,6 +894,184 @@ class ProviderController with ChangeNotifier {
       _bookingsLoaded = true;
       _setLoading(false);
     }
+  }
+
+  // ── Coach OS money page (P0 #3) — READ-ONLY earnings + fee itemization ──────
+  // Pulls the provider's OWN paid bookings (RLS-scoped) and derives, client-side,
+  // the per-transaction fee itemization (gross → platform fee → net) using the
+  // SHARED pure module core/utils/platform_fee.dart — the SAME shape the org /
+  // trainer will later see. Fees mirror the DB fee schedule
+  // (resolve_platform_fee_bps / platform_fees): the first paid booking with a
+  // family is the intro rate, the rest are recurring. Moves no money; opens no
+  // Stripe surface (L-003). The authoritative fee is set server-side at charge
+  // time — this is the current-schedule projection, labeled as such in the UI.
+
+  /// One display row per paid booking, itemized. `gross/fee/net` are dollars;
+  /// `feeBps` + `isFirst` drive the "18% intro" / "4%" label.
+  Future<List<ProviderTxn>> transactionItemizations() async {
+    final rows = await _repo.getProviderEarnings();
+    if (rows.isEmpty) return const [];
+    final items = _itemize(rows);
+    final out = <ProviderTxn>[];
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      final it = items[i];
+      out.add(ProviderTxn(
+        date: (r['date']?.toString() ?? '').split('T').first,
+        athlete: r['athlete']?.toString() ?? '',
+        program: r['program']?.toString() ?? '',
+        sport: r['sport']?.toString() ?? '',
+        paymentStatus: r['paymentStatus']?.toString() ?? '',
+        gross: it.gross,
+        fee: it.fee,
+        net: it.net,
+        feeBps: it.feeBps,
+        ratePct: it.ratePct,
+        isFirst: it.isFirst,
+        currency: it.currency,
+      ));
+    }
+    return out;
+  }
+
+  /// Build the fee itemization list aligned to [rows] (same order). A booking's
+  /// family key groups first-vs-recurring; sortKey orders which came first.
+  List<FeeItemization> _itemize(List<Map<String, dynamic>> rows) {
+    final inputs = <FeeInput>[];
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      final gross = (r['gross'] as num?)?.toDouble() ?? 0;
+      inputs.add(FeeInput(
+        bookingId: (r['id']?.toString().isNotEmpty ?? false)
+            ? r['id'].toString()
+            : 'row_$i',
+        familyKey: (r['family']?.toString().isNotEmpty ?? false)
+            ? r['family'].toString()
+            : 'family_$i',
+        sortKey: (r['createdAt'] ?? r['date'] ?? '').toString(),
+        grossCents: (gross * 100).round(),
+        currency: r['currency']?.toString() ?? 'USD',
+      ));
+    }
+    return itemizeCoachEarnings(inputs);
+  }
+
+  /// Distinct tax years present in the coach's paid earnings, newest first, for
+  /// the one-tap "Export {year}" action.
+  Future<List<int>> availableEarningYears() async {
+    final rows = await _repo.getProviderEarnings();
+    final years = <int>{};
+    for (final r in rows) {
+      final y = _yearOf(r['date']);
+      if (y != null) years.add(y);
+    }
+    final list = years.toList()..sort((a, b) => b.compareTo(a));
+    return list;
+  }
+
+  int? _yearOf(Object? date) {
+    final s = (date?.toString() ?? '').split('T').first;
+    if (s.length >= 4) return int.tryParse(s.substring(0, 4));
+    return null;
+  }
+
+  /// Build the tax-year CSV (real tiered fees per row) for [year] (or all-time
+  /// when null). Returns null if nothing is exportable. Moves no money (L-003).
+  Future<({String csv, EarningsSummary summary})?> exportEarnings({
+    int? year,
+  }) async {
+    final rows = await _repo.getProviderEarnings();
+    if (rows.isEmpty) return null;
+    final items = _itemize(rows); // aligned to rows
+    final earnings = <EarningsRow>[];
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      if (year != null && _yearOf(r['date']) != year) continue;
+      earnings.add(EarningsRow(
+        date: (r['date']?.toString() ?? '').split('T').first,
+        athlete: r['athlete']?.toString() ?? '',
+        program: r['program']?.toString() ?? '',
+        sport: r['sport']?.toString() ?? '',
+        status: r['status']?.toString() ?? '',
+        paymentStatus: r['paymentStatus']?.toString() ?? '',
+        gross: (r['gross'] as num?)?.toDouble() ?? 0,
+        // REAL per-booking fee from the shared itemization (not the flat 10%
+        // estimate) — the CSV's net is now the fee-schedule projection.
+        fee: items[i].fee,
+        currency: r['currency']?.toString() ?? 'USD',
+      ));
+    }
+    if (earnings.isEmpty) return null;
+    final name = _providerProfile['businessName']?.toString();
+    final csv = buildEarningsCsv(earnings, providerName: name);
+    return (csv: csv, summary: summarizeEarnings(earnings));
+  }
+
+  // ── Coach OS money page #1: real payout history + pending-payout figure ─────
+  final List<Map<String, dynamic>> _payouts = [];
+  bool _payoutsLoaded = false;
+  List<Map<String, dynamic>> get payouts => List.unmodifiable(_payouts);
+  bool get payoutsLoaded => _payoutsLoaded;
+
+  /// The coach's expected pending payout: net of all paid bookings not yet paid
+  /// out by Stripe. Derived from stored booking prices (never fabricated); shown
+  /// as "pending" and clearly distinguished from real "paid out" Stripe rows.
+  double _pendingPayoutNet = 0;
+  double get pendingPayoutNet => _pendingPayoutNet;
+
+  Future<void> fetchPayouts() async {
+    try {
+      final rows = await _repo.getProviderEarnings();
+      final items = _itemize(rows);
+      _pendingPayoutNet = totalsOf(items).net;
+      final real = await _repo.getProviderPayouts();
+      _payouts
+        ..clear()
+        ..addAll(real);
+    } catch (e) {
+      debugPrint('fetchPayouts failed: $e');
+    }
+    _payoutsLoaded = true;
+    notifyListeners();
+  }
+
+  // ── Coach OS money page #4: off-platform invoicing (DRAFT flow) ─────────────
+  final List<Map<String, dynamic>> _contacts = [];
+  final List<Map<String, dynamic>> _invoices = [];
+  bool _invoicesLoaded = false;
+  List<Map<String, dynamic>> get contacts => List.unmodifiable(_contacts);
+  List<Map<String, dynamic>> get invoices => List.unmodifiable(_invoices);
+  bool get invoicesLoaded => _invoicesLoaded;
+
+  Future<void> fetchInvoicing() async {
+    try {
+      final cs = await _repo.getCoachContacts();
+      final iv = await _repo.getCoachInvoices();
+      _contacts
+        ..clear()
+        ..addAll(cs);
+      _invoices
+        ..clear()
+        ..addAll(iv);
+    } catch (e) {
+      debugPrint('fetchInvoicing failed: $e');
+    }
+    _invoicesLoaded = true;
+    notifyListeners();
+  }
+
+  Future<String?> createContact(Map<String, dynamic> contact) async {
+    final id = await _repo.createCoachContact(contact);
+    if (id != null) await fetchInvoicing();
+    return id;
+  }
+
+  /// Create a DRAFT invoice. Amount + SaaS fee are pinned server-side; this
+  /// charges nothing (L-003). Returns the new id or null on failure.
+  Future<String?> createInvoiceDraft(Map<String, dynamic> draft) async {
+    final id = await _repo.createCoachInvoiceDraft(draft);
+    if (id != null) await fetchInvoicing();
+    return id;
   }
 
   // ── Roster & Teams State ─────────────────────────────────────────

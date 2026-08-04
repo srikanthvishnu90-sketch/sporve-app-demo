@@ -68,6 +68,76 @@ class _FakeRepo implements AppRepository {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+/// A repo whose write (postMessage) fails — either by returning null or by
+/// throwing (offline / network drop). Proves a failed write never reports
+/// success and never leaves a fake "sent" bubble.
+class _FailingWriteRepo extends _FakeRepo {
+  _FailingWriteRepo({this.throwOnPost = false});
+  final bool throwOnPost;
+
+  @override
+  Future<Map<String, dynamic>?> postMessage(String c, String body) async {
+    if (throwOnPost) {
+      throw Exception('network down');
+    }
+    return null; // write did not land
+  }
+}
+
+/// AI Front Office #8/#9 — a fake repo that resolves drafts against an
+/// in-memory `messages`-like store and logs one `draft_feedback`-shaped row
+/// per action, mirroring the real `resolve_draft` RPC / MockRepository.
+class _DraftRepo extends _FakeRepo {
+  final List<Map<String, dynamic>> feedback = [];
+
+  void seedDraft(Map<String, dynamic> draft) => store.add(draft);
+
+  @override
+  Future<bool> resolveDraft({
+    required String draftId,
+    required String action,
+    String? finalText,
+  }) async {
+    final i = store.indexWhere(
+      (m) => m is Map && m['_id']?.toString() == draftId,
+    );
+    if (i == -1) return false;
+    final draft = Map<String, dynamic>.from(store[i] as Map);
+    if ((draft['status'] ?? '') != 'ai_draft') return false;
+
+    final originalText = (draft['text'] ?? '').toString();
+    String? finalBody;
+    if (action == 'discarded') {
+      draft['status'] = 'discarded';
+    } else {
+      finalBody = action == 'edited' ? (finalText ?? '').trim() : originalText;
+      if (finalBody.isEmpty) return false;
+      draft['status'] = 'sent';
+      draft['visibleToParent'] = true;
+      draft['text'] = finalBody;
+    }
+    store[i] = draft;
+    feedback.add({
+      'draftId': draftId,
+      'action': action,
+      'originalText': originalText,
+      'finalText': finalBody,
+    });
+    return true;
+  }
+}
+
+/// A repo whose resolveDraft always fails (offline / server error) — proves
+/// the honest-failure path (L-015): no state mutated, no feedback logged.
+class _FailingDraftRepo extends _DraftRepo {
+  @override
+  Future<bool> resolveDraft({
+    required String draftId,
+    required String action,
+    String? finalText,
+  }) async => false;
+}
+
 class _FakeAuth implements AuthService {
   @override
   AppUser? get currentUser => const AppUser(id: 'me', role: 'searcher');
@@ -123,6 +193,31 @@ void main() {
     },
   );
 
+  test('failed message write reports failure, not success (null return)',
+      () async {
+    final repo = _FailingWriteRepo();
+    final chat = ChatProvider(repo, _FakeAuth());
+    await chat.loadMessages('conv_1');
+
+    final ok = await chat.sendMessage('conv_1', 'hello');
+
+    expect(ok, false, reason: 'a write that did not land must return false');
+    expect(chat.messages, isEmpty,
+        reason: 'optimistic bubble rolled back — nothing looks sent');
+  });
+
+  test('thrown message write (offline) reports failure, not success', () async {
+    final repo = _FailingWriteRepo(throwOnPost: true);
+    final chat = ChatProvider(repo, _FakeAuth());
+    await chat.loadMessages('conv_1');
+
+    final ok = await chat.sendMessage('conv_1', 'hello');
+
+    expect(ok, false, reason: 'a thrown write must be caught and return false');
+    expect(chat.messages, isEmpty,
+        reason: 'optimistic bubble rolled back — no fake "sent" message');
+  });
+
   test('new provider thread returns a persisted backend identity', () async {
     final repo = _FakeRepo();
     final chat = ChatProvider(repo, _FakeAuth());
@@ -144,5 +239,144 @@ void main() {
       ),
       hasLength(1),
     );
+  });
+
+  // ── AI Front Office #8/#9 — the coach's two buttons + edit logging ───────
+  group('resolveDraft (Suggested reply: send / edit / discard)', () {
+    test('sent_as_is flips the draft to sent+visible and logs feedback', () async {
+      final repo = _DraftRepo();
+      repo.seedDraft({
+        '_id': 'draft-1',
+        'conversationId': 'conv_1',
+        'text': "Thanks for reaching out — I'll confirm shortly.",
+        'senderId': 'me',
+        'createdAt': '2026-07-28T10:00:00Z',
+        'status': 'ai_draft',
+        'visibleToParent': false,
+      });
+      final chat = ChatProvider(repo, _FakeAuth());
+      await chat.loadMessages('conv_1');
+
+      expect(chat.pendingDrafts, hasLength(1));
+
+      final ok = await chat.resolveDraft(draftId: 'draft-1', action: 'sent_as_is');
+
+      expect(ok, true);
+      expect(chat.pendingDrafts, isEmpty, reason: 'no longer a pending draft');
+      final resolved = chat.messages.firstWhere((m) => m['_id'] == 'draft-1');
+      expect(resolved['status'], 'sent');
+      expect(resolved['visibleToParent'], true);
+
+      // #9 — feedback logged exactly once, with matching original/final text.
+      expect(repo.feedback, hasLength(1));
+      expect(repo.feedback.single['action'], 'sent_as_is');
+      expect(
+        repo.feedback.single['originalText'],
+        "Thanks for reaching out — I'll confirm shortly.",
+      );
+      expect(
+        repo.feedback.single['finalText'],
+        repo.feedback.single['originalText'],
+        reason: 'sent as-is: original and final text match',
+      );
+    });
+
+    test(
+      'edited sends the coach\'s edit and logs BOTH the original AI text and the final edited text',
+      () async {
+        final repo = _DraftRepo();
+        repo.seedDraft({
+          '_id': 'draft-2',
+          'conversationId': 'conv_1',
+          'text': 'Sessions are \$40 each, Tuesdays at 5pm.',
+          'senderId': 'me',
+          'createdAt': '2026-07-28T10:05:00Z',
+          'status': 'ai_draft',
+          'visibleToParent': false,
+        });
+        final chat = ChatProvider(repo, _FakeAuth());
+        await chat.loadMessages('conv_1');
+
+        final ok = await chat.resolveDraft(
+          draftId: 'draft-2',
+          action: 'edited',
+          finalText: 'Sessions are \$45 each, Tuesdays at 5:30pm — let me know!',
+        );
+
+        expect(ok, true);
+        final resolved = chat.messages.firstWhere((m) => m['_id'] == 'draft-2');
+        expect(resolved['status'], 'sent');
+        expect(resolved['visibleToParent'], true);
+        expect(
+          resolved['text'],
+          'Sessions are \$45 each, Tuesdays at 5:30pm — let me know!',
+        );
+
+        expect(repo.feedback, hasLength(1));
+        final row = repo.feedback.single;
+        expect(row['action'], 'edited');
+        expect(row['originalText'], 'Sessions are \$40 each, Tuesdays at 5pm.');
+        expect(
+          row['finalText'],
+          'Sessions are \$45 each, Tuesdays at 5:30pm — let me know!',
+        );
+        expect(
+          row['originalText'],
+          isNot(equals(row['finalText'])),
+          reason: 'the corpus must hold BOTH the AI draft and the edit',
+        );
+      },
+    );
+
+    test('discarded marks the draft discarded, stays invisible, and logs feedback',
+        () async {
+      final repo = _DraftRepo();
+      repo.seedDraft({
+        '_id': 'draft-3',
+        'conversationId': 'conv_1',
+        'text': 'Draft the coach never wanted to send.',
+        'senderId': 'me',
+        'createdAt': '2026-07-28T10:10:00Z',
+        'status': 'ai_draft',
+        'visibleToParent': false,
+      });
+      final chat = ChatProvider(repo, _FakeAuth());
+      await chat.loadMessages('conv_1');
+
+      final ok = await chat.resolveDraft(draftId: 'draft-3', action: 'discarded');
+
+      expect(ok, true);
+      final resolved = chat.messages.firstWhere((m) => m['_id'] == 'draft-3');
+      expect(resolved['status'], 'discarded');
+      expect(chat.pendingDrafts, isEmpty);
+
+      expect(repo.feedback, hasLength(1));
+      expect(repo.feedback.single['action'], 'discarded');
+      expect(repo.feedback.single['finalText'], null);
+    });
+
+    test('a failed resolveDraft (offline/server error) returns false and never fakes success',
+        () async {
+      final repo = _FailingDraftRepo();
+      repo.seedDraft({
+        '_id': 'draft-4',
+        'conversationId': 'conv_1',
+        'text': 'Would still be pending.',
+        'senderId': 'me',
+        'createdAt': '2026-07-28T10:15:00Z',
+        'status': 'ai_draft',
+        'visibleToParent': false,
+      });
+      final chat = ChatProvider(repo, _FakeAuth());
+      await chat.loadMessages('conv_1');
+
+      final ok = await chat.resolveDraft(draftId: 'draft-4', action: 'sent_as_is');
+
+      expect(ok, false);
+      expect(chat.pendingDrafts, hasLength(1),
+          reason: 'the draft stays pending — no silent fake success');
+      expect(repo.feedback, isEmpty,
+          reason: 'no feedback is logged for a failed resolution');
+    });
   });
 }

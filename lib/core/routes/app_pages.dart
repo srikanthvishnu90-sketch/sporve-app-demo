@@ -18,11 +18,15 @@ import '../../presentation/onboarding/provider_onboard_intake_screen.dart';
 import '../../presentation/onboarding/provider_onboard_review_screen.dart';
 import '../../presentation/provider/view/parent_update_screen.dart';
 import '../../presentation/client/view/progress_updates_screen.dart';
+import '../../presentation/client/view/athlete_timeline_screen.dart';
 import '../../presentation/provider/view/automated_messages_screen.dart';
 import '../../presentation/provider/view/lifecycle_approvals_screen.dart';
+import '../../presentation/provider/view/provider_policies_screen.dart';
 import '../../presentation/provider/provider_main_nav_screen.dart';
 import '../../presentation/provider/view/provider_dashboard_screen.dart';
 import '../../presentation/provider/view/provider_listings_screen.dart';
+import '../../presentation/provider/view/provider_supply_screen.dart';
+import '../../presentation/provider/view/setup_interview_screen.dart';
 import '../../presentation/authentication/auth_entry_screen.dart';
 import '../../presentation/authentication/signup_screen.dart';
 import '../../presentation/authentication/verify_email_screen.dart';
@@ -46,6 +50,8 @@ import '../../presentation/client/view/booking_flow_screen.dart';
 import '../../presentation/client/view/chat_details_screen.dart';
 import '../../presentation/provider/view/provider_roster_screen.dart';
 import '../../presentation/provider/view/provider_finances_screen.dart';
+import '../../presentation/provider/view/provider_waitlist_screen.dart';
+import '../../presentation/provider/view/provider_recurring_slots_screen.dart';
 import '../../presentation/provider/view/provider_payouts_payments_screen.dart';
 import '../../presentation/shared/notification_settings_screen.dart';
 import '../../presentation/provider/view/personal_profile_screen.dart';
@@ -142,6 +148,18 @@ class AppPages {
       page: () => const ProviderFinancesScreen(),
     ),
     GetPage(
+      name: AppRoutes.providerWaitlist,
+      page: () => const ProviderWaitlistScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.providerRecurringSlots,
+      page: () => const ProviderRecurringSlotsScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.providerSupply,
+      page: () => const ProviderSupplyScreen(),
+    ),
+    GetPage(
       name: AppRoutes.providerWithdrawal,
       page: () => const ProviderWithdrawalScreen(),
     ),
@@ -186,12 +204,24 @@ class AppPages {
       page: () => const ProgressUpdatesScreen(),
     ),
     GetPage(
+      name: AppRoutes.athleteTimeline,
+      page: () => const AthleteTimelineScreen(),
+    ),
+    GetPage(
       name: AppRoutes.automatedMessages,
       page: () => const AutomatedMessagesScreen(),
     ),
     GetPage(
       name: AppRoutes.lifecycleApprovals,
       page: () => const LifecycleApprovalsScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.providerPolicies,
+      page: () => const ProviderPoliciesScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.providerSetupInterview,
+      page: () => const SetupInterviewScreen(),
     ),
   ];
 }

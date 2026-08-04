@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
+import '../../../core/utils/commission.dart';
 import '../controllers/provider_controller.dart';
 import '../../widgets/sporve_button.dart';
+import 'commission_itemization_card.dart';
 
 /// Add / edit an affiliated trainer (Booksy model). Mirrors the create-listing
 /// flow: name, specialty, price, duration, photo — plus the org's commission
@@ -49,7 +51,34 @@ class _CreateTrainerBottomSheetState extends State<CreateTrainerBottomSheet> {
     if (_commissionType == 'percent') _percent = v.clamp(0, 100);
     _flat = TextEditingController(
         text: _commissionType == 'flat' ? v.toStringAsFixed(0) : '');
+    // Live math preview updates as the org edits the price or the flat fee.
+    _price.addListener(_onPreviewInput);
+    _flat.addListener(_onPreviewInput);
   }
+
+  void _onPreviewInput() => setState(() {});
+
+  /// The gross used for the live preview: the trainer's entered price, or a
+  /// representative $80 session when blank (matches the spec example).
+  int get _sampleGrossCents {
+    final p = double.tryParse(_price.text.trim()) ?? 0;
+    final cents = (p * 100).round();
+    return cents > 0 ? cents : 8000;
+  }
+
+  double get _commissionValue => _commissionType == 'percent'
+      ? _percent
+      : (double.tryParse(_flat.text.trim()) ?? 0);
+
+  /// The SHARED itemization (commission.dart) — the SAME shape the trainer sees.
+  /// Shown for a REPEAT (recurring-rate) booking, the P0 unit; the intro-rate
+  /// line differs only in the platform-fee slice.
+  CommissionItemization get _preview => CommissionItemization.compute(
+        grossCents: _sampleGrossCents,
+        commissionType: commissionTypeFromString(_commissionType),
+        commissionValue: _commissionValue,
+        isFirst: false,
+      );
 
   @override
   void dispose() {
@@ -87,6 +116,18 @@ class _CreateTrainerBottomSheetState extends State<CreateTrainerBottomSheet> {
     final ok = _isEdit
         ? await ctrl.updateTrainer(widget.member!['id'].toString(), payload)
         : await ctrl.createTrainer(payload);
+    // EFFECTIVE-DATING (#5): on EDIT, append a NEW dated commission rate. Past
+    // bookings keep their captured snapshot — this never rewrites history. On
+    // create, the legacy member columns serve as the initial rate (the resolver
+    // falls back to them until the first dated row exists).
+    if (ok && _isEdit) {
+      final prevType = (widget.member?['commission_type'] ?? 'percent').toString();
+      final prevVal = (widget.member?['commission_value'] as num?)?.toDouble() ?? 0;
+      if (prevType != _commissionType || prevVal != commissionValue) {
+        await ctrl.setCommission(widget.member!['id'].toString(),
+            type: _commissionType, value: commissionValue);
+      }
+    }
     if (!mounted) return;
     setState(() => _saving = false);
     if (ok) {
@@ -203,6 +244,28 @@ class _CreateTrainerBottomSheetState extends State<CreateTrainerBottomSheet> {
                 TextField(controller: _flat, keyboardType: TextInputType.number,
                     decoration: _dec('Flat fee per session (\$)'),
                     style: const TextStyle(color: AppColors.textPrimary)),
+              const SizedBox(height: 16),
+              // LIVE MATH preview — the IDENTICAL itemization the trainer sees.
+              CommissionItemizationCard(
+                item: _preview,
+                audience: CommissionAudience.org,
+                sampleNote: _price.text.trim().isEmpty,
+              ),
+              const SizedBox(height: 10),
+              Row(children: [
+                const Icon(Icons.history_toggle_off,
+                    size: 14, color: AppColors.textTertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _isEdit
+                        ? 'A commission change takes effect now. Already-booked sessions keep the rate they were booked at.'
+                        : 'The commission applies from now. You can change it later without affecting past bookings.',
+                    style: AppTypography.font(
+                        fontSize: 11, color: AppColors.textTertiary),
+                  ),
+                ),
+              ]),
               const SizedBox(height: 20),
               SporveButton(
                 _saving ? 'Saving…' : (_isEdit ? 'Save changes' : 'Add trainer'),

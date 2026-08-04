@@ -10,10 +10,15 @@ import '../../../core/theme/app_typography.dart';
 import '../../onboarding/controllers/onboarding_controller.dart';
 import '../widgets/create_listing_bottom_sheet.dart';
 import '../widgets/create_trainer_bottom_sheet.dart';
+import '../widgets/add_trainer_sheet.dart';
+import '../widgets/org_service_staffing_sheet.dart';
 import '../controllers/provider_controller.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
+import 'provider_org_grid_screen.dart';
+import 'provider_shared_inbox_screen.dart';
+import 'provider_team_block_screen.dart';
 
 class ProviderDashboardScreen extends StatefulWidget {
   const ProviderDashboardScreen({super.key});
@@ -333,6 +338,21 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 // Payouts (Stripe Connect) status / setup
                 _buildPayoutsCard(context, providerController),
 
+                // AI Front Office #10 — proactive post-session recap prompt: the
+                // most recent completed session with a child surfaces a one-tap
+                // "How did it go?" → the existing parent-update capture + rails.
+                Builder(
+                  builder: (_) {
+                    final done = providerController.sessions
+                        .where((s) =>
+                            s.isCompleted && s.childFirstName.trim().isNotEmpty)
+                        .toList()
+                      ..sort((a, b) => b.sessionDate.compareTo(a.sessionDate));
+                    if (done.isEmpty) return const SizedBox.shrink();
+                    return _buildRecapPromptCard(context, done.first);
+                  },
+                ),
+
                 // Summary Cards — computed from real bookings/listings.
                 Row(
                   children: [
@@ -556,6 +576,22 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                   icon: Icons.add,
                   onDark: true,
                 ),
+                const SizedBox(height: 8),
+                // Provider Model Rebuild #9 — team blocks (buyer construct,
+                // one-payer vs split-pay). Minimal, always-visible entry; no
+                // new nav tab (see docs/PROVIDER-UI-FOLLOWUPS.md #5).
+                SporveButton(
+                  'Team blocks',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProviderTeamBlockScreen(),
+                    ),
+                  ),
+                  variant: SporveButtonVariant.tertiary,
+                  icon: Icons.groups_outlined,
+                  onDark: true,
+                ),
 
                 // ── Trainers (Booksy model) ──────────────────────────────
                 const SizedBox(height: 28),
@@ -578,6 +614,48 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                     style: AppTypography.font(
                         fontSize: 12, color: AppColors.textSecondary)),
                 const SizedBox(height: 12),
+                // Org scheduling surfaces (Provider Model Rebuild #6) — only
+                // meaningful once the org has a roster.
+                if (providerController.trainers.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _orgQuickAction(
+                          icon: Icons.grid_view_outlined,
+                          label: 'Schedule grid',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProviderOrgGridScreen(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _orgQuickAction(
+                          icon: Icons.forum_outlined,
+                          label: 'Shared inbox',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProviderSharedInboxScreen(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _orgQuickAction(
+                          icon: Icons.assignment_ind_outlined,
+                          label: 'Staff a service',
+                          onTap: () => OrgServiceStaffingSheet.show(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (!providerController.trainersLoaded)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 10),
@@ -603,8 +681,8 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                   ],
                 const SizedBox(height: 8),
                 SporveButton(
-                  'Create new trainer',
-                  onPressed: () => _showCreateTrainer(context),
+                  'Add a trainer',
+                  onPressed: () => showAddTrainerChooser(context),
                   variant: SporveButtonVariant.secondary,
                   icon: Icons.person_add_alt_1,
                   onDark: true,
@@ -612,6 +690,48 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 const SizedBox(height: 20),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _orgQuickAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        onTap: onTap,
+        child: Container(
+          height: 64,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.tile),
+            border: Border.all(color: AppColors.hairlineStrong),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: AppColors.slateText),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.font(
+                  color: AppColors.textSecondary,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -626,7 +746,35 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
     final val = (m['commission_value'] as num?)?.toDouble() ?? 0;
     final commission =
         type == 'percent' ? '${val.round()}% commission' : '\$${val.round()} / session';
-    final verified = (m['background_check_status'] ?? 'none') == 'verified';
+    final affiliation = (m['affiliation_status'] ?? 'active').toString();
+    final bg = (m['background_check_status'] ?? 'none').toString();
+    final active = (m['is_active'] ?? true) == true;
+    final profileDone = name.isNotEmpty && name != 'Trainer';
+    final verified = bg == 'verified';
+    final bookable = verified && active && affiliation == 'active';
+
+    // Package tracker: Accepted → Profile → Background check → Bookable. Honest —
+    // an org can never advance the background-check step (L-005): it is per-person.
+    final accepted = affiliation != 'pending' && affiliation != 'declined';
+    final steps = <_TrackStep>[
+      _TrackStep('Accepted', accepted),
+      _TrackStep('Profile', profileDone),
+      _TrackStep('Background check', verified),
+      _TrackStep('Bookable', bookable),
+    ];
+
+    final (pillLabel, pillColor) = affiliation == 'pending'
+        ? ('Invite sent', AppColors.warmAccent)
+        : affiliation == 'declined'
+            ? ('Declined', AppColors.negative)
+            : bookable
+                ? ('Bookable', AppColors.successGreen)
+                : verified
+                    ? ('Verified', AppColors.successGreen)
+                    : bg == 'pending'
+                        ? ('Check pending', AppColors.warmAccent)
+                        : ('Check needed', AppColors.warmAccent);
+
     return GestureDetector(
       onTap: () => _showCreateTrainer(context, member: m),
       child: Container(
@@ -636,42 +784,146 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
           borderRadius: BorderRadius.circular(AppRadii.tile),
           border: Border.all(color: AppColors.hairline),
         ),
-        child: Row(children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.surface2,
-            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: AppTypography.font(
-                    color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name,
+        child: Column(children: [
+          Row(children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: AppColors.surface2,
+              child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
                   style: AppTypography.font(
-                      fontSize: 15, fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Text(specialty.isEmpty ? commission : '$specialty · $commission',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: AppTypography.font(
-                      fontSize: 12, color: AppColors.textSecondary)),
-            ]),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: (verified ? AppColors.successGreen : AppColors.warmAccent)
-                  .withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(999),
+                      color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
             ),
-            child: Text(verified ? 'Verified' : 'Pending',
-                style: AppTypography.font(
-                    fontSize: 10, fontWeight: FontWeight.w800,
-                    color: verified ? AppColors.successGreen : AppColors.warmAccent)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(name,
+                    style: AppTypography.font(
+                        fontSize: 15, fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                const SizedBox(height: 2),
+                Text(specialty.isEmpty ? commission : '$specialty · $commission',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: AppTypography.font(
+                        fontSize: 12, color: AppColors.textSecondary)),
+              ]),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: pillColor.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(pillLabel,
+                  style: AppTypography.font(
+                      fontSize: 10, fontWeight: FontWeight.w800, color: pillColor)),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+          ]),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (var i = 0; i < steps.length; i++) ...[
+                Icon(
+                  steps[i].done
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  size: 13,
+                  color: steps[i].done
+                      ? AppColors.successGreen
+                      : AppColors.textTertiary,
+                ),
+                const SizedBox(width: 4),
+                Text(steps[i].label,
+                    style: AppTypography.font(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: steps[i].done
+                            ? AppColors.textSecondary
+                            : AppColors.textTertiary)),
+                if (i < steps.length - 1)
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      color: AppColors.hairline,
+                    ),
+                  ),
+              ],
+            ],
           ),
-          const Icon(Icons.chevron_right, color: AppColors.textTertiary),
         ]),
+      ),
+    );
+  }
+
+  // AI Front Office #10 — the coach-home recap prompt. One tap into the existing
+  // parent-update capture (same args as the schedule's "Write parent update"),
+  // which drafts (draft-recap / summarize) and Sends through the existing rails.
+  Widget _buildRecapPromptCard(BuildContext context, ScheduledSession s) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GestureDetector(
+        onTap: () => Get.toNamed(
+          AppRoutes.parentUpdate,
+          arguments: {
+            'bookingId': s.id,
+            'childId': s.childId,
+            'childFirstName': s.childFirstName,
+            'sport': s.sport,
+          },
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            border: Border.all(color: AppColors.hairline),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.slateTint,
+                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                ),
+                child: const Icon(Icons.auto_awesome,
+                    color: AppColors.slateText, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'How did it go with ${s.childFirstName}?',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.font(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Three taps → a recap the parent will love.',
+                      style: AppTypography.font(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward,
+                  color: AppColors.slateText, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1278,4 +1530,11 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
       ),
     );
   }
+}
+
+/// One step of the trainer package-tracker (Provider-Model-Rebuild #5).
+class _TrackStep {
+  final String label;
+  final bool done;
+  const _TrackStep(this.label, this.done);
 }

@@ -18,6 +18,7 @@ class ChatDetailsScreen extends StatefulWidget {
 
 class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
   final TextEditingController _messageController = TextEditingController();
+  final FocusNode _messageFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 
   String _conversationId = '';
@@ -28,6 +29,11 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
   String _nextSession = '';
   String _responseTime = '';
   ChatProvider? _chat; // captured for realtime unsubscribe in dispose
+
+  // AI Front Office #8 — set while the composer is pre-filled with a
+  // "Suggested reply" the coach is editing. Sending in this state resolves
+  // that specific draft (action='edited') instead of posting a new message.
+  String? _editingDraftId;
 
   @override
   void initState() {
@@ -121,6 +127,7 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
   void dispose() {
     _chat?.unsubscribeFromConversation(); // stop the realtime channel
     _messageController.dispose();
+    _messageFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -132,8 +139,17 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
     final bool isLoading = chatProvider.isLoadingMessages;
     final String currentUserId = chatProvider.currentUserId ?? '';
 
+    // AI Front Office #8 — a pending "Suggested reply" (status='ai_draft') is
+    // NOT a sent message; it renders as its own card below, never as a bubble
+    // in the thread. A discarded draft simply disappears (it was never sent).
     final List<dynamic> messages = isRealChat
         ? chatProvider.messages
+              .whereType<Map>()
+              .where((m) {
+                final status = (m['status'] ?? 'sent').toString();
+                return status != 'ai_draft' && status != 'discarded';
+              })
+              .toList()
         : const [];
 
     // Booking-anchored subtitle: "athlete · next session" when we have it (§17).
@@ -262,10 +278,21 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
                               ))),
           ),
 
+          // Coach-only — automatic "Suggested reply" cards (AI Front Office
+          // #7/#8). Each is a coach-only draft written by the pipeline; the
+          // coach sends, edits-then-sends, or discards. Visually distinct
+          // full-width cards, never rendered as a chat bubble.
+          if (chatProvider.isProvider && isRealChat)
+            _buildSuggestedReplyCards(chatProvider),
+
           // Coach-only AI affordance — drafts a reply and pre-fills the
           // composer below. It NEVER sends; the coach edits and sends manually.
           if (chatProvider.isProvider && isRealChat)
             _buildDraftReplyBar(chatProvider),
+
+          // Editing banner — shown only while the composer holds a
+          // Suggested-reply draft awaiting the coach's edit + send.
+          if (_editingDraftId != null && isRealChat) _buildEditingBanner(),
 
           // Composer — only shown for a real, resolvable thread.
           if (isRealChat) _buildComposer(chatProvider),
@@ -389,6 +416,7 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
                 controller: _messageController,
+                focusNode: _messageFocusNode,
                 style: AppTypography.font(
                   color: AppColors.textPrimary,
                   fontSize: 15,
@@ -641,9 +669,360 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _conversationId.isEmpty) return;
 
+    // AI Front Office #8 — the composer holds a Suggested-reply draft the
+    // coach is editing: sending resolves THAT draft (action='edited') instead
+    // of posting a brand-new message, so #9's draft_feedback still captures
+    // the original AI text vs. the coach's final edit.
+    final editingId = _editingDraftId;
+    if (editingId != null) {
+      _handleSendEditedDraft(chatProvider, editingId, text);
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
     _messageController.clear();
     final success = await chatProvider.sendMessage(_conversationId, text);
-    if (success) _scrollToBottom();
+    if (success) {
+      _scrollToBottom();
+      return;
+    }
+    // The write failed (offline / server error). Never leave the message
+    // silently dropped: tell the user and restore what they typed so it isn't
+    // lost and they can retry.
+    debugPrint('chat send failed for conversation $_conversationId');
+    if (!mounted) return;
+    _messageController.text = text;
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _messageController.text.length),
+    );
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Message not sent. Check your connection and try again.'),
+        backgroundColor: AppColors.negative,
+      ),
+    );
+  }
+
+  Future<void> _handleSendEditedDraft(
+    ChatProvider chatProvider,
+    String draftId,
+    String text,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    _messageController.clear();
+    final ok = await chatProvider.resolveDraft(
+      draftId: draftId,
+      action: 'edited',
+      finalText: text,
+    );
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _editingDraftId = null);
+      _scrollToBottom();
+      return;
+    }
+    // Honest failure (L-015): never a silent no-op. Restore the edited text
+    // so nothing typed is lost, and keep editing state so the coach can retry.
+    debugPrint('resolveDraft(edited) failed for draft $draftId');
+    _messageController.text = text;
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _messageController.text.length),
+    );
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not send this reply. Check your connection and try again.',
+        ),
+        backgroundColor: AppColors.negative,
+      ),
+    );
+  }
+
+  // ── AI Front Office #7/#8 — "Suggested reply" cards ───────────────────────
+  // Coach-only (call site gates on chatProvider.isProvider). Each pending
+  // ai_draft renders as a visually distinct, full-width card — never a chat
+  // bubble — with Send / Edit / Discard. Every action resolves through the
+  // SAME combined repo call, so #9's draft_feedback is written on all three.
+  Widget _buildSuggestedReplyCards(ChatProvider chatProvider) {
+    final drafts = chatProvider.pendingDrafts;
+    if (drafts.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        for (final d in drafts)
+          _SuggestedReplyCard(
+            key: ValueKey(d['_id']),
+            text: (d['text'] ?? '').toString(),
+            busy: chatProvider.isResolvingDraft,
+            onSend: () => _handleResolveDraft(chatProvider, d, 'sent_as_is'),
+            onEdit: () => _handleEditDraft(d),
+            onDiscard: () => _handleResolveDraft(chatProvider, d, 'discarded'),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _handleResolveDraft(
+    ChatProvider chatProvider,
+    Map<String, dynamic> draft,
+    String action,
+  ) async {
+    final draftId = (draft['_id'] ?? '').toString();
+    if (draftId.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+
+    final ok = await chatProvider.resolveDraft(draftId: draftId, action: action);
+    if (!mounted) return;
+
+    if (ok) {
+      // If the coach was mid-edit on this exact draft, clear that state too.
+      if (_editingDraftId == draftId) {
+        setState(() => _editingDraftId = null);
+        _messageController.clear();
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            action == 'discarded' ? 'Draft discarded.' : 'Reply sent.',
+          ),
+          backgroundColor: AppColors.surface,
+        ),
+      );
+      return;
+    }
+
+    // Honest failure (L-015): a real error, never a silent no-op.
+    debugPrint('resolveDraft($action) failed for draft $draftId');
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          action == 'discarded'
+              ? 'Could not discard this draft. Try again.'
+              : 'Could not send this reply. Check your connection and try again.',
+        ),
+        backgroundColor: AppColors.negative,
+      ),
+    );
+  }
+
+  // Pre-fills the composer with the draft's text and marks it as the draft
+  // being edited — sending now resolves this SPECIFIC draft (action='edited')
+  // rather than posting a brand-new message.
+  void _handleEditDraft(Map<String, dynamic> draft) {
+    final text = (draft['text'] ?? '').toString();
+    final draftId = (draft['_id'] ?? '').toString();
+    if (draftId.isEmpty) return;
+    _messageController.text = text;
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: text.length),
+    );
+    setState(() => _editingDraftId = draftId);
+    _messageFocusNode.requestFocus();
+  }
+
+  Widget _buildEditingBanner() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, right: 20, top: 10),
+      child: Row(
+        children: [
+          const Icon(Icons.edit_outlined, size: 14, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Editing suggested reply',
+              style: AppTypography.font(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              setState(() => _editingDraftId = null);
+              _messageController.clear();
+            },
+            child: Text(
+              'Cancel',
+              style: AppTypography.font(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// AI Front Office #7/#8 — a "Suggested reply" card. Deliberately NOT a chat
+// bubble: full-width, symmetric corners, AI-labeled, with its own action row —
+// unmistakably a pending machine draft awaiting the coach's decision, never
+// mistakable for a sent message.
+class _SuggestedReplyCard extends StatefulWidget {
+  final String text;
+  final bool busy;
+  final Future<void> Function() onSend;
+  final VoidCallback onEdit;
+  final Future<void> Function() onDiscard;
+
+  const _SuggestedReplyCard({
+    super.key,
+    required this.text,
+    required this.busy,
+    required this.onSend,
+    required this.onEdit,
+    required this.onDiscard,
+  });
+
+  @override
+  State<_SuggestedReplyCard> createState() => _SuggestedReplyCardState();
+}
+
+class _SuggestedReplyCardState extends State<_SuggestedReplyCard> {
+  bool _sending = false;
+  bool _discarding = false;
+
+  Future<void> _tapSend() async {
+    setState(() => _sending = true);
+    await widget.onSend();
+    if (mounted) setState(() => _sending = false);
+  }
+
+  Future<void> _tapDiscard() async {
+    setState(() => _discarding = true);
+    await widget.onDiscard();
+    if (mounted) setState(() => _discarding = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = widget.busy || _sending || _discarding;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface3,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.blue.withValues(alpha: 0.45), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AIBadge(label: 'Suggested reply'),
+          const SizedBox(height: 10),
+          Text(
+            widget.text.isEmpty ? '(empty draft)' : widget.text,
+            style: AppTypography.font(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: busy ? null : _tapSend,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.slate,
+                    disabledBackgroundColor: AppColors.slate.withValues(alpha: 0.4),
+                    foregroundColor: AppColors.onSlate,
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.tile),
+                    ),
+                    elevation: 0,
+                  ),
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.onSlate,
+                          ),
+                        )
+                      : const Icon(Icons.send, size: 15),
+                  label: Text(
+                    _sending ? 'Sending…' : 'Send',
+                    style: AppTypography.font(
+                      color: AppColors.onSlate,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : widget.onEdit,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textPrimary,
+                    side: const BorderSide(color: AppColors.hairlineStrong),
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.tile),
+                    ),
+                  ),
+                  icon: const Icon(Icons.edit_outlined, size: 15),
+                  label: Text(
+                    'Edit',
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Tooltip(
+                    message: 'Discard suggested reply',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadii.tile),
+                      onTap: busy ? null : _tapDiscard,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(AppRadii.tile),
+                          border: Border.all(color: AppColors.hairlineStrong),
+                        ),
+                        alignment: Alignment.center,
+                        child: _discarding
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.textSecondary,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.close,
+                                size: 16,
+                                color: AppColors.textSecondary,
+                                semanticLabel: 'Discard suggested reply',
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

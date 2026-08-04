@@ -37,6 +37,9 @@ abstract class AppRoutes {
   static const String chatDetails = '/chat-details';
   static const String providerRoster = '/provider-roster';
   static const String providerFinances = '/provider-finances';
+  static const String providerWaitlist = '/provider-waitlist';
+  static const String providerRecurringSlots = '/provider-recurring-slots';
+  static const String providerSupply = '/provider-supply';
   static const String providerWithdrawal = '/provider-withdrawal';
   static const String providerPayoutsPayments = '/provider-payouts-payments';
   static const String providerEditProfile = '/provider-edit-profile';
@@ -48,6 +51,9 @@ abstract class AppRoutes {
   static const String providerOnboardReview = '/provider-onboard-review';
   static const String parentUpdate = '/parent-update';
   static const String progressUpdates = '/progress-updates';
+  static const String athleteTimeline = '/athlete-timeline';
   static const String automatedMessages = '/automated-messages';
   static const String lifecycleApprovals = '/lifecycle-approvals';
+  static const String providerPolicies = '/provider-policies';
+  static const String providerSetupInterview = '/provider-setup-interview';
 }

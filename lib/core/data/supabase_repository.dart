@@ -397,6 +397,105 @@ class SupabaseRepository implements AppRepository {
     }
   }
 
+  // ── Commission engine (#5) ──────────────────────────────────────────────────
+  @override
+  Future<List<Map<String, dynamic>>> getCommissionRates(String memberId) async {
+    try {
+      final rows = await _db
+          .from('commission_rates')
+          .select()
+          .eq('organization_member_id', memberId)
+          .order('effective_from', ascending: false);
+      return (rows as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('getCommissionRates failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> addCommissionRate(
+    String memberId, {
+    required String type,
+    required num value,
+  }) async {
+    try {
+      // organization_id + created_by + effective_from are SERVER-derived by the
+      // guard trigger; we send only the member id + the rate.
+      await _db.from('commission_rates').insert({
+        'organization_member_id': memberId,
+        'commission_type': type,
+        'commission_value': value,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('addCommissionRate failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> findAffiliatableAccount(
+      String identifier) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      final rows = await _db.rpc('find_affiliatable_account', params: {
+        'p_provider': providerId,
+        'p_identifier': identifier,
+      });
+      final list = (rows as List?)?.cast<Map<String, dynamic>>() ?? const [];
+      return list.isEmpty ? null : list.first;
+    } catch (e) {
+      debugPrint('findAffiliatableAccount failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> affiliateExistingAccount(
+    String profileId, {
+    Map<String, dynamic>? trainerProfile,
+  }) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      final id = await _db.rpc('invite_existing_account', params: {
+        'p_provider': providerId,
+        'p_profile_id': profileId,
+        'p_trainer_profile': trainerProfile ?? const {},
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('affiliateExistingAccount failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> createTrainerInvite({String? email, String? phone}) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      // The guard trigger forces the token/status; invite_kind='trainer' pre-
+      // attaches this org. Return the server-generated token to share.
+      final inserted = await _db
+          .from('coach_invites')
+          .insert({
+            'provider_id': providerId,
+            'invited_email': email,
+            'invited_phone': phone,
+            'invite_kind': 'trainer',
+          })
+          .select('token')
+          .single();
+      return inserted['token']?.toString();
+    } catch (e) {
+      debugPrint('createTrainerInvite failed: $e');
+      return null;
+    }
+  }
+
   /// A new listing needs bookable sessions or the booking flow shows "no
   /// upcoming sessions". Seed a DAILY session for the next 90 days so a program
   /// effectively never runs out of bookable slots (the calendar stays full).
@@ -569,6 +668,1584 @@ class SupabaseRepository implements AppRepository {
     }
   }
 
+  // ── Coach OS: program waitlist (P0 #3) ──────────────────────────────────────
+  // provider_id + status transitions are server-guarded (enforce_waitlist_write);
+  // RLS scopes reads to the caller's own entries / owned programs. COPPA-safe:
+  // only the denormalized first name + age band are written/read here.
+  Map<String, dynamic> _mapWaitlist(Map row) {
+    final prog = row['programs'];
+    return {
+      '_id': row['id'],
+      'programId': row['program_id'],
+      'programTitle': prog is Map ? prog['title'] : null,
+      'sport': prog is Map ? prog['sport_type'] : null,
+      'providerId': row['provider_id'],
+      'searcherId': row['searcher_id'],
+      'athleteId': row['athlete_id'],
+      'athleteFirstName': row['athlete_first_name'],
+      'athleteAgeBand': row['athlete_age_band'],
+      'note': row['note'],
+      'status': row['status'],
+      'offeredAt': row['offered_at'],
+      'expiresAt': row['expires_at'],
+      'createdAt': row['created_at'],
+    };
+  }
+
+  @override
+  Future<String?> joinWaitlist(Map<String, dynamic> entry) async {
+    final uid = _uid;
+    if (uid == null) {
+      debugPrint('joinWaitlist: no authenticated user');
+      return null;
+    }
+    final programId = _extractId(entry['programId']);
+    if (!_isUuid(programId)) {
+      debugPrint('joinWaitlist: missing/invalid programId');
+      return null;
+    }
+    final athleteId = _extractId(entry['athleteId']);
+    final athleteName = entry['athleteFirstName']?.toString();
+    final payload = <String, dynamic>{
+      'searcher_id': uid,
+      'program_id': programId,
+      if (_isUuid(athleteId)) 'athlete_id': athleteId,
+      if (athleteName != null && athleteName.isNotEmpty)
+        'athlete_first_name': athleteName.split(' ').first,
+      if ((entry['athleteAgeBand']?.toString() ?? '').isNotEmpty)
+        'athlete_age_band': entry['athleteAgeBand'],
+      if ((entry['note']?.toString() ?? '').isNotEmpty) 'note': entry['note'],
+      'status': 'waiting',
+    };
+    try {
+      final inserted = await _db
+          .from('program_waitlist')
+          .insert(payload)
+          .select('id')
+          .single();
+      return (inserted as Map)['id']?.toString();
+    } on PostgrestException catch (e) {
+      debugPrint('joinWaitlist failed: code=${e.code} message=${e.message}');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyWaitlistEntries() async {
+    try {
+      final uid = _uid;
+      if (uid == null) return [];
+      final rows = await _db
+          .from('program_waitlist')
+          .select('*, programs(title, sport_type)')
+          .eq('searcher_id', uid)
+          .order('created_at');
+      return (rows as List).map((r) => _mapWaitlist(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getMyWaitlistEntries failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> cancelWaitlistEntry(String id) async {
+    try {
+      if (!_isUuid(id)) return false;
+      await _db
+          .from('program_waitlist')
+          .update({'status': 'cancelled'}).eq('id', id);
+      return true;
+    } on PostgrestException catch (e) {
+      debugPrint('cancelWaitlistEntry failed: ${e.message}');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getWaitlistForProvider() async {
+    try {
+      // RLS (program_waitlist_select_provider) already scopes to the caller's
+      // owned programs — no explicit provider filter needed.
+      final rows = await _db
+          .from('program_waitlist')
+          .select('*, programs(title, sport_type)')
+          .inFilter('status', ['waiting', 'offered'])
+          .order('created_at');
+      return (rows as List).map((r) => _mapWaitlist(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getWaitlistForProvider failed: $e');
+      return [];
+    }
+  }
+
+  // ── Provider Model Rebuild #8: WAITLIST OFFERS ──────────────────────────────
+  // waitlist_offers is the OFFER LEDGER (20260729_000800): server-created by
+  // open_waitlist_seat when a seat frees, drafted by the `waitlist-offer-draft`
+  // edge fn, accepted/declined via the DEFINER RPCs (which reuse
+  // claim_group_seat — no new booking path). RLS scopes reads per-caller.
+  Map<String, dynamic> _mapWaitlistOffer(Map row) => {
+    '_id': row['id'],
+    'entryId': row['entry_id'],
+    'status': row['status'],
+    'serviceId': row['service_id'],
+    'slotDate': row['slot_date'],
+    'slotTime': row['slot_time'],
+    'expiresAt': row['expires_at'],
+    'draftMessageId': row['draft_message_id'],
+    'createdAt': row['created_at'],
+  };
+
+  @override
+  Future<List<Map<String, dynamic>>> getWaitlistOffers({String? providerId}) async {
+    try {
+      var q = _db.from('waitlist_offers').select();
+      if (providerId != null && _isUuid(providerId)) {
+        q = q.eq('provider_id', providerId);
+      }
+      final rows = await q.order('created_at', ascending: false);
+      return (rows as List).map((r) => _mapWaitlistOffer(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getWaitlistOffers failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> draftWaitlistOffer(String offerId) async {
+    try {
+      final res = await _db.functions.invoke('waitlist-offer-draft', body: {
+        'offer_id': offerId,
+      });
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('draftWaitlistOffer FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the offer (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('draftWaitlistOffer failed: $e');
+      return {'error': 'Could not draft the offer. Please try again.'};
+    }
+  }
+
+  @override
+  Future<String?> acceptWaitlistOffer(String offerId, {String? athleteId}) async {
+    if (!_isUuid(offerId)) return null;
+    try {
+      // Raises honestly (expired / already taken / not open) — the DEFINER
+      // function reuses claim_group_seat, so no new booking path (L-015).
+      final id = await _db.rpc('accept_waitlist_offer', params: {
+        'p_offer_id': offerId,
+        'p_athlete': _isUuid(athleteId) ? athleteId : null,
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('acceptWaitlistOffer failed (expired/taken/not open): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> declineWaitlistOffer(String offerId) async {
+    if (!_isUuid(offerId)) return false;
+    try {
+      await _db.rpc('decline_waitlist_offer', params: {'p_offer_id': offerId});
+      return true;
+    } catch (e) {
+      debugPrint('declineWaitlistOffer failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> updateWaitlistStatus(String id, String status) async {
+    try {
+      if (!_isUuid(id)) return false;
+      await _db
+          .from('program_waitlist')
+          .update({'status': status}).eq('id', id);
+      return true;
+    } on PostgrestException catch (e) {
+      debugPrint('updateWaitlistStatus failed: ${e.message}');
+      return false;
+    }
+  }
+
+  // ── Coach OS: earnings export (P0 #3) — READ-ONLY, derives from paid bookings ─
+  // Same rows the finances screen reads for revenue; RLS scopes to the provider.
+  // Moves no money, opens no Stripe surface (L-003).
+  @override
+  Future<List<Map<String, dynamic>>> getProviderEarnings() async {
+    try {
+      final rows = await _fetchBookings();
+      final out = <Map<String, dynamic>>[];
+      for (final b in rows) {
+        final pay = (b['paymentStatus'] ?? '').toString();
+        if (pay != 'paid' && pay != 'partially_refunded') continue;
+        final prog = b['programId'];
+        final sess = b['sessionId'];
+        final ath = b['athleteId'];
+        // family: the paying family's grouping key so first-vs-recurring can be
+        // resolved the way resolve_platform_fee_bps(searcher, provider) does.
+        final family = (b['searcherId'] ??
+                (ath is Map ? ath['_id'] : null) ??
+                '')
+            .toString();
+        out.add({
+          'id': (b['_id'] ?? '').toString(),
+          'family': family,
+          'date':
+              (sess is Map ? sess['startDate'] ?? sess['date'] : null) ??
+              b['createdAt'],
+          'createdAt': b['createdAt'],
+          'athlete': ath is Map ? (ath['firstName'] ?? '') : '',
+          'program': prog is Map ? (prog['title'] ?? '') : '',
+          'sport': prog is Map ? (prog['sport'] ?? '') : '',
+          'status': b['status'] ?? '',
+          'paymentStatus': pay,
+          'gross': b['finalPrice'] ?? 0,
+          'currency': b['currency'] ?? 'USD',
+        });
+      }
+      return out;
+    } catch (e) {
+      debugPrint('getProviderEarnings failed: $e');
+      return [];
+    }
+  }
+
+  // ── Coach OS money page #1: REAL Stripe payout history (READ-ONLY) ──────────
+  // Best-effort call to the `stripe-provider-payouts` edge function (authored,
+  // not yet deployed). Returns [] on ANY failure or when there is no connected
+  // account, so the UI shows an honest empty state and never fabricates a payout
+  // (L-012: the function source exists in supabase/functions/). Moves no money.
+  @override
+  Future<List<Map<String, dynamic>>> getProviderPayouts() async {
+    try {
+      final res = await _db.functions.invoke('stripe-provider-payouts');
+      final data = res.data;
+      final list = (data is Map ? data['payouts'] : null);
+      if (list is! List) return [];
+      return list.map<Map<String, dynamic>>((p) {
+        final m = p as Map;
+        return {
+          'id': m['id']?.toString() ?? '',
+          'amountCents': (m['amount_cents'] as num?)?.toInt() ?? 0,
+          'currency': m['currency']?.toString() ?? 'USD',
+          'status': m['status']?.toString() ?? 'pending',
+          'arrivalDate': m['arrival_date'],
+          'bankLast4': m['bank_last4']?.toString(),
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('getProviderPayouts failed (honest empty): $e');
+      return [];
+    }
+  }
+
+  // ── Coach OS money page #4: off-platform invoicing (DRAFT flow) ─────────────
+  // Coach-owned contacts + invoices (coach_contacts / coach_invoices, RLS
+  // owner-scoped). Amount + SaaS fee are SERVER-pinned by the DB trigger — the
+  // client only proposes line items (L-003). Charging is a separate flagged fn.
+  @override
+  Future<List<Map<String, dynamic>>> getCoachContacts() async {
+    try {
+      final rows = await _db
+          .from('coach_contacts')
+          .select('id, display_name, email, phone, athlete_label, note, created_at')
+          .order('created_at', ascending: false);
+      return (rows as List)
+          .map<Map<String, dynamic>>((r) => {
+                'id': r['id'],
+                'displayName': r['display_name'],
+                'email': r['email'],
+                'phone': r['phone'],
+                'athleteLabel': r['athlete_label'],
+                'note': r['note'],
+              })
+          .toList();
+    } catch (e) {
+      debugPrint('getCoachContacts failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> createCoachContact(Map<String, dynamic> contact) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      final row = await _db
+          .from('coach_contacts')
+          .insert({
+            'provider_id': providerId,
+            'display_name': contact['displayName'],
+            'email': contact['email'],
+            'phone': contact['phone'],
+            'athlete_label': contact['athleteLabel'],
+            'note': contact['note'],
+          })
+          .select('id')
+          .single();
+      return row['id']?.toString();
+    } catch (e) {
+      debugPrint('createCoachContact failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getCoachInvoices() async {
+    try {
+      final rows = await _db
+          .from('coach_invoices')
+          .select(
+              'id, contact_id, description, line_items, amount_cents, '
+              'application_fee_cents, currency, status, hosted_invoice_url, '
+              'due_date, created_at, paid_at, coach_contacts(display_name)')
+          .order('created_at', ascending: false);
+      return (rows as List)
+          .map<Map<String, dynamic>>((r) => {
+                'id': r['id'],
+                'contactId': r['contact_id'],
+                'contactName':
+                    (r['coach_contacts'] is Map)
+                        ? r['coach_contacts']['display_name']
+                        : null,
+                'description': r['description'],
+                'lineItems': r['line_items'],
+                'amountCents': (r['amount_cents'] as num?)?.toInt() ?? 0,
+                'applicationFeeCents':
+                    (r['application_fee_cents'] as num?)?.toInt() ?? 0,
+                'currency': r['currency'] ?? 'USD',
+                'status': r['status'],
+                'hostedInvoiceUrl': r['hosted_invoice_url'],
+                'dueDate': r['due_date'],
+                'paidAt': r['paid_at'],
+              })
+          .toList();
+    } catch (e) {
+      debugPrint('getCoachInvoices failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> createCoachInvoiceDraft(Map<String, dynamic> draft) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return null;
+      // amount_cents / application_fee_cents / status are SERVER-pinned by the
+      // enforce_coach_invoice trigger; we send only what the client may propose.
+      final row = await _db
+          .from('coach_invoices')
+          .insert({
+            'provider_id': providerId,
+            'contact_id': draft['contactId'],
+            'description': draft['description'],
+            'line_items': draft['lineItems'] ?? [],
+            'currency': draft['currency'] ?? 'USD',
+            'due_date': draft['dueDate'],
+          })
+          .select('id')
+          .single();
+      return row['id']?.toString();
+    } catch (e) {
+      debugPrint('createCoachInvoiceDraft failed: $e');
+      return null;
+    }
+  }
+
+  // ── Coach OS: recurring weekly slots (AI Front Office #1) ───────────────────
+  // The coach's standing weekly availability template. provider_id is derived
+  // from the signed-in provider and pinned by the owner RLS; a skip writes a
+  // slot_exception (never deletes the slot). Prices are integer cents; no money
+  // moves here (L-003). COMPLEMENTS recurring_bookings (the family's claim).
+  Map<String, dynamic> _mapSlot(Map row) {
+    return {
+      '_id': row['id'],
+      'providerId': row['provider_id'],
+      'dayOfWeek': row['day_of_week'],
+      'startTime': row['start_time'],
+      'durationMinutes': row['duration_minutes'],
+      'capacity': row['capacity'],
+      'priceCents': row['price_cents'],
+      'currency': row['currency'] ?? 'USD',
+      'active': row['active'] ?? true,
+      'createdAt': row['created_at'],
+    };
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyRecurringSlots() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db
+          .from('recurring_slots')
+          .select()
+          .eq('provider_id', providerId)
+          .order('active', ascending: false)
+          .order('day_of_week');
+      return (rows as List).map((r) => _mapSlot(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getMyRecurringSlots failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> createRecurringSlot(Map<String, dynamic> slot) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) {
+      debugPrint('createRecurringSlot: caller is not a provider');
+      return null;
+    }
+    final payload = <String, dynamic>{
+      'provider_id': providerId,
+      'day_of_week': slot['dayOfWeek'],
+      'start_time': slot['startTime'],
+      'duration_minutes': slot['durationMinutes'],
+      'capacity': slot['capacity'] ?? 1,
+      'price_cents': slot['priceCents'] ?? 0,
+      'active': slot['active'] ?? true,
+    };
+    try {
+      final inserted = await _db
+          .from('recurring_slots')
+          .insert(payload)
+          .select('id')
+          .single();
+      return (inserted as Map)['id']?.toString();
+    } on PostgrestException catch (e) {
+      debugPrint('createRecurringSlot failed: code=${e.code} ${e.message}');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> setRecurringSlotActive(String slotId, bool active) async {
+    if (!_isUuid(slotId)) return false;
+    try {
+      await _db
+          .from('recurring_slots')
+          .update({'active': active}).eq('id', slotId);
+      return true;
+    } on PostgrestException catch (e) {
+      debugPrint('setRecurringSlotActive failed: ${e.message}');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> skipRecurringSlotWeek(
+    String slotId,
+    String date, {
+    String? reason,
+  }) async {
+    if (!_isUuid(slotId)) return false;
+    try {
+      // upsert-safe: unique(slot_id, date) means re-skipping the same week no-ops.
+      await _db.from('slot_exceptions').upsert({
+        'slot_id': slotId,
+        'date': date,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      }, onConflict: 'slot_id,date');
+      return true;
+    } on PostgrestException catch (e) {
+      debugPrint('skipRecurringSlotWeek failed: ${e.message}');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> getSlotExceptions(String slotId) async {
+    if (!_isUuid(slotId)) return [];
+    try {
+      final rows = await _db
+          .from('slot_exceptions')
+          .select('date')
+          .eq('slot_id', slotId)
+          .order('date');
+      return (rows as List)
+          .map((r) => (r as Map)['date'].toString())
+          .toList();
+    } catch (e) {
+      debugPrint('getSlotExceptions failed: $e');
+      return [];
+    }
+  }
+
+  // ── Provider Model Rebuild #1: Services / Availability / Locations ──────────
+  // The listing is dead. A SERVICE (what you sell) carries no times; the ONE
+  // shared weekly AVAILABILITY carries times; bookable_slots() multiplies them.
+
+  Map<String, dynamic> _mapService(Map row) => {
+        '_id': row['id'],
+        'providerId': row['provider_id'],
+        'serviceType': row['service_type'],
+        'title': row['title'],
+        'sport': row['sport'],
+        'durationMinutes': row['duration_minutes'],
+        'priceCents': row['price'], // services.price is integer CENTS
+        'capacity': row['capacity'] ?? row['max_athletes'] ?? 1,
+        'locationId': row['location_id'],
+        'assignable': row['assignable'] ?? false,
+        'active': row['is_active'] ?? true,
+        'createdAt': row['created_at'],
+      };
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyServices() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db
+          .from('services')
+          .select()
+          .eq('provider_id', providerId)
+          .order('is_active', ascending: false)
+          .order('created_at', ascending: false);
+      return (rows as List).map((r) => _mapService(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getMyServices failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> createService(Map<String, dynamic> service) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) {
+      debugPrint('createService: caller is not a provider');
+      return null;
+    }
+    final payload = <String, dynamic>{
+      'provider_id': providerId,
+      'service_type': service['serviceType'],
+      'session_type': _legacySessionType(service['serviceType']),
+      'title': service['title'],
+      if (service['sport'] != null) 'sport': service['sport'],
+      'duration_minutes': service['durationMinutes'],
+      'price': service['priceCents'] ?? 0, // integer cents
+      'capacity': service['capacity'] ?? 1,
+      'max_athletes': service['capacity'] ?? 1,
+      if (_isUuid(service['locationId'])) 'location_id': service['locationId'],
+      if (service['assignable'] != null) 'assignable': service['assignable'] == true,
+      'is_active': service['active'] ?? true,
+      // Item #7 camp facets — the DB CHECK (services_camp_facets_only_on_camp)
+      // rejects these on a non-camp, so only send them for a camp service.
+      if (service['serviceType'] == 'camp') ...{
+        if (service['startsOn'] != null) 'starts_on': service['startsOn'],
+        if (service['endsOn'] != null) 'ends_on': service['endsOn'],
+        if (service['dailyStartTime'] != null) 'daily_start_time': service['dailyStartTime'],
+        if (service['dailyEndTime'] != null) 'daily_end_time': service['dailyEndTime'],
+        if (service['ageBand'] != null) 'age_band': service['ageBand'],
+        if (service['earlyBirdPriceCents'] != null) 'early_bird_price_cents': service['earlyBirdPriceCents'],
+        if (service['earlyBirdCutoff'] != null) 'early_bird_cutoff': service['earlyBirdCutoff'],
+        if (service['depositCents'] != null) 'deposit_cents': service['depositCents'],
+      },
+    };
+    try {
+      final inserted =
+          await _db.from('services').insert(payload).select('id').single();
+      final id = (inserted as Map)['id']?.toString();
+      // Item #6: org staffing — link the assignable trainers, if any.
+      final ids = (service['assignableMemberIds'] as List?)?.cast<String>();
+      if (id != null && service['assignable'] == true && ids != null && ids.isNotEmpty) {
+        await setServiceStaffing(id, assignable: true, memberIds: ids);
+      }
+      return id;
+    } catch (e) {
+      debugPrint('createService failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> setServiceStaffing(
+    String serviceId, {
+    required bool assignable,
+    required List<String> memberIds,
+  }) async {
+    if (!_isUuid(serviceId)) return false;
+    try {
+      await _db.from('services').update({'assignable': assignable}).eq('id', serviceId);
+      // Replace the staffing set: clear then insert the current members.
+      await _db.from('service_assignable_members').delete().eq('service_id', serviceId);
+      final rows = memberIds
+          .where(_isUuid)
+          .map((m) => {'service_id': serviceId, 'organization_member_id': m})
+          .toList();
+      if (rows.isNotEmpty) {
+        await _db.from('service_assignable_members').insert(rows);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('setServiceStaffing failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> getServiceStaffing(String serviceId) async {
+    if (!_isUuid(serviceId)) return [];
+    try {
+      final rows = await _db
+          .from('service_assignable_members')
+          .select('organization_member_id')
+          .eq('service_id', serviceId);
+      return (rows as List)
+          .map((r) => (r as Map)['organization_member_id']?.toString())
+          .whereType<String>()
+          .toList();
+    } catch (e) {
+      debugPrint('getServiceStaffing failed: $e');
+      return [];
+    }
+  }
+
+  // Keep the legacy session_type column consistent with the new service_type so
+  // any old reader stays correct (both columns describe the same offering).
+  String _legacySessionType(dynamic serviceType) {
+    switch (serviceType) {
+      case 'group':
+        return 'small_group';
+      case 'team_block':
+        return 'team';
+      case 'camp':
+        return 'small_group';
+      case 'private':
+      default:
+        return 'one_on_one';
+    }
+  }
+
+  @override
+  Future<bool> updateService(String serviceId, Map<String, dynamic> patch) async {
+    if (!_isUuid(serviceId)) return false;
+    final upd = <String, dynamic>{};
+    if (patch.containsKey('title')) upd['title'] = patch['title'];
+    if (patch.containsKey('sport')) upd['sport'] = patch['sport'];
+    if (patch.containsKey('serviceType')) {
+      upd['service_type'] = patch['serviceType'];
+      upd['session_type'] = _legacySessionType(patch['serviceType']);
+    }
+    if (patch.containsKey('durationMinutes')) {
+      upd['duration_minutes'] = patch['durationMinutes'];
+    }
+    if (patch.containsKey('priceCents')) upd['price'] = patch['priceCents'];
+    if (patch.containsKey('capacity')) {
+      upd['capacity'] = patch['capacity'];
+      upd['max_athletes'] = patch['capacity'];
+    }
+    if (patch.containsKey('locationId')) {
+      upd['location_id'] = _isUuid(patch['locationId']) ? patch['locationId'] : null;
+    }
+    if (patch.containsKey('assignable')) upd['assignable'] = patch['assignable'] == true;
+    if (patch.containsKey('active')) upd['is_active'] = patch['active'];
+    if (upd.isEmpty) return true;
+    try {
+      await _db.from('services').update(upd).eq('id', serviceId);
+      return true;
+    } catch (e) {
+      debugPrint('updateService failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> setServiceActive(String serviceId, bool active) async {
+    if (!_isUuid(serviceId)) return false;
+    try {
+      await _db.from('services').update({'is_active': active}).eq('id', serviceId);
+      return true;
+    } catch (e) {
+      debugPrint('setServiceActive failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> bookableSlots({
+    required String providerId,
+    required String serviceId,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    if (!_isUuid(providerId) || !_isUuid(serviceId)) return [];
+    try {
+      final rows = await _db.rpc('bookable_slots', params: {
+        'p_provider': providerId,
+        'p_service': serviceId,
+        'p_from': fromDate,
+        'p_to': toDate,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'date': m['slot_date'].toString(),
+          'startTime': m['start_time']?.toString(),
+          'endTime': m['end_time']?.toString(),
+          'capacity': m['capacity'],
+          'booked': m['booked'],
+          'seatsRemaining': m['seats_remaining'],
+          'locationId': m['location_id'],
+          'locationName': m['location_name'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('bookableSlots failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> refineSetupBundle({
+    required String sport,
+    required List<Map<String, String>> transcript,
+    required Map<String, dynamic> template,
+  }) async {
+    // Best-effort AI proposal via the gateway-backed `setup-interview` Edge
+    // Function. On ANY failure (including before it's deployed) return null so
+    // the caller keeps the deterministic, offline template bundle. Mirrors the
+    // formulateGoalHeadline try/catch — the WRITES never happen here.
+    try {
+      final res = await _db.functions.invoke(
+        'setup-interview',
+        body: {
+          'sport': sport,
+          'transcript': transcript,
+          'template': template,
+        },
+      );
+      final data = Map<String, dynamic>.from((res.data as Map?) ?? {});
+      final bundle = data['bundle'];
+      if (bundle is Map) return Map<String, dynamic>.from(bundle);
+      return null;
+    } on FunctionException catch (e) {
+      debugPrint('refineSetupBundle FunctionException: ${e.status}');
+      return null;
+    } catch (e) {
+      debugPrint('refineSetupBundle failed: $e');
+      return null;
+    }
+  }
+
+  // ── Provider Model Rebuild #2: group seats / recurring-on-service / packs ────
+  // All money-neutral: a claimed seat / redeemed booking is created unpaid/pending
+  // by the SQL; settlement (per-session charge or consume_credit) is the deferred
+  // money layer (L-003). The client never decrements a credit.
+  @override
+  Future<String?> claimGroupSeat({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    if (!_isUuid(serviceId)) return null;
+    try {
+      // Atomic no-oversell lives in the DB function; a FULL slot RAISES, which we
+      // surface as null (L-015 — the caller shows "slot full", never a fake win).
+      final id = await _db.rpc('claim_group_seat', params: {
+        'p_service': serviceId,
+        'p_slot_date': slotDate,
+        'p_slot_time': slotTime,
+        'p_athlete': _isUuid(athleteId) ? athleteId : null,
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('claimGroupSeat failed (full/blocked): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> groupSlotRoster({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+  }) async {
+    if (!_isUuid(serviceId)) return [];
+    try {
+      final rows = await _db.rpc('group_slot_roster', params: {
+        'p_service': serviceId,
+        'p_slot_date': slotDate,
+        'p_slot_time': slotTime,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'bookingId': m['booking_id'],
+          'athleteFirstName': m['athlete_first_name'],
+          'athleteAgeBand': m['athlete_age_band'],
+          'status': m['status'],
+          'paymentStatus': m['payment_status'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('groupSlotRoster failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> createRecurringClaim(Map<String, dynamic> claim) async {
+    final uid = _db.auth.currentUser?.id;
+    final serviceId = _extractId(claim['serviceId']);
+    if (uid == null || !_isUuid(serviceId)) return null;
+    // provider_id is server-derived by enforce_recurring_booking_org from the
+    // service; searcher_id must equal auth.uid() (RLS insert check).
+    final payload = <String, dynamic>{
+      'searcher_id': uid,
+      'service_id': serviceId,
+      if (claim['dayOfWeek'] != null) 'day_of_week': claim['dayOfWeek'],
+      if (claim['startTime'] != null) 'start_time': claim['startTime'],
+      'start_date': claim['startDate'],
+      'cadence': claim['cadence'] ?? 'weekly',
+      if (claim['occurrenceCount'] != null)
+        'occurrence_count': claim['occurrenceCount'],
+      if (claim['endDate'] != null) 'end_date': claim['endDate'],
+      'billing_model': claim['billingModel'] ?? 'per_session',
+      if (claim['packageSize'] != null) 'package_size': claim['packageSize'],
+      if (_isUuid(claim['athleteId'])) 'athlete_id': claim['athleteId'],
+      if (claim['athleteFirstName'] != null)
+        'athlete_first_name': claim['athleteFirstName'],
+      if (claim['athleteAgeBand'] != null)
+        'athlete_age_band': claim['athleteAgeBand'],
+    };
+    try {
+      final inserted = await _db
+          .from('recurring_bookings')
+          .insert(payload)
+          .select('id')
+          .single();
+      return (inserted as Map)['id']?.toString();
+    } catch (e) {
+      debugPrint('createRecurringClaim failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int> creditBalanceForService(String serviceId) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null || !_isUuid(serviceId)) return 0;
+    try {
+      // RLS booking_credits_select_searcher scopes to this family.
+      final rows = await _db
+          .from('booking_credits')
+          .select('remaining_credits')
+          .eq('service_id', serviceId)
+          .eq('searcher_id', uid);
+      var total = 0;
+      for (final r in rows) {
+        total += ((r as Map)['remaining_credits'] as int? ?? 0);
+      }
+      return total;
+    } catch (e) {
+      debugPrint('creditBalanceForService failed: $e');
+      return 0;
+    }
+  }
+
+  @override
+  Future<String?> redeemPackCredit({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    // No credit to redeem -> honest null before creating anything (L-015).
+    if (await creditBalanceForService(serviceId) <= 0) return null;
+    // Booking rides the same seat-claim path; the actual decrement is settled
+    // server-side (consume_credit, service-role) — the client never decrements.
+    return claimGroupSeat(
+      serviceId: serviceId,
+      slotDate: slotDate,
+      slotTime: slotTime,
+      athleteId: athleteId,
+      athleteFirstName: athleteFirstName,
+      athleteAgeBand: athleteAgeBand,
+    );
+  }
+
+  // ── Provider Model Rebuild #7: CAMPS (a service type) + the ops layer ────────
+  // All money-neutral (L-003): a registration is created unpaid/pending; the
+  // deposit/balance Stripe charge is deferred (docs/CAMP-CHARGE-DESIGN.md).
+  @override
+  Future<Map<String, dynamic>?> campPriceDue({
+    required String serviceId,
+    required String asOf,
+  }) async {
+    if (!_isUuid(serviceId)) return null;
+    try {
+      // camp_price_due returns a set (0 or 1 row); Supabase gives a List.
+      final rows = await _db.rpc('camp_price_due', params: {
+        'p_service': serviceId,
+        'p_as_of': asOf,
+      });
+      final row = (rows is List && rows.isNotEmpty) ? rows.first as Map : null;
+      if (row == null) return null; // not visible (unverified / not a camp)
+      return <String, dynamic>{
+        'fullPriceCents': row['full_price_cents'],
+        'dueNowCents': row['due_now_cents'],
+        'balanceCents': row['balance_cents'],
+        'isEarlyBird': row['is_early_bird'] == true,
+        'hasDeposit': row['has_deposit'] == true,
+      };
+    } catch (e) {
+      debugPrint('campPriceDue failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> registerCampAthlete({
+    required String serviceId,
+    required String athleteId,
+    // Server derives the roster PII from the owned athlete — these mock-only hints
+    // are ignored on the real backend (see the interface doc).
+    String? athleteFirstName,
+    String? athleteAgeBand,
+    Map<String, dynamic>? emergencyContact,
+    String? medicalNotes,
+  }) async {
+    if (!_isUuid(serviceId) || !_isUuid(athleteId)) return null;
+    try {
+      // Atomic no-oversell lives in claim_group_seat (wrapped by
+      // register_camp_athlete); a FULL camp RAISES -> we surface null (L-015).
+      final id = await _db.rpc('register_camp_athlete', params: {
+        'p_service': serviceId,
+        'p_athlete': athleteId,
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('registerCampAthlete failed (full/blocked): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> campRoster({
+    required String serviceId,
+    required String day,
+    bool asStaff = true, // server enforces staff-only; hint ignored here
+  }) async {
+    if (!_isUuid(serviceId)) return [];
+    try {
+      // A non-staff caller gets 0 rows from the DB (RLS + internal gate, L-005).
+      final rows = await _db.rpc('camp_roster_view', params: {
+        'p_service': serviceId,
+        'p_day': day,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'rosterId': m['roster_id'],
+          'bookingId': m['booking_id'],
+          'athleteFirstName': m['athlete_first_name'],
+          'athleteAgeBand': m['athlete_age_band'],
+          'emergencyContact': m['emergency_contact'],
+          'medicalNotes': m['medical_notes'],
+          'checkedInAt': m['checked_in_at'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('campRoster failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<DateTime?> campCheckIn({
+    required String rosterId,
+    required String day,
+  }) async {
+    if (!_isUuid(rosterId)) return null;
+    try {
+      final at = await _db.rpc('camp_check_in', params: {
+        'p_roster': rosterId,
+        'p_day': day,
+      });
+      if (at == null) return null;
+      return DateTime.tryParse(at.toString());
+    } catch (e) {
+      debugPrint('campCheckIn failed (not staff / blocked): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> campRecapDraft({
+    required String serviceId,
+    required String day,
+    List<String> skills = const [],
+    int? effort,
+    String? note,
+  }) async {
+    try {
+      final res = await _db.functions.invoke('camp-recap', body: {
+        'serviceId': serviceId,
+        'day': day,
+        if (skills.isNotEmpty) 'skills': skills,
+        'effort': ?effort,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      });
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('campRecapDraft FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the recap (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('campRecapDraft failed: $e');
+      return {'error': 'Could not draft the recap. Please try again.'};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> campBroadcast({
+    required String serviceId,
+    required String message,
+  }) async {
+    try {
+      final res = await _db.functions.invoke('camp-broadcast', body: {
+        'serviceId': serviceId,
+        'message': message,
+      });
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('campBroadcast FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the broadcast (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('campBroadcast failed: $e');
+      return {'error': 'Could not draft the broadcast. Please try again.'};
+    }
+  }
+
+  // ── Provider Model Rebuild #9: TEAM BLOCKS (buyer construct, split-pay) ───────
+  // Money is structure-only (L-003): no stripe_* fields, no charge. Redeem
+  // provisions a consented parent/child + bookings on the existing rail.
+  @override
+  Future<String?> createTeamBlock({
+    required String serviceId,
+    String? teamName,
+    required int sessionCount,
+    required int unitPriceCents,
+    required String paymentMode,
+    String? onePayerProfileId,
+  }) async {
+    if (!_isUuid(serviceId)) return null;
+    if (sessionCount <= 0 || unitPriceCents < 0) return null;
+    try {
+      // created_by is pinned to the caller by enforce_team_block_service; RLS
+      // requires created_by = auth.uid(); the trigger validates service ownership.
+      final row = await _db.from('team_blocks').insert({
+        'service_id': serviceId,
+        'team_name': teamName,
+        'session_count': sessionCount,
+        'unit_price_cents': unitPriceCents,
+        'payment_mode': paymentMode,
+        if (onePayerProfileId != null && _isUuid(onePayerProfileId))
+          'one_payer_profile_id': onePayerProfileId,
+      }).select('id').single();
+      return row['id']?.toString();
+    } catch (e) {
+      debugPrint('createTeamBlock failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> addTeamBlockMember({
+    required String teamBlockId,
+    String? invitedEmail,
+    String? invitedPhone,
+    String? memberLabel,
+  }) async {
+    if (!_isUuid(teamBlockId)) return null;
+    try {
+      final row = await _db.from('team_block_members').insert({
+        'team_block_id': teamBlockId,
+        'invited_email': invitedEmail,
+        'invited_phone': invitedPhone,
+        'member_label': memberLabel,
+      }).select('id').single();
+      return row['id']?.toString();
+    } catch (e) {
+      debugPrint('addTeamBlockMember failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> createSplitPayLinks({required String teamBlockId}) async {
+    if (!_isUuid(teamBlockId)) return null;
+    try {
+      final n = await _db.rpc('create_split_pay_links', params: {
+        'p_block': teamBlockId,
+      });
+      return (n as num?)?.toInt();
+    } catch (e) {
+      debugPrint('createSplitPayLinks failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> redeemSplitShare({
+    required String token,
+    required String athleteFirstName,
+    String? athleteDob,
+    required String consentVersion,
+  }) async {
+    if (token.isEmpty || consentVersion.trim().isEmpty) return null;
+    try {
+      // Server captures consent + provisions the child + generates the N bookings;
+      // a missing-consent / used-token redeem RAISES -> null (honest failure, L-015).
+      final n = await _db.rpc('redeem_split_share', params: {
+        'p_token': token,
+        'p_athlete_first': athleteFirstName,
+        'p_athlete_dob': athleteDob,
+        'p_consent_version': consentVersion,
+      });
+      return (n as num?)?.toInt();
+    } catch (e) {
+      debugPrint('redeemSplitShare failed (used/invalid/no consent): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> teamBlockSplitStatus({
+    required String teamBlockId,
+  }) async {
+    if (!_isUuid(teamBlockId)) return [];
+    try {
+      final rows = await _db.rpc('team_block_split_status', params: {
+        'p_block': teamBlockId,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'memberId': m['member_id'],
+          'memberLabel': m['member_label'],
+          'invitedEmail': m['invited_email'],
+          'invitedPhone': m['invited_phone'],
+          'shareAmountCents': m['share_amount_cents'],
+          'platformFeeCents': m['platform_fee_cents'],
+          'linkStatus': m['link_status'],
+          'paidAt': m['paid_at'],
+          'memberStatus': m['member_status'],
+          'athleteFirstName': m['athlete_first_name'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('teamBlockSplitStatus failed: $e');
+      return [];
+    }
+  }
+
+  // ── Provider Model Rebuild #6: org booking, scheduling grid, shared inbox ────
+  @override
+  Future<String?> bookAssignableService({
+    required String serviceId,
+    required String slotDate,
+    required String slotTime,
+    String? assignedMemberId,
+    String? athleteId,
+    String? athleteFirstName,
+    String? athleteAgeBand,
+  }) async {
+    final uid = _db.auth.currentUser?.id;
+    if (uid == null || !_isUuid(serviceId)) return null;
+    // Direct bookings insert: every BEFORE trigger governs — the venue-conflict
+    // guard (20260729_000600), the any-available / staffing rule (20260729_000610),
+    // the verify gate + member-org guard. A rejected write RAISES -> we surface
+    // null (L-015): a double-book / bad assignment is an honest failure, not a win.
+    final payload = <String, dynamic>{
+      'searcher_id': uid,
+      'service_id': serviceId,
+      'slot_date': slotDate,
+      'slot_time': slotTime,
+      if (_isUuid(assignedMemberId)) 'assigned_member_id': assignedMemberId,
+      if (_isUuid(athleteId)) 'athlete_id': athleteId,
+      'athlete_first_name': ?athleteFirstName,
+      'athlete_age_band': ?athleteAgeBand,
+      'status': 'pending',
+      'payment_status': 'unpaid',
+    };
+    try {
+      final inserted =
+          await _db.from('bookings').insert(payload).select('id').single();
+      return (inserted as Map)['id']?.toString();
+    } catch (e) {
+      debugPrint('bookAssignableService failed (conflict/assignment/full): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> orgScheduleGrid({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db.rpc('org_schedule_grid', params: {
+        'p_org': providerId,
+        'p_from': fromDate,
+        'p_to': toDate,
+      });
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'date': m['slot_date'].toString(),
+          'slotTime': m['slot_time']?.toString(),
+          'locationId': m['location_id'],
+          'locationName': m['location_name'],
+          'serviceId': m['service_id'],
+          'serviceTitle': m['service_title'],
+          'assignedMemberId': m['assigned_member_id'],
+          'trainerName': m['trainer_name'],
+          'booked': m['booked'],
+          'capacity': m['capacity'],
+          'hasConflict': m['has_conflict'] ?? false,
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('orgScheduleGrid failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> orgInbox() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db.rpc('org_inbox', params: {'p_org': providerId});
+      if (rows is! List) return [];
+      return rows.map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          'conversationId': m['conversation_id'],
+          'parentFirstName': m['parent_first_name'],
+          'serviceId': m['service_id'],
+          'serviceTitle': m['service_title'],
+          'assignedMemberId': m['assigned_member_id'],
+          'trainerName': m['trainer_name'],
+          'lastMessage': m['last_message'],
+          'lastMessageAt': m['last_message_at'],
+          'hasPendingDraft': m['has_pending_draft'] ?? false,
+          'draftId': m['draft_id'],
+          'draftBody': m['draft_body'],
+          'draftIntent': m['draft_intent'],
+          'draftConfidence': m['draft_confidence'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('orgInbox failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> routeConversation({
+    required String conversationId,
+    String? serviceId,
+    String? memberId,
+  }) async {
+    if (!_isUuid(conversationId)) return false;
+    try {
+      await _db.rpc('route_conversation', params: {
+        'p_conversation': conversationId,
+        'p_service': _isUuid(serviceId) ? serviceId : null,
+        'p_member': _isUuid(memberId) ? memberId : null,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('routeConversation failed: $e');
+      return false;
+    }
+  }
+
+  // ── Weekly availability (ONE grid per provider) + settings + exceptions ─────
+  @override
+  Future<List<Map<String, dynamic>>> getWeeklyAvailability() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db
+          .from('availability')
+          .select('id, day_of_week, start_time, end_time, is_blocked')
+          .eq('provider_id', providerId)
+          .not('day_of_week', 'is', null)
+          .order('day_of_week')
+          .order('start_time');
+      return (rows as List).map((r) {
+        final m = r as Map;
+        return <String, dynamic>{
+          '_id': m['id'],
+          'dayOfWeek': m['day_of_week'],
+          'startTime': m['start_time']?.toString(),
+          'endTime': m['end_time']?.toString(),
+          'isBlocked': m['is_blocked'] ?? false,
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('getWeeklyAvailability failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> setWeeklyAvailability(List<Map<String, dynamic>> blocks) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) return false;
+    try {
+      // Replace the recurring rows (day_of_week set) for this provider. One-off
+      // specific_date rows (day_of_week null) are left untouched.
+      await _db
+          .from('availability')
+          .delete()
+          .eq('provider_id', providerId)
+          .not('day_of_week', 'is', null);
+      if (blocks.isNotEmpty) {
+        final payload = blocks
+            .where((b) => b['dayOfWeek'] != null)
+            .map((b) => {
+                  'provider_id': providerId,
+                  'day_of_week': b['dayOfWeek'],
+                  'start_time': b['startTime'],
+                  'end_time': b['endTime'],
+                  'is_blocked': false,
+                })
+            .toList();
+        if (payload.isNotEmpty) {
+          await _db.from('availability').insert(payload);
+        }
+      }
+      return true;
+    } catch (e) {
+      debugPrint('setWeeklyAvailability failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getAvailabilitySettings() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return {'bufferMinutes': 0, 'vacationUntil': null};
+      final row = await _db
+          .from('providers')
+          .select('buffer_minutes, vacation_until')
+          .eq('id', providerId)
+          .maybeSingle();
+      final m = (row as Map?) ?? {};
+      return {
+        'bufferMinutes': m['buffer_minutes'] ?? 0,
+        'vacationUntil': m['vacation_until']?.toString(),
+      };
+    } catch (e) {
+      debugPrint('getAvailabilitySettings failed: $e');
+      return {'bufferMinutes': 0, 'vacationUntil': null};
+    }
+  }
+
+  @override
+  Future<bool> setAvailabilitySettings(
+      {int? bufferMinutes, String? vacationUntil}) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) return false;
+    final upd = <String, dynamic>{};
+    if (bufferMinutes != null) upd['buffer_minutes'] = bufferMinutes;
+    // vacationUntil is intentionally settable to null (clear vacation): always
+    // write the key when the method is called for it.
+    upd['vacation_until'] = vacationUntil;
+    try {
+      await _db.from('providers').update(upd).eq('id', providerId);
+      return true;
+    } catch (e) {
+      debugPrint('setAvailabilitySettings failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> getAvailabilityExceptions() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db
+          .from('availability_exceptions')
+          .select('date')
+          .eq('provider_id', providerId)
+          .order('date');
+      return (rows as List).map((r) => (r as Map)['date'].toString()).toList();
+    } catch (e) {
+      debugPrint('getAvailabilityExceptions failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<bool> addAvailabilityException(String date, {String? reason}) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) return false;
+    try {
+      await _db.from('availability_exceptions').upsert({
+        'provider_id': providerId,
+        'date': date,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      }, onConflict: 'provider_id,date');
+      return true;
+    } catch (e) {
+      debugPrint('addAvailabilityException failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> removeAvailabilityException(String date) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) return false;
+    try {
+      await _db
+          .from('availability_exceptions')
+          .delete()
+          .eq('provider_id', providerId)
+          .eq('date', date);
+      return true;
+    } catch (e) {
+      debugPrint('removeAvailabilityException failed: $e');
+      return false;
+    }
+  }
+
+  // ── Saved locations (venues) ────────────────────────────────────────────────
+  Map<String, dynamic> _mapLocation(Map row) => {
+        '_id': row['id'],
+        'name': row['name'],
+        'addressLine1': row['address_line1'],
+        'addressLine2': row['address_line2'],
+        'city': row['city'],
+        'state': row['state'],
+        'zip': row['zip'],
+        'country': row['country'],
+        'lat': row['lat'],
+        'lng': row['lng'],
+        'active': row['is_active'] ?? true,
+      };
+
+  @override
+  Future<List<Map<String, dynamic>>> getMyLocations() async {
+    try {
+      final providerId = await _currentProviderId();
+      if (providerId == null) return [];
+      final rows = await _db
+          .from('locations')
+          .select()
+          .eq('provider_id', providerId)
+          .order('is_active', ascending: false)
+          .order('name');
+      return (rows as List).map((r) => _mapLocation(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getMyLocations failed: $e');
+      return [];
+    }
+  }
+
+  @override
+  Future<String?> createLocation(Map<String, dynamic> location) async {
+    final providerId = await _currentProviderId();
+    if (providerId == null) {
+      debugPrint('createLocation: caller is not a provider');
+      return null;
+    }
+    final payload = <String, dynamic>{
+      'provider_id': providerId,
+      'name': location['name'],
+      if (location['addressLine1'] != null) 'address_line1': location['addressLine1'],
+      if (location['addressLine2'] != null) 'address_line2': location['addressLine2'],
+      if (location['city'] != null) 'city': location['city'],
+      if (location['state'] != null) 'state': location['state'],
+      if (location['zip'] != null) 'zip': location['zip'],
+      if (location['country'] != null) 'country': location['country'],
+      if (location['lat'] != null) 'lat': location['lat'],
+      if (location['lng'] != null) 'lng': location['lng'],
+    };
+    try {
+      final inserted =
+          await _db.from('locations').insert(payload).select('id').single();
+      return (inserted as Map)['id']?.toString();
+    } catch (e) {
+      debugPrint('createLocation failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> updateLocation(String locationId, Map<String, dynamic> patch) async {
+    if (!_isUuid(locationId)) return false;
+    const keyMap = {
+      'name': 'name',
+      'addressLine1': 'address_line1',
+      'addressLine2': 'address_line2',
+      'city': 'city',
+      'state': 'state',
+      'zip': 'zip',
+      'country': 'country',
+      'lat': 'lat',
+      'lng': 'lng',
+      'active': 'is_active',
+    };
+    final upd = <String, dynamic>{};
+    keyMap.forEach((k, col) {
+      if (patch.containsKey(k)) upd[col] = patch[k];
+    });
+    if (upd.isEmpty) return true;
+    try {
+      await _db.from('locations').update(upd).eq('id', locationId);
+      return true;
+    } catch (e) {
+      debugPrint('updateLocation failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> deleteLocation(String locationId) async {
+    if (!_isUuid(locationId)) return false;
+    try {
+      await _db.from('locations').delete().eq('id', locationId);
+      return true;
+    } catch (e) {
+      debugPrint('deleteLocation failed: $e');
+      return false;
+    }
+  }
+
   // ── Session notes + parent updates (AI deliverable) ─────────────────────────
   @override
   Future<String?> createSessionNote(Map<String, dynamic> note) async {
@@ -626,6 +2303,26 @@ class SupabaseRepository implements AppRepository {
     } catch (e) {
       debugPrint('summarizeSessionNote failed: $e');
       return {'error': 'Could not draft the update. Please try again.'};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> draftRecap(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final res = await _db.functions.invoke('draft-recap', body: payload);
+      return Map<String, dynamic>.from((res.data as Map?) ?? {});
+    } on FunctionException catch (e) {
+      debugPrint('draftRecap FunctionException: ${e.status}');
+      final det = e.details;
+      if (det is Map && det['error'] != null) {
+        return {'error': det['error'].toString()};
+      }
+      return {'error': 'Could not draft the recap (status ${e.status}).'};
+    } catch (e) {
+      debugPrint('draftRecap failed: $e');
+      return {'error': 'Could not draft the recap. Please try again.'};
     }
   }
 
@@ -1461,6 +3158,35 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getProgressDigestsForChild(
+    String athleteId,
+  ) async {
+    try {
+      final uid = _uid;
+      if (uid == null || !_isUuid(athleteId)) return [];
+      // Defense in depth on top of the parent-scoped RLS: confirm the caller
+      // actually guards this child before querying (mirrors
+      // getParentUpdatesForChild). Digests are backend-authored; no write here.
+      final child = await _db
+          .from('athletes')
+          .select('id')
+          .eq('id', athleteId)
+          .eq('parent_id', uid)
+          .maybeSingle();
+      if (child == null) return [];
+      final rows = await _db
+          .from('progress_digests')
+          .select()
+          .eq('athlete_id', athleteId)
+          .order('created_at', ascending: false);
+      return (rows as List).map((r) => _mapDigest(r as Map)).toList();
+    } catch (e) {
+      debugPrint('getProgressDigestsForChild failed: $e');
+      return [];
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> generateProposals(String planId) async {
     try {
       final res = await _db.functions.invoke(
@@ -1603,6 +3329,87 @@ class SupabaseRepository implements AppRepository {
       debugPrint('saveProviderProfile failed: $e');
       rethrow; // let the caller surface a real error
     }
+  }
+
+  // ── Coach policies (AI front-office source of truth) ───────────────────────
+  @override
+  Future<Map<String, dynamic>> getCoachPolicies() async {
+    try {
+      final uid = _uid;
+      if (uid == null) return {};
+      final row = await _db
+          .from('providers')
+          .select(
+              'cancellation_policy, what_to_bring, travel_radius, session_notes, faq')
+          .eq('owner_id', uid)
+          .maybeSingle();
+      if (row == null) return {};
+      return {
+        'cancellationPolicy': row['cancellation_policy'],
+        'whatToBring': row['what_to_bring'],
+        'travelRadius': row['travel_radius'],
+        'sessionNotes': row['session_notes'],
+        'faq': _normalizeFaq(row['faq']),
+      };
+    } catch (e) {
+      debugPrint('getCoachPolicies read failed: $e');
+      return {};
+    }
+  }
+
+  @override
+  Future<bool> saveCoachPolicies(Map<String, dynamic> policies) async {
+    try {
+      final uid = _uid;
+      if (uid == null) return false;
+      // Send only the policy columns. These are owner-editable; the
+      // enforce_provider_trust denylist leaves them alone while keeping
+      // background_check_status / account_status / stripe_* server-controlled.
+      // Empty strings normalize to null so the robot never cites a blank fact.
+      String? nn(dynamic v) {
+        if (v == null) return null;
+        final s = v.toString().trim();
+        return s.isEmpty ? null : s;
+      }
+
+      final fields = <String, dynamic>{
+        'cancellation_policy': nn(policies['cancellationPolicy']),
+        'what_to_bring': nn(policies['whatToBring']),
+        'travel_radius': nn(policies['travelRadius']),
+        'session_notes': nn(policies['sessionNotes']),
+        'faq': _normalizeFaq(policies['faq']),
+      };
+      final updated = await _db
+          .from('providers')
+          .update(fields)
+          .eq('owner_id', uid)
+          .select('id');
+      // A confirmed write returns the updated row. No matching row (no provider
+      // profile yet) is a real failure the caller must surface — NOT a silent
+      // success (L-015).
+      return (updated as List).isNotEmpty;
+    } catch (e) {
+      debugPrint('saveCoachPolicies failed: $e');
+      return false; // honor the false-on-failure contract; caller shows error
+    }
+  }
+
+  /// Coerces a stored/incoming faq value into a clean array of
+  /// {question, answer} maps — drops rows missing either side so the robot's
+  /// source of truth never holds a half-populated entry.
+  List<Map<String, String>> _normalizeFaq(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <Map<String, String>>[];
+    for (final e in raw) {
+      if (e is Map) {
+        final q = (e['question'] ?? '').toString().trim();
+        final a = (e['answer'] ?? '').toString().trim();
+        if (q.isNotEmpty && a.isNotEmpty) {
+          out.add({'question': q, 'answer': a});
+        }
+      }
+    }
+    return out;
   }
 
   // ── Athletes ──────────────────────────────────────────────────────────────
@@ -1769,6 +3576,13 @@ class SupabaseRepository implements AppRepository {
               'text': r['body'],
               'senderId': r['sender_id'],
               'createdAt': r['created_at'],
+              // AI Front Office #7/#8 — draft state. Absent on every historical
+              // row read via a pre-migration DB (defaults keep old rows as a
+              // normal, sent, visible message).
+              'status': r['status'] ?? 'sent',
+              'visibleToParent': r['visible_to_parent'] ?? true,
+              'intent': r['intent'],
+              'confidence': r['confidence'],
             },
           )
           .toList();
@@ -1818,9 +3632,20 @@ class SupabaseRepository implements AppRepository {
         'text': m['body'],
         'senderId': m['sender_id'],
         'createdAt': m['created_at'],
+        // A client insert is always a real, sent, visible message (RLS
+        // messages_insert_sender enforces status='sent'/visible_to_parent=true).
+        'status': 'sent',
+        'visibleToParent': true,
       };
     } on PostgrestException catch (e) {
       debugPrint('postMessage failed: ${e.message}');
+      return null;
+    } catch (e) {
+      // Network drop / offline surfaces as a non-Postgrest error; honor the
+      // null-on-failure contract so the caller rolls back and shows an error
+      // instead of the exception escaping (which left a "sent" bubble that
+      // never persisted).
+      debugPrint('postMessage failed (non-Postgrest): $e');
       return null;
     }
   }
@@ -1849,6 +3674,14 @@ class SupabaseRepository implements AppRepository {
               'text': r['body'],
               'senderId': r['sender_id'],
               'createdAt': r['created_at'],
+              // A coach's realtime subscription also receives ai_draft inserts
+              // (RLS lets the coach read their own draft rows); carry the
+              // draft state so the UI renders it as a Suggested-reply card
+              // instead of a normal bubble.
+              'status': r['status'] ?? 'sent',
+              'visibleToParent': r['visible_to_parent'] ?? true,
+              'intent': r['intent'],
+              'confidence': r['confidence'],
             });
           },
         )
@@ -1856,6 +3689,42 @@ class SupabaseRepository implements AppRepository {
     return () async {
       await _db.removeChannel(channel);
     };
+  }
+
+  @override
+  Future<bool> resolveDraft({
+    required String draftId,
+    required String action,
+    String? finalText,
+  }) async {
+    if (!_isUuid(draftId)) return false;
+    if (action != 'sent_as_is' && action != 'edited' && action != 'discarded') {
+      return false;
+    }
+    try {
+      // ONE call into the `resolve_draft` RPC (20260728_000702): it updates
+      // the message AND inserts the draft_feedback row in the SAME server
+      // transaction, so the #9 corpus can never be skipped by a dropped
+      // connection between two separate client writes.
+      await _db.rpc(
+        'resolve_draft',
+        params: {
+          'p_draft_id': draftId,
+          'p_action': action,
+          'p_final_text': action == 'edited' ? (finalText ?? '').trim() : null,
+        },
+      );
+      return true;
+    } on PostgrestException catch (e) {
+      debugPrint('resolveDraft failed: ${e.message}');
+      return false;
+    } catch (e) {
+      // Network drop / offline surfaces as a non-Postgrest error; honor the
+      // false-on-failure contract (L-015) so the caller shows a real error
+      // instead of the exception escaping.
+      debugPrint('resolveDraft failed (non-Postgrest): $e');
+      return false;
+    }
   }
 
   // ── Teams ─────────────────────────────────────────────────────────────────

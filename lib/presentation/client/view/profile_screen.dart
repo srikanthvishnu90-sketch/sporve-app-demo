@@ -224,10 +224,10 @@ class ProfileScreen extends StatelessWidget {
                             onTap: () => Get.toNamed(AppRoutes.editProfile),
                           ),
                           _buildListOption(
-                            icon: Icons.insights_outlined,
-                            title: 'Progress updates',
-                            subtitle: 'Coach updates on your child',
-                            onTap: () => Get.toNamed(AppRoutes.progressUpdates),
+                            icon: Icons.timeline,
+                            title: 'Development timeline',
+                            subtitle: 'Your child’s session-by-session record',
+                            onTap: () => Get.toNamed(AppRoutes.athleteTimeline),
                           ),
                           _buildListOption(
                             icon: Icons.bookmark_border,

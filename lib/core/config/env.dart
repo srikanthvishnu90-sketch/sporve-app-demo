@@ -22,6 +22,15 @@ class Env {
   static const firebaseVapidKey =
       String.fromEnvironment('FIREBASE_VAPID_KEY'); // web push public key
 
+  // ── Off-platform invoicing CHARGE flag (Coach OS money page #4) ───────────
+  // The DRAFT flow (create/list off-platform invoices) is ALWAYS available; the
+  // live Stripe charge/send is gated OFF until the test-mode proof passes
+  // (L-003, docs/COACH-OS-INVOICING-DESIGN.md). Mirrors the server-side flag
+  // OFFPLATFORM_INVOICING_ENABLED on `coach-invoice-create`. Default FALSE: no
+  // client build charges an off-platform family without this being flipped on.
+  static const offPlatformInvoicingCharge =
+      bool.fromEnvironment('OFFPLATFORM_INVOICING_ENABLED', defaultValue: false);
+
   /// True only when the Firebase web config is present, so push code can no-op
   /// cleanly when the app hasn't been wired to a Firebase project yet.
   static bool get pushConfigured =>

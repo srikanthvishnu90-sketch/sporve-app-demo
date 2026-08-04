@@ -1073,7 +1073,10 @@ class _SessionsCard extends StatelessWidget {
                     DateTime? startDate;
                     try {
                       startDate = DateTime.parse(startDateStr);
-                    } catch (_) {}
+                    } catch (e) {
+                      debugPrint('program_detail: bad session startDate '
+                          '"$startDateStr": $e');
+                    }
 
                     final dateLabel = startDate != null
                         ? '${_weekdayName(startDate.weekday)}, ${_monthName(startDate.month)} ${startDate.day}'

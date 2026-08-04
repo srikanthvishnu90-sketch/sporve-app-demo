@@ -165,7 +165,11 @@ class AssistantProvider with ChangeNotifier {
           if (age >= 0 && age < 100) _activeChildAge = age;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      // Best-effort context only (location + child age for ranking). Failure
+      // degrades ranking, not correctness — but log it rather than swallow.
+      debugPrint('AssistantProvider._ensureContext failed: $e');
+    }
   }
 
   void reset() {

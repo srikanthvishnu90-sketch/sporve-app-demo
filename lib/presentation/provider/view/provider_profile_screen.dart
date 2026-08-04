@@ -444,6 +444,14 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
                                 Get.toNamed(AppRoutes.providerServiceProfile),
                           ),
                           _buildListOption(
+                            icon: Icons.policy_outlined,
+                            title: 'My Policies',
+                            subtitle:
+                                'Cancellation, what to bring, FAQ — what the assistant can cite',
+                            onTap: () =>
+                                Get.toNamed(AppRoutes.providerPolicies),
+                          ),
+                          _buildListOption(
                             icon: Icons.people_outline,
                             title: 'Roster Management',
                             subtitle: 'Athletes, availability, payments',
