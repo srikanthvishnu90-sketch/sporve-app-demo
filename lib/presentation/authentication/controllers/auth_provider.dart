@@ -266,6 +266,16 @@ class AuthProvider extends ChangeNotifier {
     return ok;
   }
 
+  /// In-app account deletion for privacy & compliance.
+  Future<bool> deleteAccount() async {
+    _setError(null);
+    _setLoading(true);
+    final ok = await _auth.deleteAccount();
+    if (!ok) _setError('Could not delete account. Please try again.');
+    _setLoading(false);
+    return ok;
+  }
+
   @override
   void dispose() {
     _sub?.cancel();

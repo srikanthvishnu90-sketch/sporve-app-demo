@@ -84,4 +84,8 @@ abstract class AuthService {
     required String token,
     required String newPassword,
   });
+
+  /// Permanently deletes the user account in-app (anonymizes/deletes PII,
+  /// children, messages while keeping required financial/booking audit records).
+  Future<bool> deleteAccount();
 }

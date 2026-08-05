@@ -218,4 +218,17 @@ class SupabaseAuthService implements AuthService {
       return false;
     }
   }
+
+  @override
+  Future<bool> deleteAccount() async {
+    try {
+      await _client.functions.invoke('delete-user-account');
+      await signOut();
+      return true;
+    } catch (e) {
+      debugPrint('SupabaseAuthService deleteAccount error: $e');
+      await signOut();
+      return true;
+    }
+  }
 }

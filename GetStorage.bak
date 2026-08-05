@@ -1,1 +1,1 @@
-{"demand_signals":[{"email":"ny_parent@example.com","zip":"10001","sport":"Tennis"},{"email":"la_parent@example.com","zip":"90001","sport":"Soccer"}]}
+{"signup_email":"parent_test@example.com","auth_step":"authenticated","auth_token":"mock_jwt_token_prod_123","user_role":"parent"}

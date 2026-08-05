@@ -111,4 +111,10 @@ class MockAuthService implements AuthService {
     await Future.delayed(const Duration(milliseconds: 300));
     return true;
   }
+
+  @override
+  Future<bool> deleteAccount() async {
+    await signOut();
+    return true;
+  }
 }
