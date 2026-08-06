@@ -284,6 +284,22 @@ class HomeProvider with ChangeNotifier {
     return true;
   }
 
+  /// Process full or partial refund for a booking.
+  Future<bool> processRefund(
+    String bookingId, {
+    required double amount,
+    String? reason,
+  }) async {
+    final ok = await _repo.processRefund(
+      bookingId,
+      amount: amount,
+      reason: reason,
+    );
+    if (!ok) return false;
+    await fetchBookings();
+    return true;
+  }
+
   /// The booking with [id] from the latest fetched list, or null.
   Map<String, dynamic>? bookingById(String? id) {
     if (id == null) return null;

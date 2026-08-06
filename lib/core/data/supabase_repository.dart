@@ -579,6 +579,32 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
+  Future<bool> processRefund(
+    String bookingId, {
+    required double amount,
+    String? reason,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'bookingId': bookingId,
+        'amount': amount,
+      };
+      if (reason != null && reason.isNotEmpty) {
+        body['reason'] = reason;
+      }
+      final res = await _db.functions.invoke(
+        'stripe-refund',
+        body: body,
+      );
+      final data = (res.data as Map?) ?? {};
+      return data['success'] == true || data['error'] == null;
+    } catch (e) {
+      debugPrint('processRefund failed: $e');
+      return false;
+    }
+  }
+
+  @override
   Future<String?> addBooking(Map<String, dynamic> booking) async {
     // RLS WITH CHECK requires searcher_id = auth.uid(); no session => no insert.
     final uid = _db.auth.currentUser?.id;

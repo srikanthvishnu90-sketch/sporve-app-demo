@@ -857,6 +857,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   /// (invoke attaches the user's JWT). Non-2xx throws FunctionException — surface
   /// the real reason from its details instead of failing silently.
   Future<void> _handleConfirmAndPay() async {
+    if (_checkoutLoading) return; // Prevent double-tap / double-submit
     final messenger = ScaffoldMessenger.of(context);
     // Defense-in-depth: never persist a booking without a chosen athlete, no
     // matter how this action is reached (the step-gate is not the only path).
@@ -932,6 +933,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             'stripe-create-checkout',
             body: {
               'bookingId': id,
+              'idempotencyKey': 'chk_$id',
               'successUrl': successUrl,
               'cancelUrl': cancelUrl,
             },

@@ -105,6 +105,14 @@ abstract class BookingRepository {
   /// Provider-of-the-session only (RLS pins provider edits to `status`); the DB
   /// lifecycle trigger reacts to the transition. Returns true on success.
   Future<bool> updateBookingStatus(String bookingId, String status);
+
+  /// Process a full or partial refund for a booking. Updates status, refundStatus,
+  /// and refundedAmount. Returns true on success.
+  Future<bool> processRefund(
+    String bookingId, {
+    required double amount,
+    String? reason,
+  });
 }
 
 /// User + provider profiles.

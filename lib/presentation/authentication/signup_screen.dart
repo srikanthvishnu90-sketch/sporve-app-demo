@@ -32,11 +32,16 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void initState() {
     super.initState();
+    _passwordController.addListener(_onPasswordChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<AuthProvider>().resetState();
       }
     });
+  }
+
+  void _onPasswordChanged() {
+    setState(() {});
   }
 
   Future<void> _openPrivacyPolicy() async {
@@ -53,6 +58,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   void dispose() {
+    _passwordController.removeListener(_onPasswordChanged);
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
@@ -92,10 +98,16 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       return;
     }
-    if (password.length < 8) {
+    final hasMinLength = password.length >= 12;
+    final hasUpper = RegExp(r'[A-Z]').hasMatch(password);
+    final hasLower = RegExp(r'[a-z]').hasMatch(password);
+    final hasDigit = RegExp(r'[0-9]').hasMatch(password);
+    final hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(password);
+
+    if (!hasMinLength || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Password must be at least 8 characters.'),
+          content: Text('Please ensure your password meets all requirements.'),
           backgroundColor: AppColors.negative,
         ),
       );
@@ -155,9 +167,16 @@ class _SignupScreenState extends State<SignupScreen> {
         Get.toNamed(AppRoutes.verifyEmail);
         break;
       case AuthStatus.error:
+        var msg = authProvider.errorMessage ?? 'Registration failed';
+        if (msg.contains('abcdefghijklmnopqrstuvwxyz') ||
+            msg.contains('Password should be')) {
+          msg = 'Please ensure your password meets all requirements below.';
+        } else if (msg.toLowerCase().contains('rate limit')) {
+          msg = 'Too many sign-up attempts. Please wait 3-5 minutes and try again.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(authProvider.errorMessage ?? 'Registration failed'),
+            content: Text(msg),
             backgroundColor: AppColors.negative,
           ),
         );
@@ -328,13 +347,20 @@ class _SignupScreenState extends State<SignupScreen> {
                   _buildTextField(
                     controller: _passwordController,
                     label: 'PASSWORD',
-                    hint: 'Min. 8 characters',
+                    hint: 'Min. 12 characters',
                     isPassword: true,
                     obscureText: _obscurePassword,
+                    onChanged: (_) => setState(() {}),
                     onToggleVisibility: () {
                       setState(() {
                         _obscurePassword = !_obscurePassword;
                       });
+                    },
+                  ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _passwordController,
+                    builder: (context, value, _) {
+                      return _buildPasswordChecklist(value.text);
                     },
                   ),
                   const SizedBox(height: 28),
@@ -415,6 +441,7 @@ class _SignupScreenState extends State<SignupScreen> {
     bool isPassword = false,
     bool obscureText = false,
     VoidCallback? onToggleVisibility,
+    ValueChanged<String>? onChanged,
     TextInputType keyboardType = TextInputType.text,
   }) {
     return Column(
@@ -432,6 +459,7 @@ class _SignupScreenState extends State<SignupScreen> {
         const SizedBox(height: 10),
         TextField(
           controller: controller,
+          onChanged: onChanged,
           obscureText: isPassword && obscureText,
           keyboardType: keyboardType,
           style: AppTypography.font(color: AppColors.textPrimary, fontSize: 15),
@@ -478,6 +506,68 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPasswordChecklist(String password) {
+    final hasMinLength = password.length >= 12;
+    final hasUpper = RegExp(r'[A-Z]').hasMatch(password);
+    final hasLower = RegExp(r'[a-z]').hasMatch(password);
+    final hasDigit = RegExp(r'[0-9]').hasMatch(password);
+    final hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(password);
+
+    Widget ruleItem(String text, bool met) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            Icon(
+              met ? Icons.check_circle_rounded : Icons.cancel_outlined,
+              size: 15,
+              color: met ? AppColors.positive : AppColors.textTertiary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              text,
+              style: AppTypography.font(
+                color: met ? AppColors.textPrimary : AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: met ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'PASSWORD MUST CONTAIN:',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ruleItem('At least 12 characters', hasMinLength),
+          ruleItem('One uppercase letter', hasUpper),
+          ruleItem('One lowercase letter', hasLower),
+          ruleItem('One number', hasDigit),
+          ruleItem('One special character', hasSpecial),
+        ],
+      ),
     );
   }
 }

@@ -1,0 +1,53 @@
+3. Payments — Stripe 
+Parent experience 
+• ☐ 
+�
+�
+ Real card, real charge, prod keys, on a phone: book → hosted Checkout → 
+return to app → booking shows paid. Pass: money appears in the platform 
+account; booking status flips via webhook, not client return (close the tab before 
+returning — status must still flip). 
+Easy: Pay with a real card. Money shows in Stripe. Booking says paid. Big 
+test: pay, close the tab fast — booking must STILL flip to paid. Check: real 
+charge, webhook, closed tab test. 
+• ☐ 
+�
+�
+ Failure states: declined card, 3DS challenge, abandoned checkout, network 
+drop mid-checkout. Pass: no orphaned "paid" bookings, no orphaned "unpaid but 
+confirmed" sessions; user sees an honest retry, never a silent nothing. 
+Easy: Break payment every way: bad card, closed page, dead wifi. Nothing 
+weird left behind. Always a clear "try again." Check: declined, abandoned, 
+dropped, no ghosts, retry shown. 
+• ☐ 
+�
+�
+ Receipts. Parent receives an email receipt with coach name, session date, 
+amount, and Sporve identified as merchant of record (or the coach, if that's your 
+Connect charge type — decide and document which). 
+Easy: Parent gets an email receipt: who, what, when, how much. Decide: 
+bank statement says "Sporve" or coach name? Check: receipt email, 
+statement name chosen. 
+• ☐ 
+�
+�
+ Refund path exists and you have executed one. Full refund and partial 
+refund, on prod, with the money verifiably returned. Pass: refunded booking 
+shows the right state in both parent and coach views. 
+Easy: Actually refund someone once. Full and half. Watch the money go 
+back. Check: full refund, partial refund, both screens right. 
+• ☐ 
+�
+�
+ Dispute readiness. You know what happens when a parent charges back: 
+who eats it (platform vs. coach), what evidence you submit, and the app state it 
+leaves. Write the one-page SOP now, not during your first dispute. 
+Easy: One day a bank will yank money back. Decide now: who loses it, what 
+proof you send. Write one page today. Check: dispute plan written. 
+• ☐ 
+�
+�
+ Double-tap / double-submit on Pay creates exactly one charge and one 
+booking (idempotency keys verified by actually double-tapping). 
+Easy: Tap Pay twice fast. One charge. One booking. Never two. Check: 
+double-tap test. 

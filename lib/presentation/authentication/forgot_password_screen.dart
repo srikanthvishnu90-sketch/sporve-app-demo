@@ -71,10 +71,26 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final token = _tokenController.text.trim();
     final newPassword = _newPasswordController.text;
 
-    if (token.isEmpty || newPassword.length < 8) {
+    if (token.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter the token and a password of min. 8 characters.'),
+          content: Text('Please enter the reset token.'),
+          backgroundColor: AppColors.negative,
+        ),
+      );
+      return;
+    }
+
+    final hasMinLength = newPassword.length >= 12;
+    final hasUpper = RegExp(r'[A-Z]').hasMatch(newPassword);
+    final hasLower = RegExp(r'[a-z]').hasMatch(newPassword);
+    final hasDigit = RegExp(r'[0-9]').hasMatch(newPassword);
+    final hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(newPassword);
+
+    if (!hasMinLength || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please ensure your password meets all requirements.'),
           backgroundColor: AppColors.negative,
         ),
       );
@@ -94,9 +110,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
       Get.offAllNamed(AppRoutes.login);
     } else {
+      var msg = authProvider.errorMessage ?? 'Reset failed. Please check your token.';
+      if (msg.contains('abcdefghijklmnopqrstuvwxyz') || msg.contains('Password should be')) {
+        msg = 'Please ensure your password meets all security requirements.';
+      }
       messenger.showSnackBar(
         SnackBar(
-          content: Text(authProvider.errorMessage ?? 'Reset failed. Please check your token.'),
+          content: Text(msg),
           backgroundColor: AppColors.negative,
         ),
       );
@@ -213,13 +233,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _buildTextField(
           controller: _newPasswordController,
           label: 'NEW PASSWORD',
-          hint: 'Min. 8 characters',
+          hint: 'Min. 12 characters',
           isPassword: true,
           obscureText: _obscurePassword,
           onToggleVisibility: () {
             setState(() {
               _obscurePassword = !_obscurePassword;
             });
+          },
+        ),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _newPasswordController,
+          builder: (context, value, _) {
+            return _buildPasswordChecklist(value.text);
           },
         ),
         const SizedBox(height: 40),
@@ -292,6 +318,68 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPasswordChecklist(String password) {
+    final hasMinLength = password.length >= 12;
+    final hasUpper = RegExp(r'[A-Z]').hasMatch(password);
+    final hasLower = RegExp(r'[a-z]').hasMatch(password);
+    final hasDigit = RegExp(r'[0-9]').hasMatch(password);
+    final hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(password);
+
+    Widget ruleItem(String text, bool met) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            Icon(
+              met ? Icons.check_circle_rounded : Icons.cancel_outlined,
+              size: 15,
+              color: met ? AppColors.positive : AppColors.textTertiary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              text,
+              style: AppTypography.font(
+                color: met ? AppColors.textPrimary : AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: met ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'PASSWORD MUST CONTAIN:',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ruleItem('At least 12 characters', hasMinLength),
+          ruleItem('One uppercase letter', hasUpper),
+          ruleItem('One lowercase letter', hasLower),
+          ruleItem('One number', hasDigit),
+          ruleItem('One special character', hasSpecial),
+        ],
+      ),
     );
   }
 }

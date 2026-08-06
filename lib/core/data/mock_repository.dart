@@ -184,6 +184,34 @@ class MockRepository implements AppRepository {
     return true;
   }
 
+  @override
+  Future<bool> processRefund(
+    String bookingId, {
+    required double amount,
+    String? reason,
+  }) async {
+    final list = List<dynamic>.from(MockData.bookings);
+    final i = list.indexWhere((b) => (b['_id'] ?? b['id']) == bookingId);
+    if (i == -1) return false;
+    final booking = Map<String, dynamic>.from(list[i] as Map);
+    final originalPrice =
+        (booking['finalPrice'] ?? booking['originalPrice'] ?? 75.0) as num;
+    final isFull = amount >= originalPrice.toDouble();
+    booking['refundStatus'] = isFull ? 'full' : 'partial';
+    booking['refundedAmount'] = amount;
+    booking['refundedAt'] = DateTime.now().toIso8601String();
+    if (reason != null && reason.isNotEmpty) {
+      booking['refundReason'] = reason;
+    }
+    if (isFull) {
+      booking['status'] = 'refunded';
+      booking['paymentStatus'] = 'refunded';
+    }
+    list[i] = booking;
+    MockData.bookings = list;
+    return true;
+  }
+
   // ── Coach OS: waitlist (demo — in-memory, mirrors program_waitlist shape) ───
   // static so the const MockRepository() constructor stays const (the demo repo
   // is a stateless wrapper; this shared list is the demo's waitlist store).
