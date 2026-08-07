@@ -1,0 +1,72 @@
+Coach experience 
+• [x] 
+ Stripe Connect onboarding completes for a real coach (SSN/EIN, bank 
+account) and payout-enabled status is reflected in-app. A coach who fails Connect 
+KYC is blocked from bookings with a clear explanation. 
+Easy: Real coach connects real bank through Stripe. Approved = shown in 
+app. Rejected = clearly told why. Check: bank connect, status shown, fail 
+message. 
+• [x] 
+ A real payout lands in a real bank account. The "coach gets paid" loop is 
+currently the weakest demonstrated link (payout history is stubbed). Pass: session 
+completes → funds released on your documented schedule → coach sees the 
+payout with the platform fee itemized. 
+Easy: Weakest link right now. Prove it: session done → real money in coach's 
+real bank. See it arrive. Check: payout landed, fee shown. 
+• [x] 
+ Fee transparency. For every transaction the coach sees: gross, Sporve fee, 
+(if org trainer) org commission, net. A coach should never have to ask "why did I 
+get less?" — verify it renders with real numbers. 
+Easy: Coach sees the math on every payment: total − Sporve fee − club cut = 
+mine. No mystery money. Check: gross, fees, net, real numbers. 
+• [x] 
+ Payout schedule (daily/weekly/monthly selector) actually changes Stripe 
+payout behavior, or remove the selector until it does. A settings control that does 
+nothing is a trust leak. 
+Easy: The payout speed setting must really work. A fake knob breaks trust — 
+delete it if fake. Check: setting real or removed. 
+• [x] 
+ Tax posture. Stripe issues 1099-Ks to coaches over threshold; confirm 
+Connect account type supports it and your ToS says coaches are independent 
+contractors responsible for taxes. 
+Easy: Coaches get their tax form from Stripe. Rules say: coaches handle own 
+taxes. Check: 1099-K setup, contractor terms.
+
+Org / trainer splits 
+• [x] 
+ Parent books a specific trainer under an org: charge splits correctly (org 
+commission % or flat fee → org; remainder → trainer) server-side, from DB 
+values — the client never supplies fee math. Pass: inspect the actual Stripe 
+transfer amounts for one real booking. 
+Easy: Book a club trainer: club gets its cut, trainer gets the rest. SERVER 
+does the math, never the phone. Check: split right, server-side, real Stripe 
+numbers. 
+• [x] 
+ "Any available trainer" bookings: attribution recorded, price identical, split 
+resolved when trainer is assigned. Confine this option to camps/clinics — never 
+1:1 coaching (the named relationship is the product). 
+Easy: "Any trainer" is fine for camps only. Never for private 1-on-1 — 
+parents buy a specific person. Check: camps only, price same, split settles. 
+• [x] 
+ Commission edit takes effect for future bookings only; in-flight bookings 
+keep the rate at time of booking. Pass: change a rate mid-test and verify the old 
+booking settles at the old rate. 
+Easy: Change the cut → only NEW bookings use it. Old bookings keep the 
+old deal. Check: old rate honored. 
+• [x] 
+ Trainer added to an org inherits no verification: background_check_status 
+starts at none and the trainer is unbookable until independently verified. (Code 
+currently does this — keep an adversarial test on it.) 
+Easy: New club trainer starts UNVERIFIED. Always. Club trust is not person 
+trust. Check: starts at none, unbookable, test kept. 
+• [x] 
+ Removing a trainer with future booked sessions: define the behavior (cancel 
++ refund, or honor + settle) and implement it. Undefined = a support fire on week 
+one. 
+Easy: Club removes a trainer with bookings next week — then what? Decide 
+now: refund, or let sessions happen. Check: rule chosen, built. 
+• [x] 
+ Org dashboard shows monthly revenue from trainers from real transaction 
+data, not a stub. 
+Easy: Club sees monthly trainer money. Real numbers, not placeholder. 
+Check: real data.

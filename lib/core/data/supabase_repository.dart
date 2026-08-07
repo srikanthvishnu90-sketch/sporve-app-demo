@@ -225,6 +225,9 @@ class SupabaseRepository implements AppRepository {
     'backgroundCheckCompletedAt': row['background_check_completed_at'],
     'stripeAccountId': row['stripe_account_id'],
     'stripeChargesEnabled': row['stripe_charges_enabled'] ?? false,
+    'payoutSchedule': row['payout_schedule'] ?? 'Monthly',
+    'kycStatus': row['kyc_status'] ?? row['verification_status'] ?? 'unverified',
+    'kycFailureReason': row['kyc_failure_reason'],
   };
 
   // ── Programs & sessions ───────────────────────────────────────────────────
@@ -3335,6 +3338,8 @@ class SupabaseRepository implements AppRepository {
         // never self-approve or self-verify.
         if (profile['onboardingCompleted'] != null)
           'onboarding_completed': profile['onboardingCompleted'],
+        if (profile['payoutSchedule'] != null)
+          'payout_schedule': profile['payoutSchedule'],
       };
       // UPDATE the existing provider row (the edit case) — a partial edit must
       // NOT require business_name. Only INSERT a new row when none exists yet

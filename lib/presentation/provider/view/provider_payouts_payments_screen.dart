@@ -50,7 +50,11 @@ class _ProviderPayoutsPaymentsScreenState
     // Real payout history + pending figure (money page #1), shared with the
     // finances surface via the controller.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ProviderController>().fetchPayouts();
+      final c = context.read<ProviderController>();
+      c.fetchPayouts();
+      setState(() {
+        _selectedSchedule = c.payoutSchedule;
+      });
     });
   }
 
@@ -639,6 +643,80 @@ class _ProviderPayoutsPaymentsScreenState
               ],
             ),
           ),
+          const SizedBox(height: 32),
+
+          // TAX POSTURE & 1099-K TERMS
+          Text(
+            'TAX POSTURE & 1099-K',
+            style: AppTypography.font(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadii.card),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.receipt_long,
+                      color: AppColors.slateText,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Stripe 1099-K Tax Reporting',
+                      style: AppTypography.font(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Stripe automatically generates Form 1099-K for coaches meeting federal or state tax reporting thresholds. Ensure your Connect identity (SSN/EIN) is up to date.',
+                  style: AppTypography.font(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const Divider(color: AppColors.hairline, height: 24),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.gavel,
+                      color: AppColors.textTertiary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Coaches are independent contractors responsible for self-reporting taxes in accordance with the Sporve Terms of Service.',
+                        style: AppTypography.font(
+                          color: AppColors.textTertiary,
+                          fontSize: 11,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 40),
         ],
       ),
@@ -648,10 +726,23 @@ class _ProviderPayoutsPaymentsScreenState
   Widget _buildScheduleOption(String title, String subtitle) {
     bool isSelected = _selectedSchedule == title;
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         setState(() {
           _selectedSchedule = title;
         });
+        final ok = await context
+            .read<ProviderController>()
+            .updatePayoutSchedule(title);
+        if (mounted) {
+          Get.snackbar(
+            'Payout schedule updated',
+            ok ? 'Saved payout schedule: $title' : 'Schedule changed locally',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: AppColors.surface,
+            colorText: AppColors.textPrimary,
+            duration: const Duration(seconds: 2),
+          );
+        }
       },
       behavior: HitTestBehavior.opaque,
       child: Padding(

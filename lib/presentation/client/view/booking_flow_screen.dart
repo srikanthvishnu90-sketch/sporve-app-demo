@@ -349,7 +349,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     );
   }
 
-  // Gate Step 1 -> Step 2: must have a real session and a chosen child.
+  // Gate Step 1 -> Step 2: must have a real session, chosen child, and eligible coach.
   void _onContinueFromStep1() {
     if (_programSessions.isEmpty) {
       _snack('No upcoming sessions for this program yet.');
@@ -367,6 +367,29 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _snack('Please select a child first.');
       return;
     }
+
+    // QA Day 07: Block booking if coach failed Stripe Connect KYC or payouts disabled
+    final prov = _program?['providerId'];
+    if (prov is Map) {
+      final kyc = (prov['kycStatus'] ?? prov['verificationStatus'] ?? '').toString().toLowerCase();
+      final chargesEnabled = prov['stripeChargesEnabled'] == true || prov['stripe_charges_enabled'] == true;
+      if (kyc == 'rejected' || kyc == 'failed') {
+        _snack('Bookings paused: This coach failed Stripe Connect KYC verification.');
+        return;
+      }
+      if (prov.containsKey('stripeChargesEnabled') && !chargesEnabled && kyc == 'unverified') {
+        _snack('Bookings paused: Coach Stripe payout setup is incomplete.');
+        return;
+      }
+    }
+
+    // QA Day 07: 1:1 Coaching requires selecting a named trainer (never "Any available")
+    final isOneOnOne = (_program?['pricingModel'] ?? '').toString() == 'single_session';
+    if (isOneOnOne && _trainers.isNotEmpty && _selectedTrainerId == null) {
+      _snack('Please select a specific coach for 1:1 coaching.');
+      return;
+    }
+
     setState(() => _currentStep = 2);
   }
 
@@ -508,15 +531,19 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   // Booksy staff picker — appears only when the org has a bookable roster.
-  // "Any available" (null) + one card per verified trainer. Choosing a trainer
-  // only attributes the booking; it does not change the price or the slots.
+  // "Any available" (null) is restricted to Camps/Clinics — for 1:1 coaching,
+  // parents must select a specific named trainer.
   Widget _buildTrainerPicker() {
     if (_trainers.isEmpty) return const SizedBox.shrink();
+    final isOneOnOne = (_program?['pricingModel'] ?? '').toString() == 'single_session';
+    final allowAny = !isOneOnOne;
+    final totalCards = allowAny ? _trainers.length + 1 : _trainers.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'CHOOSE A TRAINER',
+          isOneOnOne ? 'SELECT YOUR COACH' : 'CHOOSE A TRAINER',
           style: AppTypography.font(
             color: AppColors.textTertiary,
             fontSize: 11,
@@ -529,10 +556,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           height: 116,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: _trainers.length + 1,
+            itemCount: totalCards,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
-              if (index == 0) {
+              if (allowAny && index == 0) {
                 return _trainerCard(
                   selected: _selectedTrainerId == null,
                   name: 'Any available',
@@ -545,7 +572,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   }),
                 );
               }
-              final t = _trainers[index - 1];
+              final trainerIdx = allowAny ? index - 1 : index;
+              final t = _trainers[trainerIdx];
               final id = t['id']?.toString();
               return _trainerCard(
                 selected: _selectedTrainerId == id,

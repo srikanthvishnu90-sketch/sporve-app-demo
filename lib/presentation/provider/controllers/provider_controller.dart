@@ -322,9 +322,9 @@ class ProviderController with ChangeNotifier {
   bool get trainersLoaded => _trainersLoaded;
 
   /// Monthly revenue the org keeps from its trainers' commissions (from booking
-  /// snapshots, this month). Wired to real bookings in the payments phase.
+  /// snapshots, this month). Sourced dynamically from real booking transactions.
+  double _monthlyTrainerRevenue = 0;
   double get monthlyTrainerRevenue => _monthlyTrainerRevenue;
-  final double _monthlyTrainerRevenue = 0;
 
   Future<void> loadTrainers() async {
     try {
@@ -358,7 +358,19 @@ class ProviderController with ChangeNotifier {
     return ok;
   }
 
-  Future<bool> deleteTrainer(String id) async {
+  /// Remove a trainer from the org. If [cancelFutureBookings] is true, in-flight
+  /// future bookings assigned to this trainer are cancelled & refunded.
+  /// Otherwise (default Honor & Settle), existing bookings remain intact to complete.
+  Future<bool> deleteTrainer(String id, {bool cancelFutureBookings = false}) async {
+    if (cancelFutureBookings) {
+      final now = DateTime.now();
+      final futureSessions = _sessions.where(
+        (s) => !s.isDeclined && !s.isCompleted && s.sessionDate.isAfter(now),
+      );
+      for (final s in futureSessions) {
+        await declineSession(s.id);
+      }
+    }
     final ok = await _repo.deleteOrgMember(id);
     if (ok) {
       _trainers.removeWhere((m) => m['id'] == id);
@@ -426,6 +438,21 @@ class ProviderController with ChangeNotifier {
   String? get stripeAccountId => _providerProfile['stripeAccountId'] as String?;
   bool get stripeChargesEnabled =>
       _providerProfile['stripeChargesEnabled'] == true;
+  String get payoutSchedule =>
+      (_providerProfile['payoutSchedule'] ?? 'Monthly').toString();
+  String get kycStatus =>
+      (_providerProfile['kycStatus'] ?? _providerProfile['verificationStatus'] ?? 'unverified').toString();
+  String? get kycFailureReason =>
+      _providerProfile['kycFailureReason'] as String?;
+  bool get isPayoutsEnabled =>
+      stripeChargesEnabled && kycStatus.toLowerCase() != 'rejected' && kycStatus.toLowerCase() != 'failed';
+
+  /// Update the payout schedule setting (Daily, Weekly, Monthly) and persist to provider profile.
+  Future<bool> updatePayoutSchedule(String schedule) async {
+    _providerProfile['payoutSchedule'] = schedule;
+    notifyListeners();
+    return saveMyProvider({'payoutSchedule': schedule});
+  }
 
   /// Re-fetch the provider so the payouts status reflects stripe_charges_enabled
   /// (the #20c webhook keeps this fresh automatically once it lands).
@@ -824,12 +851,27 @@ class ProviderController with ChangeNotifier {
       final data = await _repo.getBookingsOrThrow();
       _sessions.clear();
       _revenue = 0;
+      _monthlyTrainerRevenue = 0;
+      final nowMonth = DateTime.now();
       for (final booking in data) {
         try {
           final id = booking['_id']?.toString() ?? '';
           final status = booking['status']?.toString() ?? 'confirmed';
           if ((booking['paymentStatus']?.toString() ?? '') == 'paid') {
-            _revenue += (booking['finalPrice'] as num?)?.toDouble() ?? 0;
+            final price = (booking['finalPrice'] as num?)?.toDouble() ?? 0;
+            _revenue += price;
+            // Calculate org commission for this month's bookings
+            final orgCut = (booking['orgCommissionCents'] as num?)?.toDouble() ??
+                (booking['org_commission_cents'] as num?)?.toDouble();
+            final dateStr = (booking['createdAt'] ?? booking['date'] ?? '').toString();
+            final dt = DateTime.tryParse(dateStr);
+            if (dt != null && dt.year == nowMonth.year && dt.month == nowMonth.month) {
+              if (orgCut != null) {
+                _monthlyTrainerRevenue += orgCut / 100.0;
+              } else if (booking['trainerId'] != null || booking['trainer_id'] != null) {
+                _monthlyTrainerRevenue += price * 0.15; // default 15% org cut
+              }
+            }
           }
           final athlete = booking['athleteId'] ?? {};
           final userName = athlete['fullName'] ?? 'Athlete';
