@@ -8,6 +8,7 @@ import '../../widgets/common_widgets.dart';
 import '../../widgets/motion_widgets.dart';
 import '../../widgets/sporve_image.dart';
 import '../../shared/controllers/chat_provider.dart';
+import '../../../core/utils/trust_safety_sop.dart';
 
 class ChatDetailsScreen extends StatefulWidget {
   const ChatDetailsScreen({super.key});
@@ -131,6 +132,7 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
     _scrollController.dispose();
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -504,10 +506,14 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
   }
 
   void _submitReport() {
-    // No detection mechanics are exposed; we simply acknowledge (§17/§20).
+    TrustSafetySop.submitReport(
+      reporterId: 'user_current',
+      reportedUserOrCoachId: _conversationId,
+      reason: 'Safety review requested from chat',
+    );
     Get.snackbar(
-      'Reported',
-      'Thanks — this conversation was submitted for review.',
+      'Reported & Blocked',
+      'Thanks — conversation submitted for safety review and contact blocked.',
       backgroundColor: AppColors.surface,
       colorText: AppColors.textPrimary,
       snackPosition: SnackPosition.BOTTOM,

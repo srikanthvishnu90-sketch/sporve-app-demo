@@ -1,0 +1,60 @@
+4. Trust & Safety (the wedge — nothing here is optional) 
+• [x] 
+ Checkr (or equivalent) is integrated. Invitation sent from the coach 
+funnel, webhook updates background_check_status, human review queue for 
+consider results. Manual enum-flipping is not a launch state for a product whose 
+one-line pitch is "background-checked coaches." 
+Easy: Today "checked" is a hand-flipped label. Not real. Connect a real check 
+company. It reports back automatically. Check: Checkr live, auto-update, 
+review queue. 
+• [x] 
+ FCRA adverse action flow. If a check disqualifies a coach: 
+pre-adverse-action notice + copy of report + waiting period + final notice. 
+Skipping this is statutory damages per violation. Template the emails now. 
+Easy: Law: to reject a coach for their record, you must warn, share the report, 
+wait, then answer. Skip it = fines. Check: notice emails written. 
+• [x] 
+ Gating enforced server-side. The client matcher's verified/active/intensity 
+gates must mirror a server match_eligible that is the actual authority. Pass: 
+manually flip a coach to unverified in DB; they vanish from search, match, 
+chat-answers, and direct-link booking simultaneously. 
+Easy: Safety rules live on the SERVER, not just the app. Apps can be tricked. 
+Check: flip coach off → gone from search, match, chat, links. 
+• [x] 
+ Recency shown honestly. "Background checked" in UI displays the 
+completed-at date only when a real date exists — verify no path shows the badge 
+with a null date. 
+Easy: Show the real check date. No date = no badge. Check: date shown, no 
+empty badges. 
+• [x] 
+ Report & block. Parent can report a coach and block contact from any chat 
+or profile in ≤ 2 taps; report lands somewhere you actually monitor daily. Coach 
+can report a parent. 
+Easy: Report or block in 2 taps, from anywhere. Reports go where YOU look 
+daily. Check: report, block, both sides, checked daily. 
+• [x] 
+ Incident response SOP (one page, written). Allegation of harm arrives → 
+immediate suspension pending review, preservation of all messages/bookings, who 
+you call (counsel, and when mandated, authorities), what you say and don't say. 
+You must never draft this for the first time during the incident. 
+Easy: If someone says a coach hurt a kid: suspend now, save everything, call 
+lawyer, know your words. Write the page TODAY. Check: one page, written, 
+before launch. 
+• [x] 
+ ToS honesty about verification. State precisely what a background check 
+does and does not guarantee. Overclaiming ("safe," "vetted and trusted") is your 
+liability multiplier. 
+Easy: Say honestly what a check is and isn't. Never promise "safe." Big words 
+hurt you in court. Check: honest wording, no overclaims. 
+• [x] 
+ Continuous monitoring (Checkr Continuous or scheduled re-checks) — a 
+check at onboarding decays. Acceptable to defer past launch only with annual 
+re-check policy written into coach ToS from day one. 
+Easy: Old check says nothing about today. Best: live monitoring. Minimum: 
+yearly re-check in the rules. Check: re-check policy in ToS. 
+• [x] 
+ Coach safety attestation at onboarding: agrees to observable-session norms 
+(parent may watch, public venues, no private transport of minors). Cheap to add, 
+meaningful in a deposition. 
+Easy: Coach checks a box: parents can watch, public places, never drive kids. 
+Costs a checkbox. Matters in court. Check: box added.

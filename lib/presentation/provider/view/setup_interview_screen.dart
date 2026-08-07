@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_structure/core/theme/app_typography.dart';
 import '../../../core/constants/app_assets.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_radii.dart';
 import '../../../core/ui/ambient_surface.dart';
 import '../controllers/setup_interview_controller.dart';
 
@@ -113,13 +114,87 @@ class _SetupInterviewScreenState extends State<SetupInterviewScreen> {
   }
 
   Future<void> _confirm() async {
+    final bool? agreed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) {
+        bool checked = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: AppColors.surface2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadii.card),
+            ),
+            title: Text(
+              'Coach Safety Attestation',
+              style: AppTypography.font(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'To protect athletes and coaches, Sporve requires agreement to observable-session standards:',
+                  style: AppTypography.font(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: AppColors.slateText,
+                  value: checked,
+                  onChanged: (val) {
+                    setDialogState(() => checked = val ?? false);
+                  },
+                  title: Text(
+                    'I agree to observable-session norms: parents may observe all sessions, sessions take place in public/approved venues, and no private transportation of minors.',
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dctx, false),
+                child: Text(
+                  'Cancel',
+                  style: AppTypography.font(color: AppColors.textTertiary),
+                ),
+              ),
+              TextButton(
+                onPressed: checked ? () => Navigator.pop(dctx, true) : null,
+                child: Text(
+                  'Confirm & Launch',
+                  style: AppTypography.font(
+                    color: checked
+                        ? AppColors.slateText
+                        : AppColors.textTertiary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (agreed != true || !mounted) return;
     final p = context.read<SetupInterviewController>();
     final ok = await p.confirm();
     if (!mounted) return;
     if (ok) {
       Get.snackbar(
         'You\'re set up',
-        'Your first service is live. Your background check keeps running in the background.',
+        'Your first service is live. Safety attestation confirmed.',
         snackPosition: SnackPosition.BOTTOM,
         margin: const EdgeInsets.all(16),
         backgroundColor: AppColors.surface2,

@@ -15,6 +15,7 @@ import 'join_waitlist_sheet.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
+import '../../../core/utils/trust_safety_sop.dart';
 
 class SessionDetailsScreen extends StatefulWidget {
   const SessionDetailsScreen({super.key});
@@ -62,6 +63,113 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
       return double.tryParse(clean) ?? 75.0;
     }
     return 75.0;
+  }
+
+  void _showReportBlockDialog(String coachName, String coachId) {
+    String selectedReason = 'Safety concern';
+    showDialog<void>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: AppColors.surface2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.card),
+        ),
+        title: Text(
+          'Report & Block $coachName',
+          style: AppTypography.font(
+            color: AppColors.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Submitting a report will immediately block communication and alert the Sporve Trust & Safety team.',
+              style: AppTypography.font(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 14),
+            StatefulBuilder(
+              builder: (context, setDialogState) {
+                return DropdownButtonFormField<String>(
+                  initialValue: selectedReason,
+                  dropdownColor: AppColors.surface,
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Reason for report',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Safety concern',
+                      child: Text('Safety concern'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Inappropriate behavior',
+                      child: Text('Inappropriate behavior'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Unprofessional conduct',
+                      child: Text('Unprofessional conduct'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Spam or scam',
+                      child: Text('Spam or scam'),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedReason = val);
+                    }
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx),
+            child: Text(
+              'Cancel',
+              style: AppTypography.font(color: AppColors.textTertiary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dctx);
+              TrustSafetySop.submitReport(
+                reporterId: 'user_current',
+                reportedUserOrCoachId: coachId,
+                reason: selectedReason,
+              );
+              Get.snackbar(
+                'Report Submitted',
+                'Coach reported and blocked. Trust & Safety team notified.',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: AppColors.surface,
+                colorText: AppColors.textPrimary,
+              );
+            },
+            child: Text(
+              'Report & Block',
+              style: AppTypography.font(
+                color: AppColors.negative,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Grounded (§15): the ONLY price is the provider's real base price from the DB
@@ -296,6 +404,24 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                               ),
                             );
                           },
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _showReportBlockDialog(coach, opportunity?.programId ?? 'coach_id'),
+                          child: Container(
+                            height: 44,
+                            width: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: const Icon(
+                              Icons.shield_outlined,
+                              color: AppColors.negative,
+                              size: 18,
+                            ),
+                          ),
                         ),
                       ],
                     ),
