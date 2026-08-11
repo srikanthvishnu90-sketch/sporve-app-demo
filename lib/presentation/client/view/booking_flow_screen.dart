@@ -240,6 +240,21 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _sessionPrice = (args['price'] is num)
           ? (args['price'] as num).toDouble()
           : 75.0;
+
+      // "Book again / same time next week" pre-fill: when the caller passes a
+      // prefillDate (DateTime) + prefillTime (e.g. "10:30 AM") we jump the
+      // calendar straight to that date and pre-select the time slot so the
+      // user only needs to confirm — no manual hunting.
+      final prefill = args['prefillDate'];
+      if (prefill is DateTime) {
+        _calYear = prefill.year;
+        _calMonth = prefill.month;
+        _selectedDay = prefill.day;
+      }
+      final prefillTime = args['prefillTime'];
+      if (prefillTime is String && prefillTime.isNotEmpty) {
+        _selectedTime = prefillTime;
+      }
     } else {
       _sessionPrice = 75.0;
     }
@@ -248,6 +263,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _handleStripeReturn();
     });
   }
+
 
   /// Stripe Checkout return handler (web). After a payment the browser lands
   /// back on a hash-route fragment like `…/#/booking-flow?b=<id>&status=success`
@@ -1657,7 +1673,93 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
                 const SizedBox(height: 24),
 
+                // ── Cancellation Policy Block ──────────────────────────────
+                // Shown at checkout so the parent knows the refund terms before
+                // paying (Airbnb model). Policy comes from the program's
+                // cancellationPolicy field ('flexible' | 'moderate' | 'strict').
+                Builder(builder: (_) {
+                  final policy = (_program?['cancellationPolicy'] as String? ??
+                          'flexible')
+                      .toLowerCase();
+                  final (label, lines) = switch (policy) {
+                    'strict' => (
+                        'STRICT CANCELLATION',
+                        [
+                          '• Free cancellation ≥ 48 hours before the session',
+                          '• 50% refund if cancelled < 48 hours before',
+                          '• No refund if cancelled < 2 hours or no-show',
+                        ]
+                      ),
+                    'moderate' => (
+                        'MODERATE CANCELLATION',
+                        [
+                          '• Free cancellation ≥ 24 hours before the session',
+                          '• 50% refund if cancelled < 24 hours before',
+                          '• No refund if cancelled < 2 hours or no-show',
+                        ]
+                      ),
+                    _ => (
+                        'FLEXIBLE CANCELLATION',
+                        [
+                          '• Free cancellation up to 4 hours before the session',
+                          '• 50% refund if cancelled < 4 hours before',
+                          '• No refund for no-shows',
+                        ]
+                      ),
+                  };
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(AppRadii.card),
+                      border: Border.all(color: AppColors.hairline),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.policy_outlined,
+                              color: AppColors.slateText,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              label,
+                              style: AppTypography.font(
+                                color: AppColors.textTertiary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ...lines.map(
+                          (line) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              line,
+                              style: AppTypography.font(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
+                const SizedBox(height: 24),
+
                 // Secured by Stripe pad banner
+
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),

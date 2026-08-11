@@ -360,30 +360,60 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                             ),
                           ),
                         ),
-                        Consumer<HomeProvider>(
-                          builder: (context, homeProvider, child) {
-                            if (opportunity == null) {
-                              return const SizedBox.shrink();
-                            }
-                            final isFav = homeProvider.isFavorite(
-                              opportunity.programId,
-                            );
-                            return GestureDetector(
-                              onTap: () {
-                                // Soft gate (spec §3.2): a guest may save a few
-                                // coaches before being prompted to verify. Intent
-                                // preservation (§3.3.3): once the free allowance
-                                // is spent, defer the save so it applies itself
-                                // after the guest signs in.
-                                final id = opportunity?.programId;
-                                final auth = context.read<AuthProvider>();
-                                if (auth.allowSave(
-                                  isCurrentlySaved: homeProvider.isFavorite(id),
-                                  onAuthed: () => homeProvider.toggleFavorite(id),
-                                )) {
-                                  homeProvider.toggleFavorite(id);
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Consumer<HomeProvider>(
+                              builder: (context, homeProvider, child) {
+                                if (opportunity == null) {
+                                  return const SizedBox.shrink();
                                 }
+                                final isFav = homeProvider.isFavorite(
+                                  opportunity.programId,
+                                );
+                                return GestureDetector(
+                                  onTap: () {
+                                    // Soft gate (spec §3.2): a guest may save a few
+                                    // coaches before being prompted to verify. Intent
+                                    // preservation (§3.3.3): once the free allowance
+                                    // is spent, defer the save so it applies itself
+                                    // after the guest signs in.
+                                    final id = opportunity?.programId;
+                                    final auth = context.read<AuthProvider>();
+                                    if (auth.allowSave(
+                                      isCurrentlySaved: homeProvider.isFavorite(id),
+                                      onAuthed: () => homeProvider.toggleFavorite(id),
+                                    )) {
+                                      homeProvider.toggleFavorite(id);
+                                    }
+                                  },
+                                  child: Container(
+                                    height: 44,
+                                    width: 44,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.45),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white24),
+                                    ),
+                                    child: Icon(
+                                      isFav
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color: isFav
+                                          ? AppColors.destructiveRed
+                                          : Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                );
                               },
+                            ),
+                            const SizedBox(width: 10),
+                            GestureDetector(
+                              onTap: () => _showReportBlockDialog(
+                                coach,
+                                opportunity?.programId ?? 'coach_id',
+                              ),
                               child: Container(
                                 height: 44,
                                 width: 44,
@@ -392,36 +422,14 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                                   shape: BoxShape.circle,
                                   border: Border.all(color: Colors.white24),
                                 ),
-                                child: Icon(
-                                  isFav
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: isFav
-                                      ? AppColors.slateText
-                                      : AppColors.textPrimary,
+                                child: const Icon(
+                                  Icons.shield_outlined,
+                                  color: AppColors.negative,
                                   size: 18,
                                 ),
                               ),
-                            );
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => _showReportBlockDialog(coach, opportunity?.programId ?? 'coach_id'),
-                          child: Container(
-                            height: 44,
-                            width: 44,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.45),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white24),
                             ),
-                            child: const Icon(
-                              Icons.shield_outlined,
-                              color: AppColors.negative,
-                              size: 18,
-                            ),
-                          ),
+                          ],
                         ),
                       ],
                     ),

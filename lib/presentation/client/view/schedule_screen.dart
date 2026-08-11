@@ -1030,6 +1030,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ),
             ],
           ),
+          // "Report no-show" — only visible after the session start time has
+          // passed, giving the parent a guaranteed-refund path if the coach
+          // didn't appear.
+          if (session.date.isBefore(DateTime.now())) ...[
+            const SizedBox(height: 4),
+            Center(
+              child: _cardTextAction(
+                '⚑  Report coach no-show',
+                AppColors.destructiveRed,
+                () => _reportNoShow(session),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1109,9 +1122,46 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _confirmCancel(AthleteSession session) async {
+    final policy =
+        (session.program?['cancellationPolicy'] as String? ?? 'flexible')
+            .toLowerCase();
+    final now = DateTime.now();
+    final hoursLeft = session.date.difference(now).inHours;
+
+    String refundEstimate;
+    if (policy == 'strict') {
+      if (hoursLeft >= 48) {
+        refundEstimate = 'Full refund (100%)';
+      } else if (hoursLeft >= 2) {
+        refundEstimate = 'Partial refund (50%)';
+      } else {
+        refundEstimate = 'No refund (< 2 hours before start)';
+      }
+    } else if (policy == 'moderate') {
+      if (hoursLeft >= 24) {
+        refundEstimate = 'Full refund (100%)';
+      } else if (hoursLeft >= 2) {
+        refundEstimate = 'Partial refund (50%)';
+      } else {
+        refundEstimate = 'No refund (< 2 hours before start)';
+      }
+    } else {
+      // flexible
+      if (hoursLeft >= 4) {
+        refundEstimate = 'Full refund (100%)';
+      } else if (hoursLeft >= 0) {
+        refundEstimate = 'Partial refund (50%)';
+      } else {
+        refundEstimate = 'No refund (session already started)';
+      }
+    }
+
     final ok = await _confirmSheet(
       'Cancel session?',
-      'This cancels "${session.title}". You can book again anytime.',
+      'This cancels "${session.title}".\n\n'
+          '• Cancellation policy: ${policy.toUpperCase()}\n'
+          '• Estimated refund: $refundEstimate\n\n'
+          'You can book again anytime.',
       'Cancel session',
       AppColors.destructiveRed,
     );
@@ -1122,7 +1172,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     Get.snackbar(
       done ? 'Cancelled' : 'Error',
       done
-          ? 'Your session was cancelled.'
+          ? 'Your session was cancelled. Refund status: $refundEstimate'
           : 'Could not cancel right now. Please try again.',
       snackPosition: SnackPosition.TOP,
       backgroundColor: AppColors.surface2,
@@ -1130,15 +1180,240 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Future<void> _reschedule(AthleteSession session) async {
+  /// Parent-side no-show report — shown after the session start time has
+  /// passed and no completion was recorded. Guaranteed refund promise.
+  Future<void> _reportNoShow(AthleteSession session) async {
+    final ok = await _confirmSheet(
+      'Report coach no-show?',
+      'If your coach did not show up, we\'ll process a full refund automatically. '
+          'Your report will be reviewed and the coach will be notified.',
+      'Report no-show',
+      AppColors.destructiveRed,
+    );
+    if (!ok || !mounted) return;
+    // Cancel the booking (triggers refund path on the backend).
+    final home = context.read<HomeProvider>();
+    final done = session.id != null && await home.cancelBooking(session.id!);
+    if (!mounted) return;
     Get.snackbar(
-      'Contact the coach',
-      'Your current time is still held. Message the coach before cancelling if you need another time.',
+      done ? 'Report submitted' : 'Error',
+      done
+          ? 'We received your report. A full refund will be issued within 3–5 business days.'
+          : 'Could not submit right now. Please contact support.',
       snackPosition: SnackPosition.TOP,
       backgroundColor: AppColors.surface2,
       colorText: AppColors.textPrimary,
+      duration: const Duration(seconds: 5),
     );
   }
+
+  Future<void> _reschedule(AthleteSession session) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.card),
+          ),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          20,
+          24,
+          24 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.hairline,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Reschedule session',
+              style: AppTypography.font(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your current slot is held until you cancel.\nChoose how you\'d like to move this session.',
+              style: AppTypography.font(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Option 1: Cancel and pick a new time
+            GestureDetector(
+              onTap: () {
+                Navigator.of(ctx).pop();
+                // Cancel the existing booking, then open booking flow for
+                // the same program with fresh date/time selection.
+                if (session.id != null) {
+                  context.read<HomeProvider>().cancelBooking(session.id!);
+                }
+                final program = session.program;
+                if (program != null) {
+                  final provider = program['providerId'];
+                  final business = provider is Map
+                      ? (provider['businessName']?.toString() ?? 'Academy')
+                      : 'Academy';
+                  Get.toNamed(
+                    AppRoutes.bookingFlow,
+                    arguments: {
+                      'program': program,
+                      'title': program['title']?.toString() ??
+                          'Training Session',
+                      'coach': business,
+                      'tier': 'STANDARD',
+                      'price': program['price'] ?? 75,
+                    },
+                  );
+                }
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface2,
+                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      color: AppColors.textPrimary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Pick a new time',
+                            style: AppTypography.font(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Cancel your current slot and choose another date.',
+                            style: AppTypography.font(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      color: AppColors.slateText,
+                      size: 14,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Option 2: Message the coach
+            GestureDetector(
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Get.toNamed(
+                  AppRoutes.chatDetails,
+                  arguments: {'contactName': session.subtitle},
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface2,
+                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.textPrimary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Message the coach',
+                            style: AppTypography.font(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Coordinate a new time directly without cancelling.',
+                            style: AppTypography.font(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      color: AppColors.slateText,
+                      size: 14,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Keep current slot
+            Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  'Keep current time',
+                  style: AppTypography.font(
+                    color: AppColors.slateText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   // FIGMA REBOOK BANNER
   Widget _buildRebookBanner(AthleteSession recent) {
@@ -1401,45 +1676,41 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
-  // Re-book the most recent past program: open its details if we have it,
-  // otherwise drop the user into discovery/search.
+  // Re-book the most recent past program: open the booking flow directly with
+  // the same time slot pre-filled for next week (same weekday + same time),
+  // so the user only needs to review and confirm — 2 taps total.
   void _bookAgain(AthleteSession recent) {
     final program = recent.program;
-    if (program != null) {
-      Get.toNamed(
-        AppRoutes.sessionDetails,
-        arguments: _oppFromProgram(program),
-      );
-    } else {
+    if (program == null) {
+      // No program data — fall back to discovery search.
       Get.toNamed(AppRoutes.search);
+      return;
     }
-  }
 
-  Opportunity _oppFromProgram(Map<String, dynamic> program) {
-    final gallery = program['gallery'];
-    final image = (gallery is List && gallery.isNotEmpty)
-        ? gallery.first.toString()
-        : '';
+    // "Same time next week": add 7 days to the original session date.
+    final nextDate = recent.date.add(const Duration(days: 7));
+
     final provider = program['providerId'];
     final business = provider is Map
         ? (provider['businessName']?.toString() ?? 'Academy')
         : 'Academy';
-    return Opportunity(
-      id: 0,
-      title: program['title']?.toString() ?? 'Program',
-      coach: business,
-      price: '\$${program['price'] ?? 0}',
-      rating:
-          program['averageRating']?.toString() ?? 'New', // no fabricated stars
-      image: image,
-      spotsLeft: 'AVAILABLE',
-      isVerified: true,
-      bookingTrend: 'Trending now',
-      top: 0,
-      team: business,
-      rawData: program,
+
+    Get.toNamed(
+      AppRoutes.bookingFlow,
+      arguments: {
+        'program': program,
+        'title': program['title']?.toString() ?? 'Training Session',
+        'coach': business,
+        'tier': 'STANDARD',
+        'price': program['price'] ?? 75,
+        // Pre-fill calendar + time for "same time next week"
+        'prefillDate': nextDate,
+        'prefillTime': recent.time, // e.g. "10:30 AM"
+      },
     );
   }
+
+
 
   // Rating sheet: 1–5 stars + optional note. On submit, marks the session
   // reviewed so the card flips to the "REVIEWED" block.
