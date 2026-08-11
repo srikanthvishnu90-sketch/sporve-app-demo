@@ -96,9 +96,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     Text(
-                      (homeProvider.userProfile != null)
-                          ? '${homeProvider.userProfile!['firstName']} ${homeProvider.userProfile!['lastName']}'
-                          : 'Athlete',
+                      () {
+                        final p = homeProvider.userProfile;
+                        final first = (p?['firstName'] as String?)?.trim() ?? '';
+                        final last = (p?['lastName'] as String?)?.trim() ?? '';
+                        final full = '$first $last'.trim();
+                        if (full.isNotEmpty) return full;
+                        // fallback: use email username before the '@'
+                        final email = (p?['email'] as String?) ?? '';
+                        if (email.contains('@')) return email.split('@').first;
+                        return 'Athlete';
+                      }(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.font(

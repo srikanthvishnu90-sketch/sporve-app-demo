@@ -21,11 +21,6 @@ class AssistantMessage {
   bool get isUser => role == 'user';
 }
 
-/// State + orchestration for the AI assistant chatbox. Runs the grounded
-/// pipeline: parseQuery → (searchProviders for find/compare | policy grounding
-/// for booking questions) → grounded answer. Follow-ups that reference the prior
-/// result set are re-sorted, not re-retrieved. Every fact in an answer traces to
-/// a retrieved row or the policy text.
 class AssistantProvider with ChangeNotifier {
   AssistantProvider(this._repo);
   final AppRepository _repo;

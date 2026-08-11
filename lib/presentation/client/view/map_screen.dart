@@ -182,6 +182,13 @@ class _MapScreenState extends State<MapScreen> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
+                  SporveIconButton(
+                    Icons.arrow_back_ios_new_rounded,
+                    semanticLabel: 'Back',
+                    onTap: () => Get.back(),
+                    filled: true,
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
