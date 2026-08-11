@@ -13,7 +13,6 @@ import '../../widgets/sport_glyph.dart';
 import '../../widgets/sporve_button.dart';
 import '../controllers/home_controller.dart';
 import '../../../core/utils/session_time.dart';
-import 'search_screen.dart'; // Opportunity model (for Book again navigation)
 
 class AthleteSession {
   final DateTime date;

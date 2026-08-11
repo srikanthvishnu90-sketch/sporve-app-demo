@@ -30,19 +30,17 @@ class AppColors {
   static const Color textTertiary = Color(0xFF78848F); // muted (slate-muted)
   static const Color inkOnSlate = Color(0xFF0A0A0A); // dark text on light fills
 
-  // ── Brand ───────────────────────────────────────────────────────────────
-  // The single brand accent is BRIGHT SLATE (#475569) — brightened once more
-  // from #647B8F for stronger presence across all chrome.
+
   static const Color slate = Color(0xFF475569); // PRIMARY accent (bright slate)
   static const Color slateDeep = Color(0xFF3A4656); // pressed
-  static const Color slateText = Color(0xFF475569); // slate accent for text/icons
+  static const Color slateText = Color(0xFF94A3B8); // calibrated bright slate text (≥4.5:1 contrast on black)
   static const Color slateTint = Color(0x3D475569); // ~24% slate fill
   static const Color slateBorder = Color(0x80475569); // ~50% slate border
   static const Color slateBrand = Color(0xFF475569); // splash is flat slate
   static const Color onSlate = Color(0xFFFFFFFF); // text/icons ON a slate fill
   // AI / social were a distinct blue; folded into slate (single accent).
   static const Color blue = Color(0xFF475569);
-  static const Color blueText = Color(0xFF475569);
+  static const Color blueText = Color(0xFF94A3B8);
   static const Color blueTint = Color(0x3D475569);
 
   // ── Semantic ─────────────────────────────────────────────────────────────

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_structure/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
+import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/motion_widgets.dart';
+import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
 import '../../shared/controllers/chat_provider.dart';
 import '../../../core/utils/trust_safety_sop.dart';
@@ -250,6 +253,10 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
       ),
       body: Column(
         children: [
+          // Rich Session Logistics Bar (§17 & Messaging spec) — shows booking
+          // context right inside chat so in-app messaging is richer than SMS.
+          _buildSessionLogisticsBanner(),
+
           // Message area.
           Expanded(
             child: isLoading
@@ -298,6 +305,83 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
 
           // Composer — only shown for a real, resolvable thread.
           if (isRealChat) _buildComposer(chatProvider),
+        ],
+      ),
+    );
+  }
+
+  // Rich in-app Session Logistics Card — makes Sporve chat richer than SMS.
+  Widget _buildSessionLogisticsBanner() {
+    if (_nextSession.trim().isEmpty && _athleteName.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 36,
+                width: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.slateTint,
+                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.event_available,
+                  color: AppColors.slateText,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _nextSession.isNotEmpty
+                          ? 'UPCOMING · $_nextSession'
+                          : 'BOOKED SESSION',
+                      style: AppTypography.font(
+                        color: AppColors.textTertiary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _athleteName.isNotEmpty
+                          ? 'Athlete: $_athleteName'
+                          : 'Active Training Booking',
+                      style: AppTypography.font(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SporveButton(
+                'Manage',
+                size: SporveButtonSize.compact,
+                variant: SporveButtonVariant.secondary,
+                fullWidth: false,
+                onPressed: () =>
+                    Get.toNamed(AppRoutes.mainNav, arguments: {'tab': 2}),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -352,37 +436,39 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
-        crossAxisAlignment: isUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
+        crossAxisAlignment:
+            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: isUser ? AppColors.slateTint : AppColors.surface,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(AppRadii.card),
-                topRight: const Radius.circular(AppRadii.card),
-                bottomLeft: isUser
-                    ? const Radius.circular(AppRadii.card)
-                    : Radius.zero,
-                bottomRight: isUser
-                    ? Radius.zero
-                    : const Radius.circular(AppRadii.card),
+          GestureDetector(
+            onLongPress: () => _showMessageActionSheet(msg),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isUser ? AppColors.slateTint : AppColors.surface,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(AppRadii.card),
+                  topRight: const Radius.circular(AppRadii.card),
+                  bottomLeft: isUser
+                      ? const Radius.circular(AppRadii.card)
+                      : Radius.zero,
+                  bottomRight: isUser
+                      ? Radius.zero
+                      : const Radius.circular(AppRadii.card),
+                ),
+                border: Border.all(
+                  color: isUser ? AppColors.slateBorder : AppColors.hairline,
+                ),
               ),
-              border: Border.all(
-                color: isUser ? AppColors.slateBorder : AppColors.hairline,
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
-            ),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
-            ),
-            child: Text(
-              text,
-              style: AppTypography.font(
-                color: AppColors.textPrimary,
-                fontSize: 15, // Body (§17)
-                height: 22 / 15,
+              child: Text(
+                text,
+                style: AppTypography.font(
+                  color: AppColors.textPrimary,
+                  fontSize: 15, // Body (§17)
+                  height: 22 / 15,
+                ),
               ),
             ),
           ),
@@ -450,9 +536,11 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
     );
   }
 
-  // ── Thread menu + two-tap Report (§17) ────────────────────────────────────
-  void _openThreadMenu() {
-    showModalBottomSheet(
+  // Message-level long-press actions (§17 & safety/legal retention).
+
+  void _showMessageActionSheet(dynamic msg) {
+    final text = (msg['text'] ?? '').toString();
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface2,
       shape: const RoundedRectangleBorder(
@@ -474,6 +562,153 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
             const SizedBox(height: 8),
             ListTile(
               leading: const Icon(
+                Icons.copy,
+                color: AppColors.textPrimary,
+                size: 20,
+              ),
+              title: Text(
+                'Copy text',
+                style: AppTypography.font(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Clipboard.setData(ClipboardData(text: text));
+                Get.snackbar(
+                  'Copied',
+                  'Message text copied to clipboard.',
+                  backgroundColor: AppColors.surface,
+                  colorText: AppColors.textPrimary,
+                  snackPosition: SnackPosition.BOTTOM,
+                  margin: const EdgeInsets.all(16),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.flag_outlined,
+                color: AppColors.destructiveRed,
+                size: 20,
+              ),
+              title: Text(
+                'Report this message',
+                style: AppTypography.font(
+                  color: AppColors.destructiveRed,
+                  fontSize: 15,
+                ),
+              ),
+              subtitle: Text(
+                'Flag this specific message for safety audit.',
+                style: AppTypography.font(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                TrustSafetySop.submitReport(
+                  reporterId: 'user_current',
+                  reportedUserOrCoachId: _conversationId,
+                  reason: 'Reported message: "$text"',
+                );
+                Get.snackbar(
+                  'Reported',
+                  'Message flagged for Trust & Safety review.',
+                  backgroundColor: AppColors.surface,
+                  colorText: AppColors.textPrimary,
+                  snackPosition: SnackPosition.BOTTOM,
+                  margin: const EdgeInsets.all(16),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Thread menu + two-tap Report + Export Transcript (§17) ─────────────────
+  void _openThreadMenu() {
+    final chatProvider = context.read<ChatProvider>();
+    final messages = chatProvider.messages;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface2,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.hairlineStrong,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(
+                Icons.download_outlined,
+                color: AppColors.textPrimary,
+                size: 20,
+              ),
+              title: Text(
+                'Export conversation transcript',
+                style: AppTypography.font(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              subtitle: Text(
+                'Copy complete audit log with UTC timestamps.',
+                style: AppTypography.font(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _exportTranscript(messages);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.block_outlined,
+                color: AppColors.destructiveRed,
+                size: 20,
+              ),
+              title: Text(
+                'Block contact',
+                style: AppTypography.font(
+                  color: AppColors.destructiveRed,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              subtitle: Text(
+                'Stop all incoming messages from this user.',
+                style: AppTypography.font(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _submitReport(isBlockOnly: true);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
                 Icons.flag_outlined,
                 color: AppColors.destructiveRed,
                 size: 20,
@@ -481,7 +716,7 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
               title: Text(
                 'Report conversation',
                 style: AppTypography.font(
-                  color: AppColors.textPrimary,
+                  color: AppColors.destructiveRed,
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                 ),
@@ -505,21 +740,62 @@ class _ChatDetailsScreenState extends State<ChatDetailsScreen> {
     );
   }
 
-  void _submitReport() {
+  void _exportTranscript(List<dynamic> msgs) {
+    if (msgs.isEmpty) {
+      Get.snackbar(
+        'Export',
+        'No messages to export.',
+        backgroundColor: AppColors.surface,
+        colorText: AppColors.textPrimary,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    final buffer = StringBuffer();
+    buffer.writeln('=== SPORVE AUDIT TRANSCRIPT ===');
+    buffer.writeln('Thread ID: $_conversationId');
+    buffer.writeln('Contact: $_contactName');
+    buffer.writeln('Exported UTC: ${DateTime.now().toUtc().toIso8601String()}');
+    buffer.writeln('================================');
+    for (final m in msgs) {
+      if (m is! Map) continue;
+      final createdAt = m['createdAt']?.toString() ?? '';
+      final text = m['text']?.toString() ?? '';
+      final sid = m['senderId']?.toString() ?? 'system';
+      buffer.writeln('[$createdAt] <$sid> $text');
+    }
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    Get.snackbar(
+      'Transcript Exported',
+      'Audit log with UTC timestamps copied to clipboard.',
+      backgroundColor: AppColors.surface,
+      colorText: AppColors.textPrimary,
+      snackPosition: SnackPosition.BOTTOM,
+      duration: const Duration(seconds: 4),
+      margin: const EdgeInsets.all(16),
+    );
+  }
+
+  void _submitReport({bool isBlockOnly = false}) {
     TrustSafetySop.submitReport(
       reporterId: 'user_current',
       reportedUserOrCoachId: _conversationId,
-      reason: 'Safety review requested from chat',
+      reason: isBlockOnly
+          ? 'User blocked from chat menu'
+          : 'Safety review requested from chat',
     );
     Get.snackbar(
-      'Reported & Blocked',
-      'Thanks — conversation submitted for safety review and contact blocked.',
+      isBlockOnly ? 'Blocked' : 'Reported & Blocked',
+      isBlockOnly
+          ? 'This contact has been blocked.'
+          : 'Thanks — conversation submitted for safety review and contact blocked.',
       backgroundColor: AppColors.surface,
       colorText: AppColors.textPrimary,
       snackPosition: SnackPosition.BOTTOM,
       margin: const EdgeInsets.all(16),
     );
   }
+
 
   // Coach-only "Draft reply" pill. Slate chrome (design system); shows a
   // loading state while the AI drafts. Tapping it never sends.

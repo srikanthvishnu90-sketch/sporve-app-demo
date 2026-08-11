@@ -57,9 +57,14 @@ import '../../presentation/shared/notification_settings_screen.dart';
 import '../../presentation/provider/view/personal_profile_screen.dart';
 import '../../presentation/provider/view/service_profile_screen.dart';
 import '../../presentation/provider/view/provider_edit_profile_screen.dart';
+import '../../presentation/shared/not_found_screen.dart';
 
 class AppPages {
   static const String initial = AppRoutes.splash;
+  static final GetPage unknownRoute = GetPage(
+    name: '/404',
+    page: () => const NotFoundScreen(),
+  );
 
   static final List<GetPage> routes = [
     GetPage(name: AppRoutes.splash, page: () => const SplashScreen()),

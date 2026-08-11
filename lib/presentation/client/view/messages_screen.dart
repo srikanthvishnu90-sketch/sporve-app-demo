@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/session_time.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/motion_widgets.dart';
 import '../../widgets/sporve_image.dart';
@@ -485,12 +486,40 @@ class _MessagesScreenState extends State<MessagesScreen> {
     String contactName,
     String avatarUrl,
   ) {
+    // Resolve upcoming session context with this coach so in-app chat is richer
+    // than SMS (shows active child name + next session date/time).
+    String athleteName = '';
+    String nextSession = '';
+    try {
+      final home = context.read<HomeProvider>();
+      for (final b in home.bookings) {
+        if (b is! Map) continue;
+        final program = b['programId'];
+        final provider = program is Map ? program['providerId'] : null;
+        final biz =
+            provider is Map ? provider['businessName']?.toString() : null;
+        if (biz != null &&
+            biz.toLowerCase().trim() == contactName.toLowerCase().trim()) {
+          final session = b['sessionId'] is Map ? b['sessionId'] : null;
+          final start = parseSessionStart(session);
+          if (!start.isBefore(DateTime.now())) {
+            athleteName =
+                (b['athleteName'] ?? b['athleteFirstName'] ?? '').toString();
+            nextSession = '${start.month}/${start.day} · ${formatTime12h(start)}';
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+
     Get.toNamed(
       AppRoutes.chatDetails,
       arguments: {
         'conversationId': conversationId,
         'contactName': contactName,
         'avatarUrl': avatarUrl,
+        if (athleteName.isNotEmpty) 'athleteName': athleteName,
+        if (nextSession.isNotEmpty) 'nextSession': nextSession,
       },
     );
   }

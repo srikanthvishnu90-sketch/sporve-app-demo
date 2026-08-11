@@ -92,7 +92,7 @@ class AppTypography {
     TextBaseline? textBaseline,
     List<Shadow>? shadows,
   }) {
-    final w = _diet(fontWeight ?? FontWeight.w400);
+    final w = fontWeight ?? FontWeight.w400;
     double? size = fontSize;
     if (size != null && size > 24) size = 24; // restrained header ceiling
     double? ls;
@@ -103,9 +103,7 @@ class AppTypography {
     } else {
       ls = _track(letterSpacing);
     }
-    final family =
-        (size != null && size >= 18) ? GoogleFonts.inter : GoogleFonts.inter;
-    return family(
+    return GoogleFonts.inter(
       fontSize: size,
       fontWeight: w,
       letterSpacing: ls,
@@ -121,10 +119,6 @@ class AppTypography {
       shadows: shadows,
     );
   }
-
-  /// Weight diet: 700/800/900 → 600; lighter weights unchanged.
-  static FontWeight _diet(FontWeight w) =>
-      w.value >= FontWeight.w700.value ? FontWeight.w600 : w;
 
   /// Tracking diet: collapse airy caps spacing to a whisper.
   static double? _track(double? ls) => (ls != null && ls > 0.6) ? 0.4 : ls;

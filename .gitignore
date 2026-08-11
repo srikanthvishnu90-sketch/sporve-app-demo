@@ -9,7 +9,6 @@ env.json
 build/
 *.iml
 .idea/
-.vscode/
 
 # Native build artifacts
 android/.gradle/
@@ -25,3 +24,7 @@ ios/Flutter/Flutter.podspec
 # OS
 .DS_Store
 *.log
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
