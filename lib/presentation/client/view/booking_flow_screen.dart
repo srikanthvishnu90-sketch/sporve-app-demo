@@ -1796,7 +1796,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
         // Step 2 Footer button
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           decoration: const BoxDecoration(
             color: Colors.transparent,
             border: Border(
@@ -1805,20 +1805,37 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           ),
           child: SafeArea(
             top: false,
-            child: SporveButton(
-              'Confirm & Pay ${_money(_total)}',
-              variant: SporveButtonVariant.primary,
-              color: _sportColor, // sport-context CTA carries sport color
-              icon: Icons.lock_outline,
-              loading: _checkoutLoading,
-              // Guests can reach this screen and pick a slot, but PAYING requires
-              // an account. requireAuth shows the dismissible sign-in popup and,
-              // on sign-in, resumes _handleConfirmAndPay exactly once.
-              onPressed: _checkoutLoading
-                  ? null
-                  : () => context
-                      .read<AuthProvider>()
-                      .requireAuth(_handleConfirmAndPay),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'By booking, you agree to Sporve\'s Terms of Service and the Coach Participation & Assumption of Risk Waiver for your athlete.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                SporveButton(
+                  'Confirm & Pay ${_money(_total)}',
+                  variant: SporveButtonVariant.primary,
+                  color: _sportColor, // sport-context CTA carries sport color
+                  icon: Icons.lock_outline,
+                  loading: _checkoutLoading,
+                  // Guests can reach this screen and pick a slot, but PAYING requires
+                  // an account. requireAuth shows the dismissible sign-in popup and,
+                  // on sign-in, resumes _handleConfirmAndPay exactly once.
+                  onPressed: _checkoutLoading
+                      ? null
+                      : () => context
+                          .read<AuthProvider>()
+                          .requireAuth(_handleConfirmAndPay),
+                ),
+              ],
             ),
           ),
         ),
