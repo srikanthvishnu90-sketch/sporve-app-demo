@@ -10,6 +10,7 @@ import '../../widgets/common_widgets.dart';
 import '../../widgets/motion_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../controllers/match_provider.dart';
+import '../../../core/services/analytics_service.dart';
 import 'search_screen.dart' show Opportunity;
 
 /// Guided coach matching — a parent selects structured athlete criteria, and
@@ -47,6 +48,7 @@ class _FindCoachScreenState extends State<FindCoachScreen> {
     if (_sport == null) return;
     FocusScope.of(context).unfocus();
     setState(() => _sort = 'Best fit'); // fresh search returns to ranked order
+    AnalyticsService().logSearch(query: _sport ?? '', sport: _sport, location: 'Chicago');
     final client = <String, dynamic>{
       'athlete_age': _age,
       'sport': _sport,

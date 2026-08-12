@@ -16,6 +16,8 @@ import '../../widgets/sporve_image.dart';
 import '../widgets/best_match_card.dart';
 import '../../../core/utils/session_time.dart';
 import 'search_screen.dart'; // To access Opportunity model
+import 'support_modal.dart';
+import '../../../core/services/analytics_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -78,12 +80,23 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        SporveIconButton(
-                          Icons.notifications_outlined,
-                          semanticLabel: 'Notifications',
-                          onTap: () =>
-                              Get.toNamed(AppRoutes.notificationSettings),
-                          iconSize: 22,
+                        Row(
+                          children: [
+                            SporveIconButton(
+                              Icons.help_outline_rounded,
+                              semanticLabel: 'Support',
+                              onTap: () => SupportModal.show(context),
+                              iconSize: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            SporveIconButton(
+                              Icons.notifications_outlined,
+                              semanticLabel: 'Notifications',
+                              onTap: () =>
+                                  Get.toNamed(AppRoutes.notificationSettings),
+                              iconSize: 22,
+                            ),
+                          ],
                         ),
                       ],
                     ),

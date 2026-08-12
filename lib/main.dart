@@ -38,8 +38,12 @@ import 'presentation/client/controllers/plan_provider.dart';
 
 import 'package:flutter/foundation.dart';
 
+import 'core/services/analytics_service.dart';
+import 'core/services/sentry_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SentryService().initialize();
   await GetStorage.init(); // Must be called before any token read/write
 
   // Kill the offline demo in production (Pre-launch item 0.6):
