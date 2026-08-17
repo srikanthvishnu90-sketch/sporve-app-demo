@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Trust & Safety Utilities, FCRA Adverse Action Templates, and Incident SOP.
 class TrustSafetySop {
@@ -77,12 +78,12 @@ BACKGROUND CHECK & VERIFICATION DISCLAIMER:
       List.unmodifiable(_safetyReports);
 
   /// Submits a safety report (≤ 2 taps) and logs it for daily monitoring.
-  static void submitReport({
+  static Future<void> submitReport({
     required String reporterId,
     required String reportedUserOrCoachId,
     required String reason,
     String? details,
-  }) {
+  }) async {
     final report = {
       'id': 'rpt_${DateTime.now().millisecondsSinceEpoch}',
       'reporterId': reporterId,
@@ -94,5 +95,19 @@ BACKGROUND CHECK & VERIFICATION DISCLAIMER:
     };
     _safetyReports.add(report);
     debugPrint('SAFETY REPORT FILED: $report');
+
+    try {
+      final client = Supabase.instance.client;
+      await client.from('safety_reports').insert({
+        'reporter_id': reporterId,
+        'reported_id': reportedUserOrCoachId,
+        'reason': reason,
+        'details': details ?? '',
+        'status': 'pending_review',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Error persisting safety report to Supabase: $e');
+    }
   }
 }

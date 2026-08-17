@@ -17,7 +17,6 @@ import '../widgets/best_match_card.dart';
 import '../../../core/utils/session_time.dart';
 import 'search_screen.dart'; // To access Opportunity model
 import 'support_modal.dart';
-import '../../../core/services/analytics_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});

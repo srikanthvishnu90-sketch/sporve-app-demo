@@ -1073,7 +1073,9 @@ class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
         'capturedAt': DateTime.now().toIso8601String(),
       });
       box.write('demand_signals', signals);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to save demand signals: $e');
+    }
 
     setState(() => _submitted = true);
     widget.onCaptured?.call();

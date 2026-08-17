@@ -510,7 +510,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to resolve upcoming session for message: $e');
+    }
 
     Get.toNamed(
       AppRoutes.chatDetails,

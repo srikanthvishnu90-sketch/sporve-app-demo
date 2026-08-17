@@ -228,7 +228,7 @@ class SupabaseAuthService implements AuthService {
     } catch (e) {
       debugPrint('SupabaseAuthService deleteAccount error: $e');
       await signOut();
-      return true;
+      return false;
     }
   }
 }

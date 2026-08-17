@@ -109,7 +109,9 @@ class _SearchScreenState extends State<SearchScreen> {
         refLat = _metroAnchors[metroKey]![0];
         refLng = _metroAnchors[metroKey]![1];
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to resolve search anchor: $e');
+    }
 
     const r = 6371.0; // Earth radius, km
     double rad(double d) => d * math.pi / 180.0;

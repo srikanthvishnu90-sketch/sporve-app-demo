@@ -38,7 +38,6 @@ import 'presentation/client/controllers/plan_provider.dart';
 
 import 'package:flutter/foundation.dart';
 
-import 'core/services/analytics_service.dart';
 import 'core/services/sentry_service.dart';
 
 void main() async {

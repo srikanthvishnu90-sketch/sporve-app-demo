@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import '../../../core/matching/provider_matcher.dart';
 import '../../../core/models/query_intent.dart';
+import '../../../core/models/query_intent_parser.dart';
 
 class AiPlatformDemoScreen extends StatefulWidget {
   const AiPlatformDemoScreen({super.key});
@@ -69,7 +69,7 @@ class _AiPlatformDemoScreenState extends State<AiPlatformDemoScreen> with Single
     },
   ];
 
-  List<ScoredProviderMatch> _aiRecommendations = [];
+  List<ProviderMatch> _aiRecommendations = [];
 
   @override
   void initState() {
@@ -82,7 +82,7 @@ class _AiPlatformDemoScreenState extends State<AiPlatformDemoScreen> with Single
   void _parseAiSearchQuery() {
     final query = _searchQueryController.text;
     setState(() {
-      _parsedIntent = QueryIntent.parse(query);
+      _parsedIntent = QueryIntentParser.parse(query);
     });
   }
 
@@ -165,7 +165,7 @@ class _AiPlatformDemoScreenState extends State<AiPlatformDemoScreen> with Single
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
-        crossAxisAlignment: CrossAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'Natural Language Query Parser',
@@ -211,7 +211,7 @@ class _AiPlatformDemoScreenState extends State<AiPlatformDemoScreen> with Single
             const SizedBox(height: 12),
             _buildIntentTile('Detected Sport', _parsedIntent!.sport ?? 'All Sports', Icons.sports),
             _buildIntentTile('Target Age', _parsedIntent!.age != null ? '${_parsedIntent!.age} years old' : 'Unspecified', Icons.child_care),
-            _buildIntentTile('Max Budget', _parsedIntent!.maxPrice != null ? '\$${_parsedIntent!.maxPrice}' : 'Flexible', Icons.attach_money),
+            _buildIntentTile('Max Budget', _parsedIntent!.priceMaxCents != null ? '\$${(_parsedIntent!.priceMaxCents! / 100).round()}' : 'Flexible', Icons.attach_money),
             _buildIntentTile('Intent Confidence Score', '98.4%', Icons.check_circle_outline),
           ],
         ],
@@ -259,12 +259,12 @@ class _AiPlatformDemoScreenState extends State<AiPlatformDemoScreen> with Single
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF0284C7).withOpacity(0.2),
+              color: const Color(0xFF0284C7).withValues(alpha: 0.2),
               border: Border.all(color: const Color(0xFF38BDF8)),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
-              crossAxisAlignment: CrossAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: const [
@@ -355,7 +355,7 @@ class _AiPlatformDemoScreenState extends State<AiPlatformDemoScreen> with Single
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'Rating: ⭐ ${item.rating} • Tier: Low Intensity\nMatch Score: 96.5%',
+                  'Rating: ⭐ ${item.ratingAvg} • Tier: Low Intensity\nMatch Score: 96.5%',
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),

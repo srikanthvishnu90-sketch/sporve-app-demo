@@ -30,7 +30,7 @@ class AnalyticsService {
     };
 
     if (kDebugMode) {
-      developer.log('📊 [Analytics] Event: $eventName | Payload: $properties');
+      developer.log('📊 [Analytics] Event: $eventName | Payload: $payload');
     }
 
     try {

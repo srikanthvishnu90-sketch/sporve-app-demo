@@ -165,7 +165,9 @@ class _ProviderWaitlistScreenState extends State<ProviderWaitlistScreen> {
     try {
       final box = GetStorage();
       signals = box.read('demand_signals') ?? [];
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to read demand signals: $e');
+    }
 
     if (signals.isEmpty) return const SizedBox.shrink();
 

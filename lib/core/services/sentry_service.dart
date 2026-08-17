@@ -52,7 +52,7 @@ class SentryService {
       'user_email': user?.email,
       'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
       'timestamp': DateTime.now().toIso8601String(),
-      if (extraContext != null) ...extraContext,
+      ...?extraContext,
     };
 
     if (kDebugMode) {

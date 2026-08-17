@@ -1,26 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_structure/core/matching/provider_matcher.dart';
 import 'package:flutter_structure/core/models/query_intent.dart';
+import 'package:flutter_structure/core/models/query_intent_parser.dart';
 
 void main() {
   group('AI Platform Suite Automated Tests', () {
     group('1. AI Natural Language Search Parser (QueryIntent)', () {
       test('Parses sport, age, and budget correctly from natural language prompt', () {
         const prompt = 'Boxing lessons for 8 year old under \$70 in Chicago';
-        final intent = QueryIntent.parse(prompt);
+        final intent = QueryIntentParser.parse(prompt);
 
         expect(intent.sport, 'boxing');
         expect(intent.age, 8);
-        expect(intent.maxPrice, 70);
+        expect(intent.priceMaxCents, 7000);
       });
 
       test('Gracefully handles vague prompts with fallback intent', () {
         const vaguePrompt = 'Soccer coaching near me';
-        final intent = QueryIntent.parse(vaguePrompt);
+        final intent = QueryIntentParser.parse(vaguePrompt);
 
         expect(intent.sport, 'soccer');
         expect(intent.age, isNull);
-        expect(intent.maxPrice, isNull);
+        expect(intent.priceMaxCents, isNull);
       });
     });
 
