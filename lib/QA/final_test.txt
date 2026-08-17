@@ -1,0 +1,955 @@
+Sporve — Pre-Launch Checklist 
+Rule of use: every item has a pass condition. An item is not "done" when the code exists 
+— it is done when the pass condition has been demonstrated, by you, on the production 
+build, with real accounts. When every box is checked, you are launch-ready. If a box 
+cannot be checked, it is either a launch blocker (
+🔴
+) or a documented, accepted risk (
+🟡
+ 
+— write the acceptance down). 
+Easy: Done means you saw it work. Not "code exists." Check: real app, real 
+account, saw it pass. 
+Legend: 
+�
+�
+ = launch blocker. 
+�
+�
+ = should fix, launchable with documented acceptance. 
+⚪
+= verify only. 
+Easy: 
+�
+�
+ = fix or no launch. 
+�
+�
+ = fix, or write down why not. 
+⚪
+ = just look. 
+0. Broad-Launch Readiness (all sports, all locations — the checks this 
+demands) 
+Sporve launches with the full sport catalog and no geographic restriction. That decision is 
+made; these items are what make a broad launch survivable, because a broad launch fails 
+silently — in empty search results, not error messages. 
+Easy: Open everywhere, day one. Empty places must still feel good. 
+• ☐ 
+�
+�
+ Thin-supply states are first-class. A search in any sport/region with zero 
+or few verified coaches renders an honest, designed state — never a blank screen, 
+never fake density. Pass: search an obscure sport in a random city; the result is 
+graceful and on-brand. 
+Easy: No coaches found? Show a nice honest screen. Never blank. Never 
+fake. Check: empty search, empty state, no fakes. 
+• ☐ 
+�
+�
+ Unserved-area waitlist capture. Zero-result searches offer "Get notified 
+when coaches arrive near you" (email/ZIP capture, one tap). This converts every 
+empty region from a lost parent into a demand signal that tells you where to recruit 
+supply next. Pass: capture fires, lands in a list you review weekly. 
+Easy: No coaches? Ask: "Want an alert when one comes?" Save the email. 
+Now you know where coaches are wanted. Check: signup works, email 
+saved, list reviewed weekly. 
+• ☐ 
+�
+�
+ Per-sport safety gating verified across the full catalog. With every sport 
+listed, the age/intensity ceiling must behave sensibly for all of them, not just the 
+common ones. Pass: spot-check the gating matrix for at least the 5 highest-risk 
+sports in the catalog (contact/combat/gymnastics-type) — a young athlete can 
+never be matched above their tier in any sport. 
+Easy: Little kids never get too-hard training. In ANY sport. Check: age gates, 
+top 5 risky sports, young kid blocked. 
+• ☐ 
+�
+�
+ No geographic assumptions in code. Distance, timezones, and location 
+entry work for any US location: manual ZIP/city entry works everywhere, no 
+hardcoded region defaults, no Chicagoland-only test data leaking into prod. Pass: 
+complete a full search-to-booking dry run with location set to three different 
+metros. 
+Easy: Works in every city, not just Chicago. Check: any ZIP, times right, 3 
+cities, no test data. 
+• ☐ 
+�
+�
+ Broad at launch, deep by region over time. All sports and clubs are live 
+everywhere from day one; regional depth is built progressively, steered by data. 
+Coach acquisition (outreach pipeline, verification throughput, 
+time-from-signup-to-bookable) is instrumented from day one and each week the 
+waitlist demand signal decides which region/sport gets recruitment focus next. 
+Pass: the dashboard exists and the weekly ritual is on your calendar before launch. 
+Easy: Everything open day one. Each week: see where parents ask, get 
+coaches there. Check: dashboard, weekly calendar time. 
+• ☐ 
+�
+�
+ Kill the offline demo in prod. USE_MOCK_REPO is force-false in the 
+production build config; the simulated payment path is unreachable. Pass: grep the 
+deployed bundle config; attempt the mock path on prod and confirm it cannot 
+render. 
+Easy: Pretend mode with fake payments must be locked off in the real app. 
+Check: mock flag off, fake pay unreachable. 
+1. Backend (Supabase) 
+• ☐ 
+�
+�
+ Single source of truth. One repo owns schema, migrations, and edge 
+functions. The parity prototype / second source tree is deleted or archived 
+read-only. Pass: a new migration applied from the canonical repo reaches prod; 
+nothing else can deploy. 
+Easy: Two copies of backend code = mistakes. Keep one. Delete the other. 
+Check: one repo, one deploy path. 
+• ☐ 
+�
+�
+ Every client-invoked edge function exists and is deployed. Pass: CI 
+check that maps every function name string in Flutter code to a deployed function; 
+zero misses. (This kills the "AI headline silently falls back forever" class of bug.) 
+Easy: App calls server helpers by name. Every name must really exist. Robot 
+checks it. Check: function names, all deployed, CI test. 
+• ☐ 
+�
+�
+ RLS verified adversarially, not just enabled. For each table: log in as 
+Parent A, attempt to read Parent B's children, bookings, messages, payment rows 
+via direct PostgREST calls (not the app). Log in as Coach A, attempt to read 
+Coach B's roster/finances. Pass: every cross-tenant read/write returns zero rows or 
+403. 
+Easy: Try to peek at other people's stuff. Every peek must fail. Check: RLS, 
+kids, messages, payments, coach money — all locked. 
+• ☐ 
+�
+�
+ Anon key surface audit. With only the anon key and no session, enumerate 
+every table and function. Pass: nothing sensitive is readable; no function is 
+invokable that moves money or changes verification status. 
+Easy: Pretend you're a stranger with only the public key. You must see 
+nothing private. Check: API keys, tables, data, money functions. 
+• ☐ 
+�
+�
+ Verification status is server-controlled only. No client path (including 
+provider self-edit and trainer creation) can write background_check_status. Pass: 
+attempt to set it via the API as a provider; rejected. 
+Easy: Only the server can stamp "background checked." A coach can never 
+stamp themselves. Check: try it as coach, must be refused. 
+• ☐ 
+�
+�
+ Backups + restore drill. Point-in-time recovery on; you have actually 
+performed one restore to a scratch project. Pass: restored project boots and serves 
+data. 
+Easy: Back up the data. Practice bringing it back once. Check: backup on, 
+restore tested, data alive. 
+• ☐ 
+�
+�
+ Nightly RLS audit (GitHub Action) is green on the canonical repo and 
+alerts you on failure (email/Slack, not just a red X you never see). 
+Easy: Night robot checks the locks. It must wake you up if broken. Check: 
+RLS audit, right repo, alerts on. 
+2. Authentication & Accounts 
+Parent side 
+• ☐ 
+�
+�
+ Sign up → verify email/OTP → land in app, on production domain, on a 
+phone you don't own the dev tools for. Pass: a non-technical person completes it 
+unassisted in < 2 minutes. 
+Easy: A normal person makes an account alone in under 2 minutes. Check: 
+signup, verify code, in the app, no help. 
+• ☐ 
+�
+�
+ Sign in, sign out, password reset (email actually arrives, link works on 
+mobile), session persists across refresh, session expiry re-prompts cleanly (no 
+white screen). 
+Easy: Log in works. Log out works. Forgot password works on phone. 
+Check: sign in, sign out, reset email, refresh, no white screen. 
+• ☐ 
+�
+�
+ Guest browsing → intent preservation. Browse logged out, tap Book, 
+complete auth, land back in the same booking with selections intact. Pass: zero 
+re-entry of choices. 
+Easy: Browse without account. Book → sign up → all your picks still there. 
+Check: guest mode, book, sign up, picks saved. 
+• ☐ 
+�
+�
+ Implicit role selection. No screen forces a "parent or provider?" choice on 
+the consumer path (per your own spec). Providers enter via a separate, 
+low-prominence door. Pass: consumer signup never shows a role picker. 
+Easy: Parents never see "are you a parent or coach?" App assumes parent. 
+Coaches get their own small door. Check: no role screen for parents. 
+• ☐ 
+�
+�
+ Account deletion works in-app (Apple/Google both require it; parents of 
+minors will demand it). Pass: delete an account; confirm children, messages, and 
+PII are removed or anonymized server-side; bookings/financial records retained 
+per your written retention policy. 
+Easy: People can delete their account in the app. Kid data really gets erased. 
+Money records stay. Check: delete works, data gone, money records kept. 
+• ☐ 
+�
+�
+ Google sign-in on prod domain (OAuth redirect allowlist includes 
+production URL, not just localhost/vercel preview). Apple stays gated off until the 
+developer account exists — correct call, keep it. 
+Easy: Google sign-in works on the real site. Apple button stays hidden until 
+it's real. Check: Google login live, Apple off. 
+Coach side 
+• ☐ 
+�
+�
+ Full three-stage funnel on prod: profile → background check → Stripe 
+Connect, in order, with each stage gating the next. Pass: an unverified coach 
+cannot be listed, matched, or booked no matter what they fill in. 
+Easy: Coach steps: profile → background check → bank. Until all done, 
+coach is invisible and unbookable. Check: 3 steps in order, unverified = 
+hidden. 
+• ☐ 
+�
+�
+ A coach mid-funnel who abandons and returns resumes at the right stage 
+(state persisted server-side, not GetStorage only). 
+Easy: Coach quits halfway, comes back later — app remembers the step. 
+Even on a new phone. Check: resume works, saved on server. 
+• ☐ 
+⚪
+ Provider login honors persisted role without letting a provider account 
+wander into parent-only flows and vice versa. 
+Easy: Coaches stay in coach screens. Parents stay in parent screens. Check: 
+no crossing over. 
+3. Payments — Stripe 
+Parent experience 
+• ☐ 
+�
+�
+ Real card, real charge, prod keys, on a phone: book → hosted Checkout → 
+return to app → booking shows paid. Pass: money appears in the platform 
+account; booking status flips via webhook, not client return (close the tab before 
+returning — status must still flip). 
+Easy: Pay with a real card. Money shows in Stripe. Booking says paid. Big 
+test: pay, close the tab fast — booking must STILL flip to paid. Check: real 
+charge, webhook, closed tab test. 
+• ☐ 
+�
+�
+ Failure states: declined card, 3DS challenge, abandoned checkout, network 
+drop mid-checkout. Pass: no orphaned "paid" bookings, no orphaned "unpaid but 
+confirmed" sessions; user sees an honest retry, never a silent nothing. 
+Easy: Break payment every way: bad card, closed page, dead wifi. Nothing 
+weird left behind. Always a clear "try again." Check: declined, abandoned, 
+dropped, no ghosts, retry shown. 
+• ☐ 
+�
+�
+ Receipts. Parent receives an email receipt with coach name, session date, 
+amount, and Sporve identified as merchant of record (or the coach, if that's your 
+Connect charge type — decide and document which). 
+Easy: Parent gets an email receipt: who, what, when, how much. Decide: 
+bank statement says "Sporve" or coach name? Check: receipt email, 
+statement name chosen. 
+• ☐ 
+�
+�
+ Refund path exists and you have executed one. Full refund and partial 
+refund, on prod, with the money verifiably returned. Pass: refunded booking 
+shows the right state in both parent and coach views. 
+Easy: Actually refund someone once. Full and half. Watch the money go 
+back. Check: full refund, partial refund, both screens right. 
+• ☐ 
+�
+�
+ Dispute readiness. You know what happens when a parent charges back: 
+who eats it (platform vs. coach), what evidence you submit, and the app state it 
+leaves. Write the one-page SOP now, not during your first dispute. 
+Easy: One day a bank will yank money back. Decide now: who loses it, what 
+proof you send. Write one page today. Check: dispute plan written. 
+• ☐ 
+�
+�
+ Double-tap / double-submit on Pay creates exactly one charge and one 
+booking (idempotency keys verified by actually double-tapping). 
+Easy: Tap Pay twice fast. One charge. One booking. Never two. Check: 
+double-tap test. 
+Coach experience 
+• ☐ 
+�
+�
+ Stripe Connect onboarding completes for a real coach (SSN/EIN, bank 
+account) and payout-enabled status is reflected in-app. A coach who fails Connect 
+KYC is blocked from bookings with a clear explanation. 
+Easy: Real coach connects real bank through Stripe. Approved = shown in 
+app. Rejected = clearly told why. Check: bank connect, status shown, fail 
+message. 
+• ☐ 
+�
+�
+ A real payout lands in a real bank account. The "coach gets paid" loop is 
+currently the weakest demonstrated link (payout history is stubbed). Pass: session 
+completes → funds released on your documented schedule → coach sees the 
+payout with the platform fee itemized. 
+Easy: Weakest link right now. Prove it: session done → real money in coach's 
+real bank. See it arrive. Check: payout landed, fee shown. 
+• ☐ 
+�
+�
+ Fee transparency. For every transaction the coach sees: gross, Sporve fee, 
+(if org trainer) org commission, net. A coach should never have to ask "why did I 
+get less?" — verify it renders with real numbers. 
+Easy: Coach sees the math on every payment: total − Sporve fee − club cut = 
+mine. No mystery money. Check: gross, fees, net, real numbers. 
+• ☐ 
+�
+�
+ Payout schedule (daily/weekly/monthly selector) actually changes Stripe 
+payout behavior, or remove the selector until it does. A settings control that does 
+nothing is a trust leak. 
+Easy: The payout speed setting must really work. A fake knob breaks trust — 
+delete it if fake. Check: setting real or removed. 
+• ☐ 
+�
+�
+ Tax posture. Stripe issues 1099-Ks to coaches over threshold; confirm 
+Connect account type supports it and your ToS says coaches are independent 
+contractors responsible for taxes. 
+Easy: Coaches get their tax form from Stripe. Rules say: coaches handle own 
+taxes. Check: 1099-K setup, contractor terms. 
+Org / trainer splits 
+• ☐ 
+�
+�
+ Parent books a specific trainer under an org: charge splits correctly (org 
+commission % or flat fee → org; remainder → trainer) server-side, from DB 
+values — the client never supplies fee math. Pass: inspect the actual Stripe 
+transfer amounts for one real booking. 
+Easy: Book a club trainer: club gets its cut, trainer gets the rest. SERVER 
+does the math, never the phone. Check: split right, server-side, real Stripe 
+numbers. 
+• ☐ 
+�
+�
+ "Any available trainer" bookings: attribution recorded, price identical, split 
+resolved when trainer is assigned. Confine this option to camps/clinics — never 
+1:1 coaching (the named relationship is the product). 
+Easy: "Any trainer" is fine for camps only. Never for private 1-on-1 — 
+parents buy a specific person. Check: camps only, price same, split settles. 
+• ☐ 
+�
+�
+ Commission edit takes effect for future bookings only; in-flight bookings 
+keep the rate at time of booking. Pass: change a rate mid-test and verify the old 
+booking settles at the old rate. 
+Easy: Change the cut → only NEW bookings use it. Old bookings keep the 
+old deal. Check: old rate honored. 
+• ☐ 
+�
+�
+ Trainer added to an org inherits no verification: background_check_status 
+starts at none and the trainer is unbookable until independently verified. (Code 
+currently does this — keep an adversarial test on it.) 
+Easy: New club trainer starts UNVERIFIED. Always. Club trust is not person 
+trust. Check: starts at none, unbookable, test kept. 
+• ☐ 
+�
+�
+ Removing a trainer with future booked sessions: define the behavior (cancel 
++ refund, or honor + settle) and implement it. Undefined = a support fire on week 
+one. 
+Easy: Club removes a trainer with bookings next week — then what? Decide 
+now: refund, or let sessions happen. Check: rule chosen, built. 
+• ☐ 
+�
+�
+ Org dashboard shows monthly revenue from trainers from real transaction 
+data, not a stub. 
+Easy: Club sees monthly trainer money. Real numbers, not placeholder. 
+Check: real data. 
+4. Trust & Safety (the wedge — nothing here is optional) 
+• ☐ 
+�
+�
+ Checkr (or equivalent) is integrated. Invitation sent from the coach 
+funnel, webhook updates background_check_status, human review queue for 
+consider results. Manual enum-flipping is not a launch state for a product whose 
+one-line pitch is "background-checked coaches." 
+Easy: Today "checked" is a hand-flipped label. Not real. Connect a real check 
+company. It reports back automatically. Check: Checkr live, auto-update, 
+review queue. 
+• ☐ 
+�
+�
+ FCRA adverse action flow. If a check disqualifies a coach: 
+pre-adverse-action notice + copy of report + waiting period + final notice. 
+Skipping this is statutory damages per violation. Template the emails now. 
+Easy: Law: to reject a coach for their record, you must warn, share the report, 
+wait, then answer. Skip it = fines. Check: notice emails written. 
+• ☐ 
+�
+�
+ Gating enforced server-side. The client matcher's verified/active/intensity 
+gates must mirror a server match_eligible that is the actual authority. Pass: 
+manually flip a coach to unverified in DB; they vanish from search, match, 
+chat-answers, and direct-link booking simultaneously. 
+Easy: Safety rules live on the SERVER, not just the app. Apps can be tricked. 
+Check: flip coach off → gone from search, match, chat, links. 
+• ☐ 
+�
+�
+ Recency shown honestly. "Background checked" in UI displays the 
+completed-at date only when a real date exists — verify no path shows the badge 
+with a null date. 
+Easy: Show the real check date. No date = no badge. Check: date shown, no 
+empty badges. 
+• ☐ 
+�
+�
+ Report & block. Parent can report a coach and block contact from any chat 
+or profile in ≤ 2 taps; report lands somewhere you actually monitor daily. Coach 
+can report a parent. 
+Easy: Report or block in 2 taps, from anywhere. Reports go where YOU look 
+daily. Check: report, block, both sides, checked daily. 
+• ☐ 
+�
+�
+ Incident response SOP (one page, written). Allegation of harm arrives → 
+immediate suspension pending review, preservation of all messages/bookings, who 
+you call (counsel, and when mandated, authorities), what you say and don't say. 
+You must never draft this for the first time during the incident. 
+Easy: If someone says a coach hurt a kid: suspend now, save everything, call 
+lawyer, know your words. Write the page TODAY. Check: one page, written, 
+before launch. 
+• ☐ 
+�
+�
+ ToS honesty about verification. State precisely what a background check 
+does and does not guarantee. Overclaiming ("safe," "vetted and trusted") is your 
+liability multiplier. 
+Easy: Say honestly what a check is and isn't. Never promise "safe." Big words 
+hurt you in court. Check: honest wording, no overclaims. 
+• ☐ 
+�
+�
+ Continuous monitoring (Checkr Continuous or scheduled re-checks) — a 
+check at onboarding decays. Acceptable to defer past launch only with annual 
+re-check policy written into coach ToS from day one. 
+Easy: Old check says nothing about today. Best: live monitoring. Minimum: 
+yearly re-check in the rules. Check: re-check policy in ToS. 
+• ☐ 
+�
+�
+ Coach safety attestation at onboarding: agrees to observable-session norms 
+(parent may watch, public venues, no private transport of minors). Cheap to add, 
+meaningful in a deposition. 
+Easy: Coach checks a box: parents can watch, public places, never drive kids. 
+Costs a checkbox. Matters in court. Check: box added. 
+5. Booking Engine 
+• ☐ 
+�
+�
+ Availability is real. The calendar only offers slots the coach has actually 
+opened, minus already-booked slots. Two parents racing for the same slot: exactly 
+one wins; the other gets an honest conflict message (test with two devices 
+simultaneously). 
+Easy: Calendar shows only real open times. Two parents grab the same slot: 
+one wins, one gets "just taken." Check: real slots, race test, two phones. 
+• ☐ 
+�
+�
+ Timezones: all times stored UTC, rendered local; a session created in 
+Chicago shows correctly if the parent's phone is set to another zone. DST 
+boundary week tested. 
+Easy: Times right in every city. Test the clock-change week too — bugs hide 
+there. Check: timezones, DST week. 
+• ☐ 
+�
+�
+ Cancellation & refund policy exists as a product rule, not a support 
+decision. Define tiers (e.g., free ≥ 24h, 50% < 24h, no refund < 2h / no-show), 
+display them at checkout, enforce them in the refund path. Airbnb prints the policy 
+on every listing; so do you. 
+Easy: Set the cancel rules once. App enforces them. Show them before 
+paying. Check: tiers set, shown at checkout, enforced. 
+• ☐ 
+�
+�
+ Coach-initiated cancel: parent auto-refunded in full, notified, offered 
+rebook. Coach no-show: report path exists, refund guaranteed. This is the single 
+strongest "why book on-platform" promise — it must actually work. 
+Easy: Coach cancels → parent gets ALL money back, auto. Coach no-shows 
+→ report + guaranteed refund. This is your best answer to "why not cash?" 
+Check: auto refund, notify, rebook, no-show path. 
+• ☐ 
+�
+�
+ Reschedule flow (both directions) that doesn't require cancel-and-rebook, or 
+an explicit decision that v1 is cancel-and-rebook with the policy applied fairly 
+(coach-initiated reschedule must never cost the parent). 
+Easy: People need to move sessions. Build a move button, or decide "cancel 
+then rebook" out loud. Coach moves it = parent never pays. Check: 
+reschedule rule, parent protected. 
+• ☐ 
+�
+�
+ Recurring slot — flagged honestly: this is missing from the codebase and 
+it is the core commercial object of coaching. If it cannot ship for launch, ship the 
+closest cheap proxy: "book same slot next week" one-tap rebook from the 
+confirmation and session-complete screens, pre-filled, two taps total. (Full 
+recurrence: Iteration doc, P0.) 
+Easy: Real coaching = "every Tuesday at 5." App can't do repeats yet. Biggest 
+gap. Cheap fix for now: "same time next week" button, two taps. Check: 
+rebook button live. 
+• ☐ 
+⚪
+ Booking states are a closed machine (unpaid → paid → upcoming → 
+completed/cancelled/refunded) with no reachable undefined state; the lifecycle 
+tests cover every transition. 
+Easy: A booking moves through fixed steps only. Never stuck in-between. 
+Check: states, transitions, tests. 
+6. Messaging 
+• ☐ 
+�
+�
+ Two real devices: send, receive, ordering, and unread counts correct; 
+messages survive refresh and re-login; realtime reconnects after airplane-mode 
+toggle. 
+Easy: Chat on two real phones. Right order, right unread number, nothing 
+lost. Airplane mode on/off → reconnects. Check: send, receive, order, 
+refresh, reconnect. 
+• ☐ 
+�
+�
+ Push notifications for new message, booking confirmed, session reminder 
+(24h + 2h), cancellation. A marketplace where the coach replies and the parent 
+never finds out is dead. Test on real iOS Safari-PWA/Android Chrome for web 
+push, and be honest with yourself about iOS web push reliability — if it's flaky, 
+email fallback for booking-critical events is 
+�
+�
+. 
+Easy: Phone buzzes for: message, booking, reminders, cancel. No buzz = 
+dead app. iPhone web buzz is flaky — if so, emails become MUST. Check: 
+push on both phones, email backup. 
+• ☐ 
+�
+�
+ Message-level report + block reachable from the chat screen (ties into §4). 
+Easy: Report and block right inside the chat. One tap away. Check: in-chat 
+buttons. 
+• ☐ 
+�
+�
+ Messages are retained and exportable by you (safety/legal — your logs are 
+the evidence chain). Retention period written in privacy policy. 
+Easy: You keep message copies. Police or lawyers may need them. Say how 
+long, in the policy. Check: logs kept, export works, policy says. 
+• ☐ 
+�
+�
+ No contact-info redaction — correct decision, don't build the arms race — 
+but session logistics (time, location, cancel/reschedule buttons) must be richer 
+in-app than in SMS, because that's your actual anti-leakage strategy. 
+Easy: Don't block phone numbers — that fight loses. Instead make YOUR 
+chat better than texting: time, map, buttons all inside. Check: chat beats SMS. 
+• ☐ 
+⚪
+ Automated messages / parent updates (provider side) send only to intended 
+roster recipients — adversarial test that a coach cannot message families not on 
+their roster. 
+Easy: Coach updates go ONLY to their own families. Try to break it. Must 
+fail. Check: roster only. 
+7. Maps & Location 
+• ☐ 
+�
+�
+ Location permission denied → app fully usable via manual ZIP/city entry; 
+distance features degrade gracefully, nothing crashes or blocks. 
+Easy: Person taps "Don't allow" location — app still fully works. Type ZIP 
+instead. Check: deny works, ZIP entry, no crash. 
+• ☐ 
+�
+�
+ Coach address privacy. Map pins and profiles show approximate area or 
+named public venue — never a home address pre-booking. Exact location released 
+only after confirmed booking. (Airbnb standard; a child-safety product must not 
+do worse.) 
+Easy: Never show a coach's home address to strangers. Area only. Exact spot 
+AFTER booking. Check: fuzzy pins, address after booking. 
+• ☐ 
+�
+�
+ Distance shown = distance used by the matcher (one haversine, one source 
+of coordinates); spot-check three known real distances against Google Maps 
+within ~5%. 
+Easy: The miles shown = the miles the matcher uses. One ruler. Check: 3 
+distances vs Google Maps. 
+• ☐ 
+�
+�
+ Map performance with full launch supply loaded on a mid-tier phone; tile 
+provider terms allow commercial use (flutter_map + your tile source — check the 
+tile server's ToS, OSM public tiles prohibit heavy commercial traffic). 
+Easy: Map with many pins on a cheap phone: no lag. And read the map 
+company's rules — free maps often ban business use. Check: speed, tile rules. 
+• ☐ 
+⚪
+ Geolocator web behavior: permission prompt appears at a sensible moment 
+(on search, not on app open). 
+Easy: Ask for location when they search, not the moment the app opens. 
+Check: prompt timing. 
+8. Navigation & App Integrity 
+• ☐ 
+�
+�
+ Dead-end sweep. Every screen: where does back go? Any screen that traps 
+the user or lands on a blank route fails. Test browser back on web specifically — 
+GetX routing + browser history is a classic breakage point. 
+Easy: Press back on every screen. Always goes somewhere sensible. Never 
+traps, never blank. Test the browser's own back button hard. Check: back on 
+all screens, browser back. 
+• ☐ 
+�
+�
+ Hard refresh on any route (web) restores a sensible state — deep routes like 
+an open booking or chat must not white-screen. 
+Easy: Refresh any page, even deep inside. Comes back fine. No white screen. 
+Check: refresh everywhere. 
+• ☐ 
+�
+�
+ Deep links: a shared coach-profile URL opens correctly logged-out (guest 
+view) and logged-in; booking links respect auth + intent preservation. 
+Easy: Texted coach link opens right, with or without account. Booking from it 
+keeps your picks. Check: shared links, guest, logged in. 
+• ☐ 
+�
+�
+ Every async surface has loading, empty, and error states with retry — and 
+zero silent catches remain on write paths (the 9 swallowed catches in the audit: 
+each becomes log + user-facing retry). 
+Easy: Every loading screen has 3 faces: loading, empty, error+retry. And 9 
+places today swallow errors silently — all must speak up. Check: states 
+everywhere, 9 silent catches fixed. 
+• ☐ 
+�
+�
+ Session-expired mid-action (e.g., mid-booking) re-auths and returns to the 
+action rather than dumping to home. 
+Easy: Login expires mid-booking → log in again → back exactly where you 
+were. Check: resume after re-login. 
+• ☐ 
+⚪
+ 404/unknown route renders a branded "not found" with a route home. 
+Easy: Wrong address shows a nice "not found" page with a home button. 
+Check: 404 page. 
+9. UI / UX & Accessibility 
+• ☐ 
+�
+�
+ Same slate, brighter — the only color change. The implemented slate 
+stays; it just needs to look brighter, the way Airbnb's red reads brighter than it 
+measures. That effect is tuning, not replacement: hold the hue exactly where it is 
+and raise lightness (and a touch of chroma) in OKLCH — the same color, turned 
+up. Airbnb's Rausch is simply their red at high lightness and chroma; Kalshi green, 
+same trick. Do the equivalent for slate: convert #475569 to OKLCH, keep the hue 
+angle locked, lift L/C until it pops on the black canvas. Pass: the hue angle is 
+unchanged from today's slate, the tone measures ≥ 4.5:1 contrast on black across 
+the ~140 foreground usages, and side-by-side with the current build it reads as the 
+same Sporve slate — brighter, not different. 
+Easy: Same grey-blue. Just turn the brightness up. Like a dimmer switch: 
+same lamp, more light. That's Airbnb's whole trick. Check: same color 
+family, brighter, readable on black. 
+• ☐ 
+�
+�
+ Payment errors must not look like confirmations. Per the color directive, 
+no new hues — but in a money-moving app a failure state has to be 
+distinguishable at a glance. Achieve it within the existing system: weight, 
+iconography (✓ vs ⚠), and the existing white/black/slate range. Pass: trigger a 
+payment failure and a payment success side by side; a stranger tells them apart 
+instantly. 
+Easy: "Paid!" and "FAILED" look the same right now. Dangerous with 
+money. No new colors — use symbols (✓ vs ⚠) and bolder text. Check: 
+stranger tells them apart instantly. 
+• ☐ 
+�
+�
+ Tap targets ≥ 44–48px on all interactive elements (audit flags likely 
+violations); icon-only buttons get labels/tooltips. 
+Easy: Every button = thumb-sized. Tiny buttons cause wrong taps. 
+Picture-only buttons get names. Check: button size, labels. 
+• ☐ 
+�
+�
+ Decide the font system honestly: either implement the documented 
+three-font system or update docs to "Inter-only" and remove the dead ternary. 
+Un-suppress bold (w700→w600 global flattening) or document why. 
+Easy: Docs say 3 fonts. Code uses 1. Pick a truth. Also: bold text is secretly 
+weakened — turn real bold on. Check: fonts match docs, bold back. 
+• ☐ 
+�
+�
+ Semantics/labels on the ~29 icon-only buttons and primary flows (search → 
+book → pay) so a screen reader can complete a booking. Full a11y pass is 
+iteration; the booking path accessible is launch. 
+Easy: Blind users' phones read screens aloud. 29 buttons say nothing. Label at 
+least the main path: search → book → pay. Check: screen reader can book. 
+• ☐ 
+�
+�
+ Remove the debug palette screen and the Unsplash hotlink from prod 
+builds. 
+Easy: Hidden dev screen + one outside image = leftovers. Sweep out. Check: 
+both gone. 
+• ☐ 
+⚪
+ The 440px phone frame: fine for launch on web; verify short viewports (≤ 
+700px height laptops) can scroll to reach every CTA. 
+Easy: Phone frame on big screens is fine. Small squat laptops must scroll to 
+every button. Check: short screens scroll. 
+10. AI Surfaces 
+• ☐ 
+�
+�
+ Safety gates are tested as adversarial invariants: no query phrasing can 
+surface an unverified coach, an inactive listing, or an intensity tier above the 
+athlete's age ceiling — through search, chat, or "recommended for you." Add these 
+as permanent CI tests. 
+Easy: No clever wording can make the AI show an unverified coach or 
+too-hard training for a kid. Try to trick it. Turn tricks into forever-tests. 
+Check: search, chat, recommendations — all gated. 
+• ☐ 
+�
+�
+ Chat answers are constrained to retrieved rows (the facts-only contract): test 
+that the model never invents a coach, price, or availability. Inject a 
+prompt-injection attempt through a coach bio and confirm the answer model 
+doesn't obey it. 
+Easy: AI only talks about real coaches, real prices, real times. Never invents. 
+Also: hide sneaky commands in a coach bio — AI must ignore them. Check: 
+no made-up facts, injection test. 
+• ☐ 
+�
+�
+ AI failure is visible, not silent: if the edge function is down, the UI says 
+degraded/fallback (the current silent local-truncation fallback with no health signal 
+fails this). 
+Easy: AI broken? App must SAY so. Today it fails silently — could be 
+broken for weeks unseen. Check: failure visible. 
+• ☐ 
+�
+�
+ Cost + abuse caps: per-user rate limit on AI chat; a script hammering the 
+endpoint cannot run up your API bill overnight. 
+Easy: Limit AI questions per user. Or one prankster's script = giant bill by 
+morning. Check: rate limit. 
+• ☐ 
+�
+�
+ "Recommended for you" ranking sanity: seed accounts with known 
+preferences produce explainable rankings; new coaches with zero reviews still 
+appear (shrinkage verified) — full fairness review is iteration. 
+Easy: Test accounts get sensible picks. Big one: NEW coaches with zero 
+reviews still show up — invisible new coaches quit. Check: picks make 
+sense, new coaches visible. 
+11. Legal, Compliance & Company 
+• ☐ 
+�
+�
+ Entity, EIN, business bank account; Stripe account under the entity, not you 
+personally. 
+Easy: Real company, own tax ID, own bank. Stripe belongs to the 
+COMPANY, not you. That wall protects your personal money. Check: LLC, 
+EIN, bank, Stripe under company. 
+• ☐ 
+�
+�
+ Terms of Service + Privacy Policy live at real URLs, covering: 
+independent-contractor status of coaches, verification disclaimers, cancellation 
+policy, dispute process, data retention, message monitoring for safety. 
+Easy: Terms and Privacy links must open REAL pages. They cover: coaches 
+are own bosses, what checks promise, cancel rules, disputes, data. Check: 
+links work, topics covered. 
+• ☐ 
+�
+�
+ Minors' data posture written down: athletes are records under parent 
+accounts, no child logins (keeps COPPA off the table) — state it in the privacy 
+policy and keep it true. 
+Easy: Kids never get logins. Kids live inside parent accounts only. That keeps 
+a strict kids-privacy law away. Write it. Keep it true. Check: no child logins, 
+policy says so. 
+• ☐ 
+�
+�
+ Insurance: platform general liability + professional/E&O quote in hand; 
+decision made (with a broker who knows youth-sports marketplaces) on coach 
+coverage. Launching a facilitate-adults-alone-with-children product uninsured is 
+not a documented risk, it's a disqualifier. 
+Easy: You connect adults with kids. Insurance BEFORE launch. Talk to a 
+youth-sports broker. No insurance = no launch, period. Check: quotes in 
+hand, coverage decided. 
+• ☐ 
+�
+�
+ FCRA compliance for background checks — counsel or at minimum 
+Checkr's compliance tooling configured. 
+Easy: The background-check law setup: lawyer, or at least turn on Checkr's 
+built-in legal tools. Check: compliance tools on. 
+• ☐ 
+�
+�
+ Waiver/assumption-of-risk flow for sessions (standard in youth sports; your 
+coaches' insurers may require it). 
+Easy: Parents sign the normal "sports have risks" form. Every program has 
+one. Check: waiver flow. 
+• ☐ 
+�
+�
+ Illinois-specific review: no BIPA exposure (no biometric verification — 
+keep it that way), sales-tax treatment of coaching services (services generally 
+exempt in IL; confirm). 
+Easy: Illinois: never do face-scans or fingerprints (tough law). And confirm 
+coaching needs no sales tax here. Check: no biometrics, tax confirmed. 
+12. Observability, Analytics & Support 
+• ☐ 
+�
+�
+ Crash/error reporting live (Sentry or equivalent) for Flutter web; every 
+formerly-silent catch now logs with context. Pass: throw a test error in prod; it 
+appears in your dashboard with stack + user context within a minute. 
+Easy: App breaks on someone's phone → YOU find out automatically. Test: 
+break it on purpose, see the report in 1 minute. Check: Sentry live, test error 
+seen. 
+• ☐ 
+�
+�
+ Funnel events instrumented: search → profile view → booking start → auth 
+→ payment → confirmation; coach funnel: signup → check → Connect → first 
+listing → first booking. Without this you cannot know where launch is failing. 
+Easy: Count every step: searched, viewed, booked, paid. Same for coaches. 
+Without counts, you'll know "it's not working" but never WHERE. Check: 
+events, both funnels, data flowing. 
+• ☐ 
+�
+�
+ A support channel that isn't your personal number: support@ email visible 
+in-app, answered daily; refund/cancel SOPs written so responses are consistent. 
+Easy: support@ email in the app, not your phone number. Answer daily. 
+Write your standard answers. Check: email visible, answered, scripts written. 
+• ☐ 
+�
+�
+ Webhook/reconciliation monitor: daily check that Stripe events processed = 
+bookings updated; alert on drift. Money-state drift is the bug class that kills 
+marketplaces quietly. 
+Easy: Daily robot: Stripe's payment list must match your paid-bookings list. 
+Drift = alert. This quiet bug kills marketplaces. Check: daily match, alert on 
+drift. 
+• ☐ 
+�
+�
+ Uptime monitor on the prod URL + Supabase status alerts to your phone. 
+Easy: Watchdog pings the site every minute. Site down → text to your phone. 
+Check: monitor on, alerts to phone. 
+• ☐ 
+�
+�
+ A weekly metrics ritual defined before launch: searches, matches shown, 
+bookings, repeat-booking rate, coach activation rate, time-to-first-booking. 
+(Repeat-booking rate is your leakage thermometer — it is the number.) 
+Easy: Same numbers, every week: searches, bookings, coaches activated — 
+and THE number: families booking the same coach again through the app. 
+That number says if people stay or slip to cash. Check: weekly time set, THE 
+number tracked. 
+13. Launch Drills (do all four, end-to-end, on production) 
+• ☐ 
+�
+�
+ Drill A — Parent journey: stranger's phone, guest browse → book → real 
+payment → session reminder push → mark complete → rate → one-tap rebook. 
+Zero assistance, zero dev tools. 
+Easy: A stranger does the whole parent trip alone: browse, book, pay real 
+money, get the buzz, finish, rate, rebook. You help with nothing. Stuck = 
+broken. Check: full trip, no help. 
+• ☐ 
+�
+�
+ Drill B — Coach journey: new coach through the full funnel including a 
+real (or Checkr sandbox-final) background check and Connect KYC → listing live 
+→ receives Drill A's booking → completes session → payout lands in bank. 
+Easy: One real coach, start to finish: sign up, pass check, connect bank, get 
+booked, do session — real money lands in their bank. Watch it arrive. Check: 
+full trip, money landed. 
+• ☐ 
+�
+�
+ Drill C — Failure day: declined card, double-booked slot race, coach 
+cancels, parent disputes, coach reported, Supabase edge function down. Each 
+produces a defined, honest state and a notification — nothing silent. 
+Easy: Break everything on purpose for a day: bad card, slot race, cancels, 
+disputes, reports, server down. Every disaster = clear message, known 
+outcome. Nothing silent. Check: 6 disasters, all handled loudly. 
+• ☐ 
+�
+�
+ Drill D — Org flow: org creates trainer → trainer verified independently 
+→ parent books that trainer → split settles correctly in Stripe with fee lines visible 
+to both org and trainer. 
+Easy: Club path start to finish: club adds trainer, trainer passes own check, 
+parent books, money splits right, both see the math. Check: club trip, split  
+right. 
+The Launch Gate 
+You are launch-ready when: all 
+�
+�
+ boxes are checked, all 
+�
+�
+ boxes are either checked or 
+have a one-line written risk acceptance with an owner and a date, Drills A–D pass on 
+production without intervention, and the repeat-booking metric is live on a dashboard you 
+will look at every morning. Not before. 
+Easy: Launch when: every 
+�
+�
+ checked, every 
+�
+�
+ checked or excused in 
+writing, all 4 drills pass alone, morning dashboard shows THE number. Not 
+before. 
+Things more simplified, ask questions if need be 
+1. Allow for large companies to list trainers that are affiliated with them in their own 
+profile. And allow then the user to click on that person and book them (for the 
+parent/athlete side). For the provider side, allow them to list and show affiliated 
+trainers and then set commission or percentage of revenue they get from the 
+trainers so when people pay on Stripe through the app the percentage 
+automatically goes back to them. The UI for the athlete side should list the trainers 
+in the overview session when they want to book a training session with that 
+program. Also allow a small description of each trainer and their rating similar to 
+Booksy. Then when they select the trainer the calendar shows that trainer's 
+availability. For the provider UI you can add on the dash board under create a new 
+listing you can add a button for creating new trainers. Then when they click that 
+button, format it similar to creating a new listing, have name, picture specialty, 
+listing price, duration etc, or if they have a Sporve account you can search them up 
+and click their profile and it will then use that info to fill out those sections 
+automatically. Then below that have a slider that shows commission percentage 
+(percent of revenue they receive) or if they want they can also type out a flat rate 
+or fee in dollars. Then when they finally add a new trainer it shows up on their 
+dashboard under a new heading labeled trainers. When this is done also allow the 
+provider to be able to click on and edit their trainers or remove them. Last thing 
+when the trainer himself receives payment from a client in transaction history 
+shows that the fee from the program was taken out so they know why they got less 
+money than what they were paid. And for the program show monthly revenue 
+gained from trainers as well on the dashboard 
+2. AI testing, this includes the AI search platform, AI chatbox, and including the 
+recommended for you? 
+Feel free to ask any questions whatsoever.

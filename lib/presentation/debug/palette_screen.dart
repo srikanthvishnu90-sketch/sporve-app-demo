@@ -4,7 +4,7 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/sport_colors.dart';
 
 /// TEMPORARY proof surface (Part 7 of the color recalibration). Renders, on the
-/// real #000000 canvas: the obsidian neutral stack, every sport tile
+/// real #005f63ff canvas: the obsidian neutral stack, every sport tile
 /// (well + border + glyph), the same row with bloom, and destructive-red /
 /// trust-gold beside the nearest sport colors to eyeball the collision guards.
 /// Route: /debug/palette. Delete once the palette is approved.
