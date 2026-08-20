@@ -3,6 +3,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/query_intent.dart';
+import '../models/subscription.dart';
 import '../matching/provider_matcher.dart';
 import 'app_repository.dart';
 
@@ -55,6 +56,138 @@ class SupabaseRepository implements AppRepository {
     if (v is String) return v;
     if (v is Map) return (v['_id'] ?? v['id'])?.toString();
     return null;
+  }
+
+  // ── Provider workspace billing ──────────────────────────────────────────
+  @override
+  Future<List<SubscriptionPlan>> getSubscriptionPlans() async {
+    try {
+      final rows = await _db
+          .from('plan_entitlements')
+          .select()
+          .order('price_usd_month');
+      return (rows as List)
+          .whereType<Map>()
+          .map((row) => SubscriptionPlan.fromMap(
+                Map<String, dynamic>.from(row),
+              ))
+          .toList(growable: false);
+    } catch (error) {
+      debugPrint('getSubscriptionPlans failed: $error');
+      throw const BillingException(
+        'Plans could not be loaded. Check your connection and try again.',
+      );
+    }
+  }
+
+  @override
+  Future<ProviderSubscription> getProviderSubscription() async {
+    final uid = _uid;
+    if (uid == null) {
+      throw const BillingException('Sign in to view workspace billing.');
+    }
+    try {
+      final row = await _db
+          .from('providers')
+          .select(
+            'id, plan, plan_status, plan_period_end, founding_coach, stripe_customer_id',
+          )
+          .eq('owner_id', uid)
+          .maybeSingle();
+      if (row == null) {
+        throw const BillingException(
+          'Finish provider setup before choosing a plan.',
+        );
+      }
+      return ProviderSubscription.fromMap(row);
+    } on BillingException {
+      rethrow;
+    } catch (error) {
+      debugPrint('getProviderSubscription failed: $error');
+      throw const BillingException(
+        'Billing status could not be loaded. Try again.',
+      );
+    }
+  }
+
+  @override
+  Future<Uri> createSubscriptionCheckout({
+    required SubscriptionTier plan,
+    required Uri successUrl,
+    required Uri cancelUrl,
+  }) async {
+    if (plan == SubscriptionTier.free) {
+      throw const BillingException('The Free plan does not require checkout.');
+    }
+    try {
+      final response = await _db.functions.invoke(
+        'billing-create-checkout',
+        body: {
+          'plan': plan.wireName,
+          'successUrl': successUrl.toString(),
+          'cancelUrl': cancelUrl.toString(),
+        },
+      );
+      return _billingUrl(response.data, 'checkoutUrl');
+    } on FunctionException catch (error) {
+      throw BillingException(_functionBillingMessage(error));
+    } on BillingException {
+      rethrow;
+    } catch (error) {
+      debugPrint('createSubscriptionCheckout failed: $error');
+      throw const BillingException(
+        'Billing could not be started. Please try again.',
+      );
+    }
+  }
+
+  @override
+  Future<Uri> createBillingPortal({required Uri returnUrl}) async {
+    try {
+      final response = await _db.functions.invoke(
+        'billing-portal',
+        body: {'returnUrl': returnUrl.toString()},
+      );
+      return _billingUrl(response.data, 'portalUrl');
+    } on FunctionException catch (error) {
+      throw BillingException(_functionBillingMessage(error));
+    } on BillingException {
+      rethrow;
+    } catch (error) {
+      debugPrint('createBillingPortal failed: $error');
+      throw const BillingException(
+        'Billing management is temporarily unavailable.',
+      );
+    }
+  }
+
+  Uri _billingUrl(Object? data, String key) {
+    if (data is Map) {
+      final message = data['error']?.toString().trim();
+      if (message != null && message.isNotEmpty) {
+        throw BillingException(message);
+      }
+      final uri = Uri.tryParse(data[key]?.toString() ?? '');
+      if (uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+        return uri;
+      }
+    }
+    throw const BillingException(
+      'Billing returned an invalid response. Please try again.',
+    );
+  }
+
+  String _functionBillingMessage(FunctionException error) {
+    final details = error.details;
+    if (details is Map) {
+      final message = details['error']?.toString().trim();
+      if (message != null && message.isNotEmpty) return message;
+    }
+    return switch (error.status) {
+      401 => 'Your session expired. Sign in and try again.',
+      403 => 'Only a provider workspace owner can manage billing.',
+      _ => 'Billing is temporarily unavailable. Please try again.',
+    };
   }
 
   // ── Mappers: DB row (snake_case) → UI map (camelCase + _id) ───────────────
@@ -184,6 +317,17 @@ class SupabaseRepository implements AppRepository {
       'status': row['status'],
       'paymentStatus': row['payment_status'],
       'stripeCheckoutSessionId': row['stripe_checkout_session_id'],
+      // Historical money facts captured by the Stripe webhook. Keep nullable:
+      // an absent value is unknown, not permission to recompute an old fee from
+      // today's subscription policy.
+      'platformFee': row['platform_fee'] == null
+          ? null
+          : _toD(row['platform_fee']),
+      'platformFeeBps': (row['platform_fee_bps'] as num?)?.toInt(),
+      'providerPayout': row['provider_payout'] == null
+          ? null
+          : _toD(row['provider_payout']),
+      'feeRecordedAt': row['fee_recorded_at'],
       'createdAt': row['created_at'],
     };
   }
@@ -225,6 +369,12 @@ class SupabaseRepository implements AppRepository {
     'backgroundCheckCompletedAt': row['background_check_completed_at'],
     'stripeAccountId': row['stripe_account_id'],
     'stripeChargesEnabled': row['stripe_charges_enabled'] ?? false,
+    'stripeCustomerId': row['stripe_customer_id'],
+    'plan': row['plan'] ?? 'free',
+    'planStatus': row['plan_status'] ?? 'none',
+    'planPeriodEnd': row['plan_period_end'],
+    'foundingCoach': row['founding_coach'] ?? false,
+    'providerType': row['provider_type'] ?? 'solo',
     'payoutSchedule': row['payout_schedule'] ?? 'Monthly',
     'kycStatus': row['kyc_status'] ?? row['verification_status'] ?? 'unverified',
     'kycFailureReason': row['kyc_failure_reason'],
@@ -916,8 +1066,8 @@ class SupabaseRepository implements AppRepository {
         final prog = b['programId'];
         final sess = b['sessionId'];
         final ath = b['athleteId'];
-        // family: the paying family's grouping key so first-vs-recurring can be
-        // resolved the way resolve_platform_fee_bps(searcher, provider) does.
+        // Historical relationship key only. The current subscription-funded
+        // model never selects a transaction fee from this value.
         final family = (b['searcherId'] ??
                 (ath is Map ? ath['_id'] : null) ??
                 '')
@@ -935,6 +1085,10 @@ class SupabaseRepository implements AppRepository {
           'status': b['status'] ?? '',
           'paymentStatus': pay,
           'gross': b['finalPrice'] ?? 0,
+          'platformFee': b['platformFee'],
+          'platformFeeBps': b['platformFeeBps'],
+          'providerPayout': b['providerPayout'],
+          'feeRecordedAt': b['feeRecordedAt'],
           'currency': b['currency'] ?? 'USD',
         });
       }
@@ -976,7 +1130,7 @@ class SupabaseRepository implements AppRepository {
 
   // ── Coach OS money page #4: off-platform invoicing (DRAFT flow) ─────────────
   // Coach-owned contacts + invoices (coach_contacts / coach_invoices, RLS
-  // owner-scoped). Amount + SaaS fee are SERVER-pinned by the DB trigger — the
+  // owner-scoped). Money facts are SERVER-pinned by the DB trigger — the
   // client only proposes line items (L-003). Charging is a separate flagged fn.
   @override
   Future<List<Map<String, dynamic>>> getCoachContacts() async {
@@ -1373,7 +1527,9 @@ class SupabaseRepository implements AppRepository {
     if (patch.containsKey('locationId')) {
       upd['location_id'] = _isUuid(patch['locationId']) ? patch['locationId'] : null;
     }
-    if (patch.containsKey('assignable')) upd['assignable'] = patch['assignable'] == true;
+    if (patch.containsKey('assignable')) {
+      upd['assignable'] = patch['assignable'] == true;
+    }
     if (patch.containsKey('active')) upd['is_active'] = patch['active'];
     if (upd.isEmpty) return true;
     try {
@@ -2085,7 +2241,9 @@ class SupabaseRepository implements AppRepository {
   Future<Map<String, dynamic>> getAvailabilitySettings() async {
     try {
       final providerId = await _currentProviderId();
-      if (providerId == null) return {'bufferMinutes': 0, 'vacationUntil': null};
+      if (providerId == null) {
+        return {'bufferMinutes': 0, 'vacationUntil': null};
+      }
       final row = await _db
           .from('providers')
           .select('buffer_minutes, vacation_until')

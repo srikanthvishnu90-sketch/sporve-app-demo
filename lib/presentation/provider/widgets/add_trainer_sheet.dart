@@ -26,21 +26,21 @@ void showAddTrainerChooser(BuildContext context) {
 }
 
 BoxDecoration _sheetDeco() => const BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    );
+  color: AppColors.surface,
+  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+);
 
 Widget _grabber() => Center(
-      child: Container(
-        width: 40,
-        height: 4,
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: AppColors.textTertiary,
-          borderRadius: BorderRadius.circular(999),
-        ),
-      ),
-    );
+  child: Container(
+    width: 40,
+    height: 4,
+    margin: const EdgeInsets.only(bottom: 16),
+    decoration: BoxDecoration(
+      color: AppColors.textTertiary,
+      borderRadius: BorderRadius.circular(999),
+    ),
+  ),
+);
 
 class _AddTrainerChooser extends StatelessWidget {
   const _AddTrainerChooser();
@@ -55,15 +55,22 @@ class _AddTrainerChooser extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _grabber(),
-          Text('Add a trainer',
-              style: AppTypography.font(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary)),
+          Text(
+            'Add a trainer',
+            style: AppTypography.font(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text('They become bookable only after their own background check.',
-              style: AppTypography.font(
-                  fontSize: 12, color: AppColors.textSecondary)),
+          Text(
+            'They become bookable only after their own background check.',
+            style: AppTypography.font(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
           const SizedBox(height: 16),
           _door(
             context,
@@ -85,7 +92,8 @@ class _AddTrainerChooser extends StatelessWidget {
             context,
             icon: Icons.mark_email_unread_outlined,
             title: 'Invite by email or text',
-            subtitle: 'New to Sporve — they onboard with your org pre-attached.',
+            subtitle:
+                'New to Sporve — they onboard with your org pre-attached.',
             onTap: () {
               Navigator.of(context).pop();
               showModalBottomSheet(
@@ -101,7 +109,7 @@ class _AddTrainerChooser extends StatelessWidget {
             context,
             icon: Icons.edit_note,
             title: 'Add a profile manually',
-            subtitle: 'Enter their details and set commission now.',
+            subtitle: 'Enter their details and set the organization share.',
             onTap: () {
               Navigator.of(context).pop();
               showModalBottomSheet(
@@ -117,11 +125,13 @@ class _AddTrainerChooser extends StatelessWidget {
     );
   }
 
-  Widget _door(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required String subtitle,
-      required VoidCallback onTap}) {
+  Widget _door(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -131,24 +141,36 @@ class _AddTrainerChooser extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadii.tile),
           border: Border.all(color: AppColors.hairline),
         ),
-        child: Row(children: [
-          Icon(icon, color: AppColors.slate, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title,
-                  style: AppTypography.font(
+        child: Row(
+          children: [
+            Icon(icon, color: AppColors.slate, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTypography.font(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: AppTypography.font(
-                      fontSize: 12, color: AppColors.textSecondary)),
-            ]),
-          ),
-          const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-        ]),
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTypography.font(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+          ],
+        ),
       ),
     );
   }
@@ -183,8 +205,9 @@ class _AffiliateExistingSheetState extends State<_AffiliateExistingSheet> {
       _searched = false;
       _found = null;
     });
-    final res =
-        await context.read<ProviderController>().findAccountToAffiliate(q);
+    final res = await context.read<ProviderController>().findAccountToAffiliate(
+      q,
+    );
     if (!mounted) return;
     setState(() {
       _searching = false;
@@ -197,19 +220,26 @@ class _AffiliateExistingSheetState extends State<_AffiliateExistingSheet> {
     final found = _found;
     if (found == null) return;
     setState(() => _sending = true);
-    final ok = await context
-        .read<ProviderController>()
-        .affiliateExisting(found['profile_id'].toString());
+    final ok = await context.read<ProviderController>().affiliateExisting(
+      found['profile_id'].toString(),
+    );
     if (!mounted) return;
     setState(() => _sending = false);
     if (ok) {
       Get.back();
-      Get.snackbar('Invite sent',
-          'They\'ll appear on your roster once they accept. Bookable after their background check.',
-          backgroundColor: AppColors.surface, colorText: AppColors.textPrimary);
+      Get.snackbar(
+        'Invite sent',
+        'They\'ll appear on your roster once they accept. Bookable after their background check.',
+        backgroundColor: AppColors.surface,
+        colorText: AppColors.textPrimary,
+      );
     } else {
-      Get.snackbar('Couldn\'t send the invite', 'Please try again.',
-          backgroundColor: AppColors.surface, colorText: AppColors.textPrimary);
+      Get.snackbar(
+        'Couldn\'t send the invite',
+        'Please try again.',
+        backgroundColor: AppColors.surface,
+        colorText: AppColors.textPrimary,
+      );
     }
   }
 
@@ -226,11 +256,14 @@ class _AffiliateExistingSheetState extends State<_AffiliateExistingSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _grabber(),
-            Text('Affiliate an existing account',
-                style: AppTypography.font(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary)),
+            Text(
+              'Affiliate an existing account',
+              style: AppTypography.font(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _query,
@@ -238,7 +271,9 @@ class _AffiliateExistingSheetState extends State<_AffiliateExistingSheet> {
               decoration: InputDecoration(
                 labelText: 'Their email or phone',
                 labelStyle: AppTypography.font(
-                    color: AppColors.textSecondary, fontSize: 13),
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
                 filled: true,
                 fillColor: AppColors.surface2,
                 border: OutlineInputBorder(
@@ -269,24 +304,33 @@ class _AffiliateExistingSheetState extends State<_AffiliateExistingSheet> {
                     borderRadius: BorderRadius.circular(AppRadii.tile),
                     border: Border.all(color: AppColors.hairline),
                   ),
-                  child: Row(children: [
-                    const Icon(Icons.check_circle,
-                        color: AppColors.successGreen, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Found ${_found!['display_name'] ?? 'an account'} — send an affiliation invite?',
-                        style: AppTypography.font(
-                            fontSize: 13, color: AppColors.textPrimary),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: AppColors.successGreen,
+                        size: 20,
                       ),
-                    ),
-                  ]),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Found ${_found!['display_name'] ?? 'an account'} — send an affiliation invite?',
+                          style: AppTypography.font(
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 )
               else
                 Text(
                   'No Sporve account with that email or phone. Invite them by email or text instead (they\'ll onboard with your org attached).',
                   style: AppTypography.font(
-                      fontSize: 13, color: AppColors.textSecondary),
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               const SizedBox(height: 12),
               if (_found != null)
@@ -322,42 +366,59 @@ class _InviteByContactSheetState extends State<_InviteByContactSheet> {
   }
 
   InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        labelStyle:
-            AppTypography.font(color: AppColors.textSecondary, fontSize: 13),
-        filled: true,
-        fillColor: AppColors.surface2,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.tile),
-          borderSide: const BorderSide(color: AppColors.hairline),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.tile),
-          borderSide: const BorderSide(color: AppColors.hairline),
-        ),
-      );
+    labelText: label,
+    labelStyle: AppTypography.font(
+      color: AppColors.textSecondary,
+      fontSize: 13,
+    ),
+    filled: true,
+    fillColor: AppColors.surface2,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadii.tile),
+      borderSide: const BorderSide(color: AppColors.hairline),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadii.tile),
+      borderSide: const BorderSide(color: AppColors.hairline),
+    ),
+  );
 
   Future<void> _send() async {
     final email = _email.text.trim();
     final phone = _phone.text.trim();
     if (email.isEmpty && phone.isEmpty) {
-      Get.snackbar('Add a contact', 'Enter an email or phone to invite.',
-          backgroundColor: AppColors.surface, colorText: AppColors.textPrimary);
+      Get.snackbar(
+        'Add a contact',
+        'Enter an email or phone to invite.',
+        backgroundColor: AppColors.surface,
+        colorText: AppColors.textPrimary,
+      );
       return;
     }
     setState(() => _sending = true);
-    final token = await context.read<ProviderController>().inviteTrainerByContact(
-        email: email.isEmpty ? null : email, phone: phone.isEmpty ? null : phone);
+    final token = await context
+        .read<ProviderController>()
+        .inviteTrainerByContact(
+          email: email.isEmpty ? null : email,
+          phone: phone.isEmpty ? null : phone,
+        );
     if (!mounted) return;
     setState(() => _sending = false);
     if (token != null) {
       Get.back();
-      Get.snackbar('Invite sent',
-          'They\'ll onboard with your org attached. Track their progress on your roster.',
-          backgroundColor: AppColors.surface, colorText: AppColors.textPrimary);
+      Get.snackbar(
+        'Invite sent',
+        'They\'ll onboard with your org attached. Track their progress on your roster.',
+        backgroundColor: AppColors.surface,
+        colorText: AppColors.textPrimary,
+      );
     } else {
-      Get.snackbar('Couldn\'t send the invite', 'Please try again.',
-          backgroundColor: AppColors.surface, colorText: AppColors.textPrimary);
+      Get.snackbar(
+        'Couldn\'t send the invite',
+        'Please try again.',
+        backgroundColor: AppColors.surface,
+        colorText: AppColors.textPrimary,
+      );
     }
   }
 
@@ -374,28 +435,36 @@ class _InviteByContactSheetState extends State<_InviteByContactSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _grabber(),
-            Text('Invite by email or text',
-                style: AppTypography.font(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary)),
+            Text(
+              'Invite by email or text',
+              style: AppTypography.font(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 4),
             Text(
-                'They sign up, complete onboarding, and run their own background check — with your org already attached.',
-                style: AppTypography.font(
-                    fontSize: 12, color: AppColors.textSecondary)),
+              'They sign up, complete onboarding, and run their own background check — with your org already attached.',
+              style: AppTypography.font(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
             const SizedBox(height: 16),
             TextField(
-                controller: _email,
-                keyboardType: TextInputType.emailAddress,
-                decoration: _dec('Email'),
-                style: const TextStyle(color: AppColors.textPrimary)),
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: _dec('Email'),
+              style: const TextStyle(color: AppColors.textPrimary),
+            ),
             const SizedBox(height: 12),
             TextField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                decoration: _dec('Phone (optional)'),
-                style: const TextStyle(color: AppColors.textPrimary)),
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: _dec('Phone (optional)'),
+              style: const TextStyle(color: AppColors.textPrimary),
+            ),
             const SizedBox(height: 20),
             SporveButton(
               _sending ? 'Sending…' : 'Send invite',

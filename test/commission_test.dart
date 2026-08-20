@@ -12,13 +12,15 @@ void main() {
   group('commissionInEffect — the rate at a point in time', () {
     final rates = [
       CommissionRate(
-          type: CommissionType.percent,
-          value: 20,
-          effectiveFrom: DateTime.utc(2026, 1, 1)),
+        type: CommissionType.percent,
+        value: 20,
+        effectiveFrom: DateTime.utc(2026, 1, 1),
+      ),
       CommissionRate(
-          type: CommissionType.percent,
-          value: 30,
-          effectiveFrom: DateTime.utc(2026, 6, 1)),
+        type: CommissionType.percent,
+        value: 30,
+        effectiveFrom: DateTime.utc(2026, 6, 1),
+      ),
     ];
 
     test('picks the latest rate that has already begun', () {
@@ -38,68 +40,76 @@ void main() {
   });
 
   group('changing commission does NOT alter a past booking snapshot (#5)', () {
-    test('a snapshot captured under the old rate is immutable when the rate rises',
-        () {
-      // A booking placed Feb 1 under a 20% rate.
-      final ratesAtBooking = [
-        CommissionRate(
+    test(
+      'a snapshot captured under the old rate is immutable when the rate rises',
+      () {
+        // A booking placed Feb 1 under a 20% rate.
+        final ratesAtBooking = [
+          CommissionRate(
             type: CommissionType.percent,
             value: 20,
-            effectiveFrom: DateTime.utc(2026, 1, 1)),
-      ];
-      final snap = CommissionSnapshot.capture(
-        bookingId: 'past',
-        grossCents: 8000,
-        rates: ratesAtBooking,
-        at: DateTime.utc(2026, 2, 1),
-        isFirst: false,
-      );
-      // 20% of $80 = $16.00.
-      expect(snap.orgCommissionCents, 1600);
-      expect(snap.value, 20);
+            effectiveFrom: DateTime.utc(2026, 1, 1),
+          ),
+        ];
+        final snap = CommissionSnapshot.capture(
+          bookingId: 'past',
+          grossCents: 8000,
+          rates: ratesAtBooking,
+          at: DateTime.utc(2026, 2, 1),
+          isFirst: false,
+        );
+        // 20% of $80 = $16.00.
+        expect(snap.orgCommissionCents, 1600);
+        expect(snap.value, 20);
 
-      // Later the org RAISES commission to 30% (append a new dated rate).
-      final ratesNow = [
-        ...ratesAtBooking,
-        CommissionRate(
+        // Later the org RAISES commission to 30% (append a new dated rate).
+        final ratesNow = [
+          ...ratesAtBooking,
+          CommissionRate(
             type: CommissionType.percent,
             value: 30,
-            effectiveFrom: DateTime.utc(2026, 6, 1)),
-      ];
-      // The rate in effect NOW is 30% ...
-      expect(commissionInEffect(ratesNow, DateTime.utc(2026, 7, 1))!.value, 30);
-      // ... but the PAST booking's snapshot is untouched — still $16.00 @ 20%.
-      expect(snap.orgCommissionCents, 1600);
-      expect(snap.value, 20);
+            effectiveFrom: DateTime.utc(2026, 6, 1),
+          ),
+        ];
+        // The rate in effect NOW is 30% ...
+        expect(
+          commissionInEffect(ratesNow, DateTime.utc(2026, 7, 1))!.value,
+          30,
+        );
+        // ... but the PAST booking's snapshot is untouched — still $16.00 @ 20%.
+        expect(snap.orgCommissionCents, 1600);
+        expect(snap.value, 20);
 
-      // A NEW booking placed now captures the new 30% rate = $24.00.
-      final future = CommissionSnapshot.capture(
-        bookingId: 'future',
-        grossCents: 8000,
-        rates: ratesNow,
-        at: DateTime.utc(2026, 7, 1),
-        isFirst: false,
-      );
-      expect(future.orgCommissionCents, 2400);
-      expect(future.value, 30);
-    });
+        // A NEW booking placed now captures the new 30% rate = $24.00.
+        final future = CommissionSnapshot.capture(
+          bookingId: 'future',
+          grossCents: 8000,
+          rates: ratesNow,
+          at: DateTime.utc(2026, 7, 1),
+          isFirst: false,
+        );
+        expect(future.orgCommissionCents, 2400);
+        expect(future.value, 30);
+      },
+    );
   });
 
-  group('live-math reuses platform_fee.dart (identical both sides)', () {
-    test('platform-fee slice equals FeeItemization for the same booking', () {
+  group('organization split uses the subscription-funded booking policy', () {
+    test('Sporve deducts no share from the same booking', () {
       const gross = 8000;
       final item = CommissionItemization.compute(
         grossCents: gross,
         commissionType: CommissionType.percent,
         commissionValue: 20,
-        isFirst: false, // recurring — the P0 season unit
+        isFirst: false,
       );
-      // The rake line is byte-identical to the money page's shared module.
-      final rake = FeeItemization.marketplace(
-          bookingId: '', grossCents: gross, isFirst: false);
-      expect(item.platformFeeCents, rake.feeCents); // 4% of $80 = $3.20
-      expect(item.platformFeeCents, 320);
-      expect(item.platformFeeBps, kRecurringFeeBps);
+      final booking = FeeItemization.subscriptionFunded(
+        bookingId: '',
+        grossCents: gross,
+      );
+      expect(item.platformFeeCents, booking.feeCents);
+      expect(item.platformFeeCents, 0);
+      expect(item.platformFeeBps, kSporveBookingFeeBps);
     });
 
     test('the split always sums to gross (org + platform + trainer net)', () {
@@ -113,21 +123,21 @@ void main() {
         item.orgCommissionCents + item.platformFeeCents + item.trainerNetCents,
         item.grossCents,
       );
-      // 20% org = $16.00, 4% platform = $3.20, trainer nets the rest.
+      // 20% org = $16.00; the subscription-funded Sporve fee is zero.
       expect(item.orgCommissionCents, 1600);
-      expect(item.trainerNetCents, 8000 - 1600 - 320);
+      expect(item.trainerNetCents, 8000 - 1600);
     });
 
-    test('the intro-rate line differs ONLY in the platform-fee slice', () {
+    test('legacy relationship metadata does not create a Sporve fee', () {
       final intro = CommissionItemization.compute(
-          grossCents: 8000,
-          commissionType: CommissionType.percent,
-          commissionValue: 20,
-          isFirst: true);
-      // 18% intro rake, same 20% org cut.
-      expect(intro.platformFeeCents, 1440);
+        grossCents: 8000,
+        commissionType: CommissionType.percent,
+        commissionValue: 20,
+        isFirst: true,
+      );
+      expect(intro.platformFeeCents, 0);
       expect(intro.orgCommissionCents, 1600);
-      expect(intro.trainerNetCents, 8000 - 1440 - 1600);
+      expect(intro.trainerNetCents, 8000 - 1600);
     });
 
     test('flat commission is capped so trainer net never goes negative', () {
@@ -153,8 +163,8 @@ void main() {
       );
       // Both sides render from `item`; assert the invariant that defines "same".
       expect(item.orgCommissionCents, 2250); // 25% of $90
-      expect(item.platformFeeCents, 360); // 4% of $90
-      expect(item.trainerNetCents, 9000 - 2250 - 360);
+      expect(item.platformFeeCents, 0);
+      expect(item.trainerNetCents, 9000 - 2250);
     });
   });
 }

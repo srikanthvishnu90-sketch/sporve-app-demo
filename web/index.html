@@ -233,6 +233,11 @@
       pointer-events: auto;
     }
 
+    /* The local preview hub owns navigation and disclosure chrome. */
+    html.preview-embedded .demo-note {
+      display: none !important;
+    }
+
     .demo-note span {
       min-width: 0;
     }
@@ -1001,11 +1006,89 @@
           });
         }
 
-        // --- Wire the instant demo to REAL marketplace data (read-only, no writes) ---
+        // Use read-only public marketplace data when the deployment supplies a
+        // real public Supabase configuration. The repository preview otherwise
+        // falls back to bundled, clearly-labelled sample listings so localhost
+        // never makes a request to the placeholder hostname.
         var SB_URL = 'https://YOUR-PROJECT-REF.supabase.co';
         var SB_KEY = 'sb_publishable_YOUR_ANON_KEY';
+        var HAS_PUBLIC_LISTINGS = SB_URL.indexOf('YOUR-PROJECT-REF') === -1 &&
+          SB_KEY.indexOf('YOUR_ANON_KEY') === -1;
         var allPicks = [];
         var currentSession = null;
+        function dateAfter(days) {
+          var value = new Date();
+          value.setHours(12, 0, 0, 0);
+          value.setDate(value.getDate() + days);
+          return value.toISOString().slice(0, 10);
+        }
+        function bundledDemoListings() {
+          return [
+            {
+              title: 'Basketball Skills Lab', sport_type: 'Basketball', price: 68,
+              skill_level: 'Intermediate', average_rating: 4.9, total_reviews: 37,
+              whats_included: ['Ball-handling assessment', 'Small-group drills', 'Progress notes'],
+              providers: {
+                business_name: 'Northside Skills Academy', location: 'Chicago, IL',
+                bio: 'Small-group basketball development for growing athletes.',
+                status: 'approved', verification_status: 'verified',
+                background_check_status: 'verified', coach_years_coaching: 8,
+                coach_years_played: 12, credentials: ['USA Basketball licensed']
+              },
+              sessions: [
+                { start_date: dateAfter(1), start_time: '5:00 PM' },
+                { start_date: dateAfter(3), start_time: '6:30 PM' },
+                { start_date: dateAfter(6), start_time: '5:00 PM' }
+              ]
+            },
+            {
+              title: 'Soccer First Touch Clinic', sport_type: 'Soccer', price: 54,
+              skill_level: 'All levels', average_rating: 4.8, total_reviews: 24,
+              whats_included: ['Technical warm-up', 'First-touch stations', 'Take-home drill'],
+              providers: {
+                business_name: 'Lakefront Soccer Studio', location: 'Evanston, IL',
+                bio: 'Technical soccer coaching in a supportive small-group setting.',
+                status: 'approved', verification_status: 'verified',
+                background_check_status: 'verified', coach_years_coaching: 6,
+                coach_years_played: 14, credentials: ['US Soccer grassroots license']
+              },
+              sessions: [
+                { start_date: dateAfter(2), start_time: '4:30 PM' },
+                { start_date: dateAfter(5), start_time: '5:30 PM' },
+                { start_date: dateAfter(8), start_time: '4:30 PM' }
+              ]
+            },
+            {
+              title: 'Tennis Rally Builder', sport_type: 'Tennis', price: 62,
+              skill_level: 'Beginner', average_rating: 5.0, total_reviews: 18,
+              whats_included: ['Racquet fundamentals', 'Movement patterns', 'Guardian recap'],
+              providers: {
+                business_name: 'Rally Point Coaching', location: 'Oak Park, IL',
+                bio: 'Beginner-friendly tennis sessions focused on confident fundamentals.',
+                status: 'approved', verification_status: 'verified',
+                background_check_status: 'verified', coach_years_coaching: 10,
+                coach_years_played: 16, credentials: ['PTR certified']
+              },
+              sessions: [
+                { start_date: dateAfter(1), start_time: '3:30 PM' },
+                { start_date: dateAfter(4), start_time: '4:00 PM' },
+                { start_date: dateAfter(7), start_time: '3:30 PM' }
+              ]
+            }
+          ];
+        }
+        function setListingMode(isLive) {
+          var kicker = root.querySelector('[data-listing-kicker]');
+          var copy = root.querySelector('[data-listing-copy]');
+          var label = root.querySelector('[data-listing-label]');
+          if (kicker) kicker.textContent = isLive
+            ? 'Live public listings · Interactive preview · No sign-up to look'
+            : 'Curated demo listings · Interactive preview · No sign-up required';
+          if (copy) copy.textContent = isLive
+            ? 'Explore eligible coaches and available sessions using live public marketplace listing data. This interactive preview does not create a booking, take payment, hold a spot, or save your choices.'
+            : 'Explore representative coaches and sessions using bundled sample data. This interactive preview does not create a booking, take payment, hold a spot, or save your choices.';
+          if (label) label.textContent = isLive ? 'Live listings' : 'Demo listings';
+        }
         function emptyEl(cls, msg, span) {
           var e = document.createElement('div');
           e.className = cls;
@@ -1218,39 +1301,58 @@
             wrap.appendChild(c);
           });
         }
+        function applyListingRows(rows) {
+          if (!Array.isArray(rows) || !rows.length) {
+            renderListings([]);
+            renderProvider(null);
+            return;
+          }
+          var today = new Date().toISOString().slice(0, 10);
+          function hasSess(p) { return (p.sessions || []).some(function (s) { return s.start_date >= today; }); }
+          function realProv(p) {
+            var n = (p.providers && p.providers.business_name) || '';
+            return n.length >= 6 && /\s/.test(n) && !/^(academy [ab]|test academy)$/i.test(n);
+          }
+          function clean(p) {
+            var t = (p.title || ''), s = (p.sport_type || '');
+            return t.indexOf(s) === 0 || /(Clinic|Training|Coaching|Camp|Development|Skills|Rally)/i.test(t);
+          }
+          var good = rows.filter(function (p) {
+            return hasSess(p) && realProv(p) && isEligibleProvider(p);
+          });
+          good.sort(function (a, b) { return (clean(a) ? 0 : 1) - (clean(b) ? 0 : 1); });
+          var seen = {}, picks = [];
+          good.forEach(function (p) {
+            var n = (p.providers && p.providers.business_name) || '';
+            if (!seen[n]) { seen[n] = 1; picks.push(p); }
+          });
+          picks = picks.slice(0, 10);
+          if (picks.length) {
+            allPicks = picks;
+            renderChips();
+            renderListings(picks);
+            renderProvider(picks[0]);
+          } else {
+            renderListings([]);
+            renderProvider(null);
+          }
+        }
         function loadListings() {
+          setListingMode(HAS_PUBLIC_LISTINGS);
+          if (!HAS_PUBLIC_LISTINGS) {
+            applyListingRows(bundledDemoListings());
+            return;
+          }
           var q = SB_URL + '/rest/v1/programs?select=title,sport_type,price,skill_level,whats_included,average_rating,total_reviews,' +
             'providers(business_name,location,bio,status,verification_status,background_check_status,coach_years_coaching,coach_years_played,credentials),' +
             'sessions(start_date,start_time)&status=eq.published&limit=40';
           fetch(q, { headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY } })
             .then(function (r) { return r.ok ? r.json() : []; })
-            .then(function (rows) {
-              if (!Array.isArray(rows)) { renderListings([]); renderProvider(null); return; }
-              if (!rows.length) { renderListings([]); renderProvider(null); return; }
-              var today = new Date().toISOString().slice(0, 10);
-              function hasSess(p) { return (p.sessions || []).some(function (s) { return s.start_date >= today; }); }
-              function realProv(p) {
-                var n = (p.providers && p.providers.business_name) || '';
-                return n.length >= 6 && /\s/.test(n) && !/^(academy [ab]|test academy)$/i.test(n);
-              }
-              function clean(p) {
-                var t = (p.title || ''), s = (p.sport_type || '');
-                return t.indexOf(s) === 0 || /(Clinic|Training|Coaching|Camp|Development)/i.test(t);
-              }
-              var good = rows.filter(function (p) {
-                return hasSess(p) && realProv(p) && isEligibleProvider(p);
-              });
-              good.sort(function (a, b) { return (clean(a) ? 0 : 1) - (clean(b) ? 0 : 1); });
-              var seen = {}, picks = [];
-              good.forEach(function (p) {
-                var n = (p.providers && p.providers.business_name) || '';
-                if (!seen[n]) { seen[n] = 1; picks.push(p); }
-              });
-              picks = picks.slice(0, 10);
-              if (picks.length) { allPicks = picks; renderChips(); renderListings(picks); renderProvider(picks[0]); }
-              else { renderListings([]); renderProvider(null); }
-            })
-            .catch(function () { renderListings([]); renderProvider(null); });
+            .then(applyListingRows)
+            .catch(function () {
+              setListingMode(false);
+              applyListingRows(bundledDemoListings());
+            });
         }
         loadListings();
 
@@ -1419,7 +1521,17 @@
        calls window.close() (blank screen) if this global is missing. Loaded
        synchronously so it's present before Flutter's plugin registration. -->
   <script src="bundle.js"></script>
-  <script>try{if(location.search.indexOf('fast=1')>=0)document.documentElement.classList.add('demo-direct');}catch(e){}</script>
+  <script>
+    try {
+      var previewParams = new URLSearchParams(location.search);
+      if (previewParams.get('fast') === '1') {
+        document.documentElement.classList.add('demo-direct');
+      }
+      if (previewParams.get('previewEmbedded') === '1') {
+        document.documentElement.classList.add('preview-embedded');
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <div id="demo-boot" role="status" aria-live="polite" aria-label="Loading Sporve">
@@ -1449,9 +1561,9 @@
       </div>
       <div class="fd-hero">
         <div class="fd-panel fd-intro">
-          <p class="fd-kicker">Live public listings · Interactive preview · No sign-up to look</p>
+          <p class="fd-kicker" data-listing-kicker>Curated demo listings · Interactive preview · No sign-up required</p>
           <h1 id="fast-demo-title" class="fd-title">Preview finding a background-check-verified coach.</h1>
-          <p class="fd-copy">Explore eligible coaches and available sessions using live public marketplace listing data. This interactive preview does not create a booking, take payment, hold a spot, or save your choices.</p>
+          <p class="fd-copy" data-listing-copy>Explore representative coaches and sessions using bundled sample data. This interactive preview does not create a booking, take payment, hold a spot, or save your choices.</p>
           <div class="fd-tabs" role="tablist" aria-label="Demo view">
             <button type="button" class="fd-tab is-active" data-fast-tab="family">Family</button>
             <button type="button" class="fd-tab" data-fast-tab="provider">Provider</button>
@@ -1462,7 +1574,7 @@
           <div class="fd-view is-active" data-fast-view="family">
             <div class="fd-phonebar">
               <span>Family booking</span>
-              <span>Live listings</span>
+              <span data-listing-label>Demo listings</span>
             </div>
             <div class="fd-stack">
               <div class="fd-chips" data-sport-chips style="display:none"></div>

@@ -12,7 +12,7 @@ enum CommissionAudience { org, trainer }
 
 /// The ONE shared commission-split card the org (setting the cut) and the trainer
 /// (seeing their net) both read. Renders a [CommissionItemization] from
-/// commission.dart — gross → platform fee → org commission → trainer net — so the
+/// commission.dart — gross → Sporve fee → org commission → trainer net — so the
 /// two sides can never see different math.
 ///
 /// MONEY HONESTY (L-003): this is a projection from the current fee schedule; the
@@ -49,55 +49,82 @@ class CommissionItemizationCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('On a ${_money(item.grossCents)} session',
-                  style: AppTypography.font(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary)),
+              Text(
+                'On a ${_money(item.grossCents)} session',
+                style: AppTypography.font(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
               if (sampleNote)
-                Text('example',
-                    style: AppTypography.font(
-                        fontSize: 10, color: AppColors.textTertiary)),
+                Text(
+                  'example',
+                  style: AppTypography.font(
+                    fontSize: 10,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 10),
-          _row('You keep (commission ${item.commissionLabel})', item.orgCommissionCents,
-              emphasize: orgIsAudience, positive: orgIsAudience),
+          _row(
+            'Organization share (${item.commissionLabel})',
+            item.orgCommissionCents,
+            emphasize: orgIsAudience,
+            positive: orgIsAudience,
+          ),
           const SizedBox(height: 6),
           _row('Sporve fee (${item.platformRatePct})', item.platformFeeCents),
           const SizedBox(height: 6),
-          _row('Trainer net', item.trainerNetCents,
-              emphasize: !orgIsAudience, positive: !orgIsAudience),
+          _row(
+            'Trainer net',
+            item.trainerNetCents,
+            emphasize: !orgIsAudience,
+            positive: !orgIsAudience,
+          ),
           const SizedBox(height: 10),
           Divider(color: AppColors.hairline, height: 1),
           const SizedBox(height: 8),
           Text(
-            'Projection from the current fee schedule. Your Stripe payout is the '
-            'authoritative record.',
+            'Sporve currently charges 0% per booking. Stripe processing and the '
+            'actual payout remain authoritative in Stripe.',
             style: AppTypography.font(
-                fontSize: 10, color: AppColors.textTertiary),
+              fontSize: 10,
+              color: AppColors.textTertiary,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _row(String label, int cents,
-      {bool emphasize = false, bool positive = false}) {
+  Widget _row(
+    String label,
+    int cents, {
+    bool emphasize = false,
+    bool positive = false,
+  }) {
     final color = positive ? AppColors.successGreen : AppColors.textPrimary;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: AppTypography.font(
-                fontSize: emphasize ? 13 : 12,
-                fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
-                color: emphasize ? AppColors.textPrimary : AppColors.textSecondary)),
-        Text(_money(cents),
-            style: AppTypography.font(
-                fontSize: emphasize ? 15 : 13,
-                fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
-                color: color)),
+        Text(
+          label,
+          style: AppTypography.font(
+            fontSize: emphasize ? 13 : 12,
+            fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
+            color: emphasize ? AppColors.textPrimary : AppColors.textSecondary,
+          ),
+        ),
+        Text(
+          _money(cents),
+          style: AppTypography.font(
+            fontSize: emphasize ? 15 : 13,
+            fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
+            color: color,
+          ),
+        ),
       ],
     );
   }

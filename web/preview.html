@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta
+      name="description"
+      content="Local Sporve product preview for the family app, provider workspace, login, pricing, and interactive demo."
+    >
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'"
+    >
+    <title>Sporve local preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --canvas: #000;
+        --surface: #0d0f13;
+        --surface-raised: #151822;
+        --line: rgba(148, 163, 184, 0.24);
+        --line-soft: rgba(148, 163, 184, 0.14);
+        --text: #f7f7f7;
+        --muted: #a6b3bf;
+        --quiet: #78848f;
+        --accent: #475569;
+        --accent-text: #dbe5ef;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        min-width: 320px;
+        height: 100%;
+        overflow: hidden;
+        background: var(--canvas);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent-text);
+        outline-offset: 2px;
+      }
+
+      .preview-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        min-height: 0;
+        background: var(--canvas);
+      }
+
+      .preview-header {
+        flex: none;
+        border-bottom: 1px solid var(--line-soft);
+        background: var(--surface);
+      }
+
+      .header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        min-height: 72px;
+        padding: 12px clamp(16px, 3vw, 32px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 12px;
+      }
+
+      .brand-mark {
+        display: grid;
+        flex: none;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--accent);
+        color: white;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .brand-copy {
+        min-width: 0;
+      }
+
+      .brand-copy h1 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+      }
+
+      .brand-copy p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .preview-status {
+        display: inline-flex;
+        min-height: 32px;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--accent-text);
+        font-size: 12px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #94a3b8;
+      }
+
+      .view-tabs {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 0 clamp(16px, 3vw, 32px) 12px;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .view-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      .view-tab {
+        flex: none;
+        min-height: 44px;
+        padding: 0 14px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 650;
+        transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+      }
+
+      .view-tab:hover {
+        color: var(--text);
+        background: var(--surface-raised);
+      }
+
+      .view-tab[aria-selected="true"] {
+        border-color: var(--line);
+        background: var(--accent);
+        color: white;
+      }
+
+      .preview-stage {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+        background: #06070a;
+      }
+
+      .stage-bar {
+        display: flex;
+        flex: none;
+        min-height: 58px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 9px clamp(16px, 3vw, 32px);
+        border-bottom: 1px solid var(--line-soft);
+        background: var(--canvas);
+      }
+
+      .stage-title {
+        min-width: 0;
+      }
+
+      .stage-title strong {
+        display: block;
+        font-size: 14px;
+        line-height: 1.3;
+      }
+
+      .stage-title span {
+        display: block;
+        margin-top: 2px;
+        overflow: hidden;
+        color: var(--quiet);
+        font-size: 12px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .standalone-link {
+        display: inline-flex;
+        flex: none;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      .standalone-link:hover {
+        background: var(--surface-raised);
+      }
+
+      .app-frame {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        border: 0;
+        background: var(--canvas);
+      }
+
+      @media (max-width: 640px) {
+        .header-row {
+          min-height: 64px;
+          padding-block: 10px;
+        }
+
+        .brand-copy p {
+          display: none;
+        }
+
+        .preview-status {
+          max-width: 132px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .view-tabs {
+          padding-bottom: 10px;
+        }
+
+        .stage-title span {
+          display: none;
+        }
+
+        .standalone-link {
+          padding-inline: 11px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .view-tab {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-shell">
+      <header class="preview-header">
+        <div class="header-row">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">S</div>
+            <div class="brand-copy">
+              <h1>Sporve local preview</h1>
+              <p>Switch between the complete product surfaces from one place.</p>
+            </div>
+          </div>
+          <div class="preview-status" title="Local mock data. No real bookings or charges.">
+            <span class="status-dot" aria-hidden="true"></span>
+            Mock · No charges
+          </div>
+        </div>
+
+        <nav class="view-tabs" aria-label="Preview surface" role="tablist">
+          <button class="view-tab" type="button" role="tab" aria-selected="true" data-view="family">
+            Family
+          </button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-view="provider">
+            Provider
+          </button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-view="login">
+            Login
+          </button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-view="pricing">
+            Pricing
+          </button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-view="demo">
+            Demo
+          </button>
+        </nav>
+      </header>
+
+      <main class="preview-stage">
+        <div class="stage-bar">
+          <div class="stage-title" aria-live="polite">
+            <strong id="view-title">Family app</strong>
+            <span id="view-description">The complete signed-in family marketplace experience.</span>
+          </div>
+          <a class="standalone-link" id="standalone-link" href="/?previewEmbedded=1#/main-nav" target="_blank" rel="noopener">
+            Open standalone ↗
+          </a>
+        </div>
+        <iframe
+          class="app-frame"
+          id="app-frame"
+          title="Sporve family app preview"
+          src="/?previewEmbedded=1#/main-nav"
+          allow="clipboard-write"
+        ></iframe>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        var views = {
+          family: {
+            title: 'Family app',
+            description: 'The complete signed-in family marketplace experience.',
+            url: '/?previewEmbedded=1#/main-nav'
+          },
+          provider: {
+            title: 'Provider app',
+            description: 'The provider dashboard, listings, schedule, finances, and profile.',
+            url: '/?previewEmbedded=1#/provider-main-nav'
+          },
+          login: {
+            title: 'Login',
+            description: 'The account entry and authentication experience.',
+            url: '/?previewEmbedded=1#/auth-entry'
+          },
+          pricing: {
+            title: 'Plans & pricing',
+            description: 'Free, Pro, and Enterprise workspace subscriptions with 0% Sporve booking fees.',
+            url: '/?previewEmbedded=1#/provider-billing'
+          },
+          demo: {
+            title: 'Instant demo',
+            description: 'A lightweight interactive walkthrough that creates no bookings or charges.',
+            url: '/?previewEmbedded=1&fast=1'
+          }
+        };
+
+        var frame = document.getElementById('app-frame');
+        var title = document.getElementById('view-title');
+        var description = document.getElementById('view-description');
+        var standalone = document.getElementById('standalone-link');
+        var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-view]'));
+
+        function standaloneUrl(url) {
+          return url
+            .replace('?previewEmbedded=1&', '?')
+            .replace('?previewEmbedded=1#', '#')
+            .replace('?previewEmbedded=1', '');
+        }
+
+        function selectView(key, updateHash) {
+          var view = views[key] || views.family;
+          tabs.forEach(function (tab) {
+            tab.setAttribute('aria-selected', tab.getAttribute('data-view') === key ? 'true' : 'false');
+          });
+          title.textContent = view.title;
+          description.textContent = view.description;
+          frame.title = 'Sporve ' + view.title.toLowerCase() + ' preview';
+          if (frame.getAttribute('src') !== view.url) frame.setAttribute('src', view.url);
+          standalone.setAttribute('href', standaloneUrl(view.url));
+          if (updateHash && history.replaceState) history.replaceState(null, '', '#' + key);
+        }
+
+        tabs.forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            selectView(tab.getAttribute('data-view'), true);
+          });
+        });
+
+        window.addEventListener('hashchange', function () {
+          var key = location.hash.slice(1);
+          if (Object.prototype.hasOwnProperty.call(views, key)) {
+            selectView(key, false);
+          }
+        });
+
+        var initial = location.hash.slice(1);
+        selectView(Object.prototype.hasOwnProperty.call(views, initial) ? initial : 'family', false);
+      })();
+    </script>
+  </body>
+</html>

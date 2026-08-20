@@ -31,8 +31,10 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
       'email': 'sam@sporve.com',
       'name': 'Sam Alex',
       'specialty': 'Basketball & Agility',
-      'description': 'NCAA Division I player with 6+ years youth coaching experience.',
-      'avatar': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+      'description':
+          'NCAA Division I player with 6+ years youth coaching experience.',
+      'avatar':
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
       'price': '85',
       'duration': '60',
     },
@@ -41,8 +43,10 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
       'email': 'sarah@sporve.com',
       'name': 'Sarah Connor',
       'specialty': 'Soccer Striker Clinic',
-      'description': 'USSF B-Licensed Soccer Trainer specializing in finishing and footwork.',
-      'avatar': 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=300&q=80',
+      'description':
+          'USSF B-Licensed Soccer Trainer specializing in finishing and footwork.',
+      'avatar':
+          'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=300&q=80',
       'price': '90',
       'duration': '45',
     },
@@ -51,8 +55,10 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
       'email': 'david@sporve.com',
       'name': 'David Miller',
       'specialty': 'Tennis & Footwork',
-      'description': 'Former ATP Challenger tour player focusing on junior player development.',
-      'avatar': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
+      'description':
+          'Former ATP Challenger tour player focusing on junior player development.',
+      'avatar':
+          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
       'price': '100',
       'duration': '60',
     },
@@ -109,7 +115,9 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
         'name': _nameController.text.trim(),
         'specialty': _specialtyController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'avatar': _selectedAvatarUrl ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+        'avatar':
+            _selectedAvatarUrl ??
+            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
         'rating': 4.9,
         'reviewsCount': 18,
         'price': price,
@@ -120,7 +128,9 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
       };
 
       if (Get.isRegistered<ProviderDashboardController>()) {
-        Get.find<ProviderDashboardController>().addAffiliatedTrainer(newTrainer);
+        Get.find<ProviderDashboardController>().addAffiliatedTrainer(
+          newTrainer,
+        );
       }
 
       Get.back();
@@ -175,7 +185,7 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'List a trainer under your organization and configure revenue commission split.',
+                'List a trainer under your organization and configure the revenue split.',
                 style: TextStyle(color: Colors.white60, fontSize: 13),
               ),
               const SizedBox(height: 20),
@@ -190,7 +200,10 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                       decoration: InputDecoration(
                         hintText: 'Search Sporve username or email...',
                         hintStyle: const TextStyle(color: Colors.white38),
-                        prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.white54,
+                        ),
                         filled: true,
                         fillColor: const Color(0xFF1E293B),
                         border: OutlineInputBorder(
@@ -202,16 +215,23 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: () => _searchSporveAccount(_searchController.text),
+                    onPressed: () =>
+                        _searchSporveAccount(_searchController.text),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF38BDF8),
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Lookup', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'Lookup',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ],
               ),
@@ -219,11 +239,19 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                 const SizedBox(height: 8),
                 Row(
                   children: const [
-                    Icon(Icons.check_circle, color: Color(0xFF34D399), size: 16),
+                    Icon(
+                      Icons.check_circle,
+                      color: Color(0xFF34D399),
+                      size: 16,
+                    ),
                     SizedBox(width: 6),
                     Text(
                       'Sporve Verified Account Linked',
-                      style: TextStyle(color: Color(0xFF34D399), fontSize: 12, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Color(0xFF34D399),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -236,22 +264,33 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
               TextFormField(
                 controller: _nameController,
                 style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Trainer Full Name *', Icons.person),
-                validator: (v) => v == null || v.isEmpty ? 'Trainer name is required' : null,
+                decoration: _inputDecoration(
+                  'Trainer Full Name *',
+                  Icons.person,
+                ),
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'Trainer name is required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _specialtyController,
                 style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Specialty (e.g. Shooting Coach, Striker Clinic)', Icons.sports),
-                validator: (v) => v == null || v.isEmpty ? 'Specialty is required' : null,
+                decoration: _inputDecoration(
+                  'Specialty (e.g. Shooting Coach, Striker Clinic)',
+                  Icons.sports,
+                ),
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'Specialty is required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _descriptionController,
                 style: const TextStyle(color: Colors.white),
                 maxLines: 2,
-                decoration: _inputDecoration('Trainer Bio / Description', Icons.description),
+                decoration: _inputDecoration(
+                  'Trainer Bio / Description',
+                  Icons.description,
+                ),
               ),
               const SizedBox(height: 12),
 
@@ -263,8 +302,12 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                       controller: _priceController,
                       keyboardType: TextInputType.number,
                       style: const TextStyle(color: Colors.white),
-                      decoration: _inputDecoration('Session Price (\$)', Icons.attach_money),
-                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                      decoration: _inputDecoration(
+                        'Session Price (\$)',
+                        Icons.attach_money,
+                      ),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Required' : null,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -273,18 +316,26 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                       controller: _durationController,
                       keyboardType: TextInputType.number,
                       style: const TextStyle(color: Colors.white),
-                      decoration: _inputDecoration('Duration (Mins)', Icons.timer),
-                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                      decoration: _inputDecoration(
+                        'Duration (Mins)',
+                        Icons.timer,
+                      ),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Required' : null,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
 
-              // Commission Engine Controls
+              // Organization revenue-share controls
               const Text(
-                'Program Commission / Revenue Split',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                'Program revenue split',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -304,18 +355,23 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => setState(() => _isPercentageCommission = true),
+                        onTap: () =>
+                            setState(() => _isPercentageCommission = true),
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
-                            color: _isPercentageCommission ? const Color(0xFF38BDF8) : Colors.transparent,
+                            color: _isPercentageCommission
+                                ? const Color(0xFF38BDF8)
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
                             child: Text(
                               'Percentage (%)',
                               style: TextStyle(
-                                color: _isPercentageCommission ? Colors.black : Colors.white70,
+                                color: _isPercentageCommission
+                                    ? Colors.black
+                                    : Colors.white70,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
@@ -326,18 +382,23 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                     ),
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => setState(() => _isPercentageCommission = false),
+                        onTap: () =>
+                            setState(() => _isPercentageCommission = false),
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
-                            color: !_isPercentageCommission ? const Color(0xFF38BDF8) : Colors.transparent,
+                            color: !_isPercentageCommission
+                                ? const Color(0xFF38BDF8)
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
                             child: Text(
                               'Flat Fee (\$)',
                               style: TextStyle(
-                                color: !_isPercentageCommission ? Colors.black : Colors.white70,
+                                color: !_isPercentageCommission
+                                    ? Colors.black
+                                    : Colors.white70,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
@@ -355,10 +416,17 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Organization Commission Rate:', style: TextStyle(color: Colors.white70)),
+                    const Text(
+                      'Organization share:',
+                      style: TextStyle(color: Colors.white70),
+                    ),
                     Text(
                       '${_commissionPercentage.round()}%',
-                      style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        color: Color(0xFF38BDF8),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ],
                 ),
@@ -370,14 +438,18 @@ class _AddTrainerSheetState extends State<AddTrainerSheet> {
                   activeColor: const Color(0xFF38BDF8),
                   inactiveColor: Colors.white24,
                   label: '${_commissionPercentage.round()}%',
-                  onChanged: (val) => setState(() => _commissionPercentage = val),
+                  onChanged: (val) =>
+                      setState(() => _commissionPercentage = val),
                 ),
               ] else ...[
                 TextFormField(
                   controller: _flatFeeController,
                   keyboardType: TextInputType.number,
                   style: const TextStyle(color: Colors.white),
-                  decoration: _inputDecoration('Flat Commission Fee (\$ per session)', Icons.monetization_on),
+                  decoration: _inputDecoration(
+                    'Flat organization share (\$ per session)',
+                    Icons.monetization_on,
+                  ),
                   validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                 ),
               ],

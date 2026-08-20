@@ -82,7 +82,10 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
     );
   }
 
-  void _showCreateTrainer(BuildContext context, {Map<String, dynamic>? member}) {
+  void _showCreateTrainer(
+    BuildContext context, {
+    Map<String, dynamic>? member,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -343,11 +346,17 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 // "How did it go?" → the existing parent-update capture + rails.
                 Builder(
                   builder: (_) {
-                    final done = providerController.sessions
-                        .where((s) =>
-                            s.isCompleted && s.childFirstName.trim().isNotEmpty)
-                        .toList()
-                      ..sort((a, b) => b.sessionDate.compareTo(a.sessionDate));
+                    final done =
+                        providerController.sessions
+                            .where(
+                              (s) =>
+                                  s.isCompleted &&
+                                  s.childFirstName.trim().isNotEmpty,
+                            )
+                            .toList()
+                          ..sort(
+                            (a, b) => b.sessionDate.compareTo(a.sessionDate),
+                          );
                     if (done.isEmpty) return const SizedBox.shrink();
                     return _buildRecapPromptCard(context, done.first);
                   },
@@ -598,21 +607,32 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Trainers',
-                        style: AppTypography.font(
-                            fontSize: 18, fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary)),
+                    Text(
+                      'Trainers',
+                      style: AppTypography.font(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     if (providerController.trainers.isNotEmpty)
-                      Text('${providerController.trainers.length} on roster',
-                          style: AppTypography.font(
-                              fontSize: 12, color: AppColors.textSecondary)),
+                      Text(
+                        '${providerController.trainers.length} on roster',
+                        style: AppTypography.font(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                    'Affiliated coaches families can book. You keep your set commission.',
-                    style: AppTypography.font(
-                        fontSize: 12, color: AppColors.textSecondary)),
+                  'Families can book affiliated coaches. Your organization keeps its configured share.',
+                  style: AppTypography.font(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 // Org scheduling surfaces (Provider Model Rebuild #6) — only
                 // meaningful once the org has a roster.
@@ -670,9 +690,12 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                       border: Border.all(color: AppColors.hairline),
                     ),
                     child: Text(
-                        'No trainers yet. Add affiliated coaches and set the commission you keep on their bookings.',
-                        style: AppTypography.font(
-                            fontSize: 13, color: AppColors.textSecondary)),
+                      'No trainers yet. Add affiliated coaches and set the share your organization keeps.',
+                      style: AppTypography.font(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   )
                 else
                   for (final m in providerController.trainers) ...[
@@ -744,8 +767,9 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
     final specialty = (p['specialty'] ?? p['bio'] ?? '').toString();
     final type = (m['commission_type'] ?? 'percent').toString();
     final val = (m['commission_value'] as num?)?.toDouble() ?? 0;
-    final commission =
-        type == 'percent' ? '${val.round()}% commission' : '\$${val.round()} / session';
+    final organizationShare = type == 'percent'
+        ? '${val.round()}% organization share'
+        : '\$${val.round()} organization share / session';
     final affiliation = (m['affiliation_status'] ?? 'active').toString();
     final bg = (m['background_check_status'] ?? 'none').toString();
     final active = (m['is_active'] ?? true) == true;
@@ -766,14 +790,14 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
     final (pillLabel, pillColor) = affiliation == 'pending'
         ? ('Invite sent', AppColors.warmAccent)
         : affiliation == 'declined'
-            ? ('Declined', AppColors.negative)
-            : bookable
-                ? ('Bookable', AppColors.successGreen)
-                : verified
-                    ? ('Verified', AppColors.successGreen)
-                    : bg == 'pending'
-                        ? ('Check pending', AppColors.warmAccent)
-                        : ('Check needed', AppColors.warmAccent);
+        ? ('Declined', AppColors.negative)
+        : bookable
+        ? ('Bookable', AppColors.successGreen)
+        : verified
+        ? ('Verified', AppColors.successGreen)
+        : bg == 'pending'
+        ? ('Check pending', AppColors.warmAccent)
+        : ('Check needed', AppColors.warmAccent);
 
     return GestureDetector(
       onTap: () => _showCreateTrainer(context, member: m),
@@ -784,74 +808,107 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
           borderRadius: BorderRadius.circular(AppRadii.tile),
           border: Border.all(color: AppColors.hairline),
         ),
-        child: Column(children: [
-          Row(children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: AppColors.surface2,
-              child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: AppTypography.font(
-                      color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(name,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.surface2,
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
                     style: AppTypography.font(
-                        fontSize: 15, fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary)),
-                const SizedBox(height: 2),
-                Text(specialty.isEmpty ? commission : '$specialty · $commission',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: AppTypography.font(
-                        fontSize: 12, color: AppColors.textSecondary)),
-              ]),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: pillColor.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(pillLabel,
-                  style: AppTypography.font(
-                      fontSize: 10, fontWeight: FontWeight.w800, color: pillColor)),
-            ),
-            const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-          ]),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              for (var i = 0; i < steps.length; i++) ...[
-                Icon(
-                  steps[i].done
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  size: 13,
-                  color: steps[i].done
-                      ? AppColors.successGreen
-                      : AppColors.textTertiary,
-                ),
-                const SizedBox(width: 4),
-                Text(steps[i].label,
-                    style: AppTypography.font(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: steps[i].done
-                            ? AppColors.textSecondary
-                            : AppColors.textTertiary)),
-                if (i < steps.length - 1)
-                  Expanded(
-                    child: Container(
-                      height: 1,
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      color: AppColors.hairline,
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: AppTypography.font(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        specialty.isEmpty
+                            ? organizationShare
+                            : '$specialty · $organizationShare',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.font(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pillColor.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    pillLabel,
+                    style: AppTypography.font(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: pillColor,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
               ],
-            ],
-          ),
-        ]),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (var i = 0; i < steps.length; i++) ...[
+                  Icon(
+                    steps[i].done
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    size: 13,
+                    color: steps[i].done
+                        ? AppColors.successGreen
+                        : AppColors.textTertiary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    steps[i].label,
+                    style: AppTypography.font(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: steps[i].done
+                          ? AppColors.textSecondary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                  if (i < steps.length - 1)
+                    Expanded(
+                      child: Container(
+                        height: 1,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        color: AppColors.hairline,
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -889,8 +946,11 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                   color: AppColors.slateTint,
                   borderRadius: BorderRadius.circular(AppRadii.tile),
                 ),
-                child: const Icon(Icons.auto_awesome,
-                    color: AppColors.slateText, size: 20),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  color: AppColors.slateText,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -919,8 +979,11 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.arrow_forward,
-                  color: AppColors.slateText, size: 18),
+              const Icon(
+                Icons.arrow_forward,
+                color: AppColors.slateText,
+                size: 18,
+              ),
             ],
           ),
         ),

@@ -12,7 +12,24 @@
 library;
 
 import '../models/query_intent.dart';
+import '../models/subscription.dart';
 import '../matching/provider_matcher.dart';
+
+/// Provider-workspace subscriptions. Prices and entitlements are always read
+/// from Supabase; Stripe Checkout only receives a plan identifier.
+abstract class BillingRepository {
+  Future<List<SubscriptionPlan>> getSubscriptionPlans();
+
+  Future<ProviderSubscription> getProviderSubscription();
+
+  Future<Uri> createSubscriptionCheckout({
+    required SubscriptionTier plan,
+    required Uri successUrl,
+    required Uri cancelUrl,
+  });
+
+  Future<Uri> createBillingPortal({required Uri returnUrl});
+}
 
 /// Programs & their sessions (provider listings + scheduled sessions).
 abstract class ProgramRepository {
@@ -513,11 +530,10 @@ abstract class WaitlistRepository {
 /// for revenue). READ-ONLY: moves no money, opens no new Stripe surface (L-003).
 abstract class FinanceRepository {
   /// Normalized earnings lines for the signed-in provider: one per paid/completed
-  /// booking. Each map carries `id, family` (the paying family's grouping key, so
-  /// first-vs-recurring can be resolved the way `resolve_platform_fee_bps` does),
-  /// `date, athlete, program, sport, status, paymentStatus, gross, currency`.
-  /// The CSV/summary + per-transaction fee itemization are built client-side from
-  /// these (core/utils/earnings_csv.dart + core/utils/platform_fee.dart).
+  /// booking. Each map carries `id, family` (retained as historical relationship
+  /// metadata), `date, athlete, program, sport, status, paymentStatus, gross,
+  /// currency`, plus nullable webhook-recorded fee facts. Current transactions
+  /// never infer a fee from the relationship.
   Future<List<Map<String, dynamic>>> getProviderEarnings();
 
   /// REAL Stripe Connect payout history for the signed-in coach (money page #1):
@@ -543,8 +559,8 @@ abstract class FinanceRepository {
   /// The coach's off-platform invoices (draft + any later states), newest first.
   Future<List<Map<String, dynamic>>> getCoachInvoices();
 
-  /// Create a DRAFT invoice. The amount + SaaS fee are pinned SERVER-SIDE (a DB
-  /// trigger sums the line items and derives the fee) — the client only proposes
+  /// Create a DRAFT invoice. Amount + any historical fee fact are pinned
+  /// SERVER-SIDE (a DB trigger sums the line items) — the client only proposes
   /// line items. Returns the new invoice id, or null on failure. Charges nothing.
   Future<String?> createCoachInvoiceDraft(Map<String, dynamic> draft);
 }
@@ -686,7 +702,10 @@ abstract class ProviderAvailabilityRepository {
 
   /// Coach-side: set buffer minutes and/or vacation_until (pass null to clear
   /// vacation). Returns true on a confirmed write, false on failure (L-015).
-  Future<bool> setAvailabilitySettings({int? bufferMinutes, String? vacationUntil});
+  Future<bool> setAvailabilitySettings({
+    int? bufferMinutes,
+    String? vacationUntil,
+  });
 
   /// Coach-side: the recorded whole-day exception dates (ISO `yyyy-MM-dd`).
   Future<List<String>> getAvailabilityExceptions();
@@ -972,6 +991,7 @@ abstract class TeamBlockRepository {
 
 abstract class AppRepository
     implements
+        BillingRepository,
         ProgramRepository,
         ServiceRepository,
         MultiBookingRepository,

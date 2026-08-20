@@ -50,6 +50,7 @@ import '../../presentation/client/view/booking_flow_screen.dart';
 import '../../presentation/client/view/chat_details_screen.dart';
 import '../../presentation/provider/view/provider_roster_screen.dart';
 import '../../presentation/provider/view/provider_finances_screen.dart';
+import '../../presentation/provider/view/provider_billing_screen.dart';
 import '../../presentation/provider/view/provider_waitlist_screen.dart';
 import '../../presentation/provider/view/provider_recurring_slots_screen.dart';
 import '../../presentation/provider/view/provider_payouts_payments_screen.dart';
@@ -151,6 +152,10 @@ class AppPages {
     GetPage(
       name: AppRoutes.providerFinances,
       page: () => const ProviderFinancesScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.providerBilling,
+      page: () => const ProviderBillingScreen(),
     ),
     GetPage(
       name: AppRoutes.providerWaitlist,

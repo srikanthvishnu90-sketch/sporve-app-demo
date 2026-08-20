@@ -6,17 +6,13 @@
 /// a spreadsheet-ready CSV: one line per paid session + a totals block.
 ///
 /// MONEY HONESTY (L-003): this file moves NO money and is READ-ONLY. The exact
-/// platform fee for each charge is set server-side by Stripe at charge time and
-/// is not mirrored per-booking on the client. Where a real per-booking fee is not
-/// present in the row, the net column is computed from a DISPLAYED [feeRate] and
-/// the CSV header labels it an ESTIMATE — the coach's authoritative fee record is
-/// their Stripe/1099-K. This export is a convenience worksheet, not a tax filing.
+/// Sporve fee for each charge is set server-side and captured by the webhook.
+/// Missing historical fee values remain blank—today's 0% subscription-funded
+/// policy is never applied retroactively. Stripe reports remain authoritative.
 library;
 
-/// The fraction of gross the platform takes, used only to ESTIMATE net when a
-/// row carries no real fee amount. Mirrors the finances screen's display rate
-/// (kPlatformFeeRate = 0.10). Kept here so the pure builder has no UI dependency.
-const double kEarningsEstimatedFeeRate = 0.10;
+/// Retained for source compatibility. Earnings exports no longer estimate fees.
+const double kEarningsEstimatedFeeRate = 0;
 
 /// One normalized earnings line. Keys are read defensively so both data shapes
 /// (Flutter mock camelCase, Supabase-mapped) flow through unchanged (L-010).
@@ -28,7 +24,7 @@ class EarningsRow {
   final String status;
   final String paymentStatus;
   final double gross; // what the family paid (final_price)
-  final double? fee; // real fee if known; null => estimate from feeRate
+  final double? fee; // webhook-recorded Sporve fee; null means unknown
   final String currency;
 
   const EarningsRow({
@@ -43,43 +39,51 @@ class EarningsRow {
     this.fee,
   });
 
-  double feeAt(double rate) => fee ?? (gross * rate);
-  double netAt(double rate) => gross - feeAt(rate);
+  double? get amountAfterSporveFee => fee == null ? null : gross - fee!;
 }
 
 /// Aggregate totals across the rows, for the summary block + the UI confirmation.
 class EarningsSummary {
   final int count;
   final double gross;
-  final double fee;
-  final double net;
+  final double? fee;
+  final double? net;
+  final int unknownFeeCount;
   final String currency;
   const EarningsSummary({
     required this.count,
     required this.gross,
     required this.fee,
     required this.net,
+    required this.unknownFeeCount,
     required this.currency,
   });
 }
 
 EarningsSummary summarizeEarnings(
   List<EarningsRow> rows, {
+  // Deprecated and intentionally ignored: missing fees are unknown.
   double feeRate = kEarningsEstimatedFeeRate,
 }) {
-  double gross = 0, fee = 0, net = 0;
+  double gross = 0, knownFee = 0, knownNet = 0;
+  var unknown = 0;
   String currency = 'USD';
   for (final r in rows) {
     gross += r.gross;
-    fee += r.feeAt(feeRate);
-    net += r.netAt(feeRate);
+    if (r.fee == null) {
+      unknown++;
+    } else {
+      knownFee += r.fee!;
+      knownNet += r.amountAfterSporveFee!;
+    }
     if (r.currency.isNotEmpty) currency = r.currency;
   }
   return EarningsSummary(
     count: rows.length,
     gross: gross,
-    fee: fee,
-    net: net,
+    fee: unknown == 0 ? knownFee : null,
+    net: unknown == 0 ? knownNet : null,
+    unknownFeeCount: unknown,
     currency: currency,
   );
 }
@@ -88,7 +92,10 @@ EarningsSummary summarizeEarnings(
 /// quote, or newline; double any embedded quotes.
 String _csvField(Object? value) {
   final s = (value ?? '').toString();
-  if (s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r')) {
+  if (s.contains(',') ||
+      s.contains('"') ||
+      s.contains('\n') ||
+      s.contains('\r')) {
     return '"${s.replaceAll('"', '""')}"';
   }
   return s;
@@ -109,62 +116,73 @@ String buildEarningsCsv(
 }) {
   final when = (generatedAt ?? DateTime.now()).toUtc().toIso8601String();
   final summary = summarizeEarnings(rows, feeRate: feeRate);
-  final pct = (feeRate * 100).toStringAsFixed(1);
 
   final buf = StringBuffer();
   // Provenance / caveat rows (single-column, quoted so importers ignore extras).
   buf.writeln(
-    _csvLine(['Sporve earnings export${providerName != null ? ' — $providerName' : ''}']),
+    _csvLine([
+      'Sporve earnings export${providerName != null ? ' — $providerName' : ''}',
+    ]),
   );
   buf.writeln(_csvLine(['Generated (UTC)', when]));
-  buf.writeln(_csvLine([
-    'NOTE',
-    'Net is estimated at $pct% platform fee where a real fee is unavailable. '
-        'Your Stripe/1099-K is the authoritative fee record.',
-  ]));
+  buf.writeln(
+    _csvLine([
+      'NOTE',
+      'Sporve is subscription-funded and currently charges a 0% booking fee. '
+          'Historical fee and after-fee cells are blank when no webhook record '
+          'exists. Stripe reports are authoritative and processing fees are not '
+          'estimated here.',
+    ]),
+  );
   buf.writeln(''); // blank separator line
 
   // Header + rows.
-  buf.writeln(_csvLine([
-    'Date',
-    'Athlete',
-    'Program',
-    'Sport',
-    'Status',
-    'Payment',
-    'Gross',
-    'Fee (est.)',
-    'Net (est.)',
-    'Currency',
-  ]));
+  buf.writeln(
+    _csvLine([
+      'Date',
+      'Athlete',
+      'Program',
+      'Sport',
+      'Status',
+      'Payment',
+      'Gross',
+      'Recorded Sporve fee',
+      'After Sporve fee (before Stripe processing)',
+      'Currency',
+    ]),
+  );
   for (final r in rows) {
-    buf.writeln(_csvLine([
-      r.date,
-      r.athlete,
-      r.program,
-      r.sport,
-      r.status,
-      r.paymentStatus,
-      _money(r.gross),
-      _money(r.feeAt(feeRate)),
-      _money(r.netAt(feeRate)),
-      r.currency,
-    ]));
+    buf.writeln(
+      _csvLine([
+        r.date,
+        r.athlete,
+        r.program,
+        r.sport,
+        r.status,
+        r.paymentStatus,
+        _money(r.gross),
+        r.fee == null ? '' : _money(r.fee!),
+        r.amountAfterSporveFee == null ? '' : _money(r.amountAfterSporveFee!),
+        r.currency,
+      ]),
+    );
   }
 
   // Totals block.
   buf.writeln('');
-  buf.writeln(_csvLine([
-    'TOTALS',
-    '${summary.count} sessions',
-    '',
-    '',
-    '',
-    '',
-    _money(summary.gross),
-    _money(summary.fee),
-    _money(summary.net),
-    summary.currency,
-  ]));
+  buf.writeln(
+    _csvLine([
+      'TOTALS',
+      '${summary.count} sessions',
+      '',
+      '',
+      '',
+      '',
+      _money(summary.gross),
+      summary.fee == null ? '' : _money(summary.fee!),
+      summary.net == null ? '' : _money(summary.net!),
+      summary.currency,
+    ]),
+  );
   return buf.toString();
 }

@@ -19,6 +19,8 @@ test/         widget + logic tests
 android/ ios/ native scaffolding
 pubspec.yaml  dependencies
 AUDIT-SUMMARY.md   candid public engineering review of this demo
+docs/BILLING-SUBSCRIPTION-MIGRATION.md   workspace billing contract and release boundary
+docs/HANDOFF.md   current billing implementation evidence and release risks
 ```
 
 ## What's intentionally NOT here
@@ -55,6 +57,10 @@ flutter test
 
 The app renders inside a phone-width frame on wide screens, so the web build
 keeps mobile proportions.
+
+For a complete local product tour, open `/preview.html` on the local web server.
+The preview hub switches between the family app, provider workspace, login,
+subscription pricing, and the non-transactional instant demo from one page.
 
 ## Honest status
 

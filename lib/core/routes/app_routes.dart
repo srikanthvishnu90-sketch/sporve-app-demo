@@ -37,6 +37,7 @@ abstract class AppRoutes {
   static const String chatDetails = '/chat-details';
   static const String providerRoster = '/provider-roster';
   static const String providerFinances = '/provider-finances';
+  static const String providerBilling = '/provider-billing';
   static const String providerWaitlist = '/provider-waitlist';
   static const String providerRecurringSlots = '/provider-recurring-slots';
   static const String providerSupply = '/provider-supply';

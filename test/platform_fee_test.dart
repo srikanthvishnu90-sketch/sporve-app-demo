@@ -1,148 +1,108 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_structure/core/utils/platform_fee.dart';
 
-// Coach OS money page #2 — the per-transaction fee itemization is the SINGLE
-// source of truth both the coach and (later) the org/trainer read. These tests
-// pin the money math (cents-exact, mirrors the server's
-// Math.round((amount*bps)/10000)) and the first-vs-recurring assignment
-// (mirrors resolve_platform_fee_bps: per family+coach, earliest paid = intro).
 void main() {
-  group('feeCentsFor mirrors the server rounding', () {
-    test('18% intro on \$80.00', () {
-      // 8000 * 1800 / 10000 = 1440
-      expect(feeCentsFor(8000, kFirstBookingFeeBps), 1440);
+  group('subscription-funded current policy', () {
+    test('Sporve has one zero booking-fee policy', () {
+      expect(kSporveBookingFeeBps, 0);
+      expect(feeCentsFor(8000, kSporveBookingFeeBps), 0);
     });
-    test('4% recurring on \$80.00', () {
-      // 8000 * 400 / 10000 = 320
-      expect(feeCentsFor(8000, kRecurringFeeBps), 320);
+
+    test('marketplace preview keeps the full booking amount', () {
+      final item = FeeItemization.subscriptionFunded(
+        bookingId: 'future',
+        grossCents: 8000,
+      );
+      expect(item.feeCents, 0);
+      expect(item.netCents, 8000);
+      expect(item.ratePct, '0%');
+      expect(item.feeKnown, true);
+      expect(item.isRecorded, false);
     });
-    test('2.5% off-platform on \$80.00', () {
-      // 8000 * 250 / 10000 = 200
-      expect(feeCentsFor(8000, kOffPlatformFeeBps), 200);
-    });
-    test('rounds to nearest cent (banker-free .round())', () {
-      // 3333 * 1800 / 10000 = 599.94 -> 600
-      expect(feeCentsFor(3333, kFirstBookingFeeBps), 600);
+
+    test('off-platform preview also has no Sporve fee', () {
+      final item = FeeItemization.offPlatform(
+        bookingId: 'invoice',
+        grossCents: 16000,
+      );
+      expect(item.isOffPlatform, true);
+      expect(item.feeCents, 0);
+      expect(item.netCents, 16000);
     });
   });
 
-  group('FeeItemization.marketplace gross - fee = net', () {
-    test('intro line', () {
-      final it = FeeItemization.marketplace(
-        bookingId: 'b1',
+  group('historical money facts', () {
+    test('recorded legacy fee is preserved exactly', () {
+      final item = FeeItemization.recorded(
+        bookingId: 'legacy',
         grossCents: 8000,
+        feeCents: 1440,
+        feeBps: 1800,
+        netCents: 6560,
         isFirst: true,
       );
-      expect(it.feeBps, kFirstBookingFeeBps);
-      expect(it.feeCents, 1440);
-      expect(it.netCents, 6560);
-      expect(it.gross, 80.0);
-      expect(it.ratePct, '18%');
+      expect(item.feeCents, 1440);
+      expect(item.netCents, 6560);
+      expect(item.ratePct, '18%');
+      expect(item.feeKnown, true);
+      expect(item.isRecorded, true);
     });
-    test('recurring line', () {
-      final it = FeeItemization.marketplace(
-        bookingId: 'b2',
-        grossCents: 8000,
-        isFirst: false,
-      );
-      expect(it.feeCents, 320);
-      expect(it.netCents, 7680);
-      expect(it.ratePct, '4%');
+
+    test('missing fee remains unknown instead of being recomputed at zero', () {
+      final out = itemizeCoachEarnings(const [
+        FeeInput(
+          bookingId: 'unknown',
+          familyKey: 'family',
+          sortKey: '2026-01-01',
+          grossCents: 8000,
+        ),
+      ]);
+      expect(out.single.feeKnown, false);
+      expect(out.single.feeCents, 0);
+      expect(out.single.netCents, 8000);
     });
-    test('off-platform SaaS line uses the thin rate + flags', () {
-      final it = FeeItemization.offPlatform(bookingId: 'i1', grossCents: 16000);
-      expect(it.isOffPlatform, true);
-      expect(it.feeCents, 400); // 2.5%
-      expect(it.netCents, 15600);
-      expect(it.ratePct, '2.5%');
+
+    test('recorded zero fee is distinct from an unknown fee', () {
+      final out = itemizeCoachEarnings(const [
+        FeeInput(
+          bookingId: 'zero',
+          familyKey: 'family',
+          sortKey: '2026-01-01',
+          grossCents: 8000,
+          recordedFeeCents: 0,
+          recordedFeeBps: 0,
+          recordedNetCents: 8000,
+        ),
+      ]);
+      expect(out.single.feeKnown, true);
+      expect(out.single.isRecorded, true);
+      expect(out.single.ratePct, '0%');
+    });
+
+    test('provider amount can derive a missing recorded fee', () {
+      final out = itemizeCoachEarnings(const [
+        FeeInput(
+          bookingId: 'derived',
+          familyKey: 'family',
+          sortKey: '2026-01-01',
+          grossCents: 10000,
+          recordedNetCents: 9600,
+        ),
+      ]);
+      expect(out.single.feeCents, 400);
+      expect(out.single.feeBps, 400);
+      expect(out.single.isRecorded, true);
     });
   });
 
-  group('itemizeCoachEarnings — first vs recurring per family', () {
-    test('earliest booking per family is the intro rate; rest recurring', () {
-      final inputs = [
-        // Family A: two bookings — the earlier is intro.
-        const FeeInput(
-            bookingId: 'a_late',
-            familyKey: 'A',
-            sortKey: '2026-03-01',
-            grossCents: 8000),
-        const FeeInput(
-            bookingId: 'a_early',
-            familyKey: 'A',
-            sortKey: '2026-01-01',
-            grossCents: 8000),
-        // Family B: single booking — intro.
-        const FeeInput(
-            bookingId: 'b_only',
-            familyKey: 'B',
-            sortKey: '2026-02-01',
-            grossCents: 5000),
-      ];
-      final out = itemizeCoachEarnings(inputs);
-      // Output order matches input order.
-      expect(out[0].bookingId, 'a_late');
-      expect(out[0].isFirst, false); // later A booking = recurring
-      expect(out[0].feeBps, kRecurringFeeBps);
-      expect(out[1].bookingId, 'a_early');
-      expect(out[1].isFirst, true); // earliest A = intro
-      expect(out[1].feeBps, kFirstBookingFeeBps);
-      expect(out[2].bookingId, 'b_only');
-      expect(out[2].isFirst, true); // only B = intro
-    });
-
-    test('a family key is scoped per coach — different families each get intro',
-        () {
-      final inputs = [
-        const FeeInput(
-            bookingId: 'x',
-            familyKey: 'fam1',
-            sortKey: '2026-01-01',
-            grossCents: 8000),
-        const FeeInput(
-            bookingId: 'y',
-            familyKey: 'fam2',
-            sortKey: '2026-01-02',
-            grossCents: 8000),
-      ];
-      final out = itemizeCoachEarnings(inputs);
-      expect(out.every((i) => i.isFirst), true);
-    });
-
-    test('deterministic tie-break on bookingId when sortKeys match', () {
-      final inputs = [
-        const FeeInput(
-            bookingId: 'zzz',
-            familyKey: 'A',
-            sortKey: '2026-01-01',
-            grossCents: 8000),
-        const FeeInput(
-            bookingId: 'aaa',
-            familyKey: 'A',
-            sortKey: '2026-01-01',
-            grossCents: 8000),
-      ];
-      final out = itemizeCoachEarnings(inputs);
-      // 'aaa' < 'zzz' so it wins the intro rate regardless of input order.
-      expect(out.firstWhere((i) => i.bookingId == 'aaa').isFirst, true);
-      expect(out.firstWhere((i) => i.bookingId == 'zzz').isFirst, false);
-    });
-  });
-
-  group('totalsOf aggregates cents exactly', () {
-    test('sums gross/fee/net across mixed rates', () {
-      final items = [
-        FeeItemization.marketplace(
-            bookingId: 'a', grossCents: 8000, isFirst: true), // fee 1440
-        FeeItemization.marketplace(
-            bookingId: 'b', grossCents: 8000, isFirst: false), // fee 320
-      ];
-      final t = totalsOf(items);
-      expect(t.count, 2);
-      expect(t.grossCents, 16000);
-      expect(t.feeCents, 1760);
-      expect(t.netCents, 14240);
-      expect(t.net, 142.40);
-    });
+  test('totals disclose unknown fee rows', () {
+    final totals = totalsOf([
+      FeeItemization.subscriptionFunded(bookingId: 'current', grossCents: 8000),
+      FeeItemization.unknown(bookingId: 'historical', grossCents: 5000),
+    ]);
+    expect(totals.grossCents, 13000);
+    expect(totals.feeCents, 0);
+    expect(totals.netCents, 13000);
+    expect(totals.unknownFeeCount, 1);
   });
 }

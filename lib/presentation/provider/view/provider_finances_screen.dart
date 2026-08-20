@@ -14,11 +14,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 
-// Platform fee shown on this screen is the TIERED schedule from the shared
-// source of truth core/utils/platform_fee.dart (mirrors platform_fees /
-// resolve_platform_fee_bps): intro on a family's first paid booking, thin
-// thereafter. No flat rate constant lives here anymore, so the display can never
-// drift from the fee model the server actually applies (L-021).
+// Sporve is subscription-funded. Booking fee history is shown only when the
+// payment webhook recorded it; missing values stay unknown.
 
 class ProviderFinancesScreen extends StatefulWidget {
   const ProviderFinancesScreen({super.key});
@@ -50,7 +47,9 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   }
 
   Future<void> _loadTxns() async {
-    final txns = await context.read<ProviderController>().transactionItemizations();
+    final txns = await context
+        .read<ProviderController>()
+        .transactionItemizations();
     if (!mounted) return;
     setState(() => _txns = txns);
   }
@@ -161,15 +160,12 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     final revenue = c.revenue;
     final revenueStr = '\$${revenue.toStringAsFixed(0)}';
     final athletes = c.rosterAthletes.length;
-    // Tiered platform fee + net from the SAME itemization the Transactions tab
-    // and CSV use (single source of truth), so no surface disagrees. Null while
-    // still loading → shows 0 until the itemization lands.
-    var feeTotal = 0.0, netTotal = 0.0;
+    var feeTotal = 0.0, beforeProcessingTotal = 0.0;
     for (final t in (_txns ?? const <ProviderTxn>[])) {
-      feeTotal += t.fee;
-      netTotal += t.net;
+      if (t.feeKnown) feeTotal += t.fee;
+      beforeProcessingTotal += t.feeKnown ? t.net : t.gross;
     }
-    final netStr = '\$${netTotal.toStringAsFixed(0)}';
+    final beforeProcessingStr = '\$${beforeProcessingTotal.toStringAsFixed(0)}';
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -196,9 +192,9 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                 trendColor: AppColors.textTertiary,
               ),
               _buildFinanceGridCard(
-                label: 'YOUR NET',
-                value: netStr,
-                trend: 'after fees',
+                label: 'BEFORE PROCESSING',
+                value: beforeProcessingStr,
+                trend: 'after Sporve fee',
                 trendColor: AppColors.textTertiary,
               ),
               _buildFinanceGridCard(
@@ -258,7 +254,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                 ),
                 const SizedBox(height: 16),
                 _buildProgressRow(
-                  label: 'PLATFORM FEE (PROJECTED)',
+                  label: 'RECORDED SPORVE FEES',
                   amount: '\$${feeTotal.toStringAsFixed(0)}',
                   progress: revenue > 0 ? (feeTotal / revenue) : 0,
                   color: AppColors.negative,
@@ -416,19 +412,33 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
             ),
             for (final y in years)
               ListTile(
-                leading: const Icon(Icons.calendar_today_outlined,
-                    color: AppColors.slateText, size: 20),
-                title: Text('$y',
-                    style: AppTypography.font(
-                        color: AppColors.textPrimary, fontSize: 15)),
+                leading: const Icon(
+                  Icons.calendar_today_outlined,
+                  color: AppColors.slateText,
+                  size: 20,
+                ),
+                title: Text(
+                  '$y',
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                  ),
+                ),
                 onTap: () => Navigator.pop(sctx, y),
               ),
             ListTile(
-              leading: const Icon(Icons.all_inclusive,
-                  color: AppColors.slateText, size: 20),
-              title: Text('All time',
-                  style: AppTypography.font(
-                      color: AppColors.textPrimary, fontSize: 15)),
+              leading: const Icon(
+                Icons.all_inclusive,
+                color: AppColors.slateText,
+                size: 20,
+              ),
+              title: Text(
+                'All time',
+                style: AppTypography.font(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                ),
+              ),
               onTap: () => Navigator.pop(sctx, -1),
             ),
             const SizedBox(height: 8),
@@ -443,8 +453,9 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   /// Build the earnings CSV from REAL paid bookings for [year] (null = all-time)
   /// and present it for export (copy + best-effort download). Read-only; no money.
   Future<void> _exportEarnings([int? year]) async {
-    final result =
-        await context.read<ProviderController>().exportEarnings(year: year);
+    final result = await context.read<ProviderController>().exportEarnings(
+      year: year,
+    );
     if (!mounted) return;
     if (result == null) {
       Get.snackbar(
@@ -557,11 +568,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   /// Best-effort download via a data: URI (opens/saves in the browser on web).
   /// On failure we fall back to the clipboard so the export is never lost.
   Future<void> _downloadCsv(String csv) async {
-    final uri = Uri.dataFromString(
-      csv,
-      mimeType: 'text/csv',
-      encoding: utf8,
-    );
+    final uri = Uri.dataFromString(csv, mimeType: 'text/csv', encoding: utf8);
     var launched = false;
     try {
       launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -686,7 +693,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'PENDING PAYOUT',
+            'PAID BOOKINGS',
             style: AppTypography.font(
               color: AppColors.textTertiary,
               fontSize: 11,
@@ -705,8 +712,8 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'Your net from paid sessions, not yet paid out by Stripe. This is an '
-            'estimate from your bookings — actual transfers appear below.',
+            'Gross after any recorded Sporve fee, before Stripe processing. '
+            'Actual transfers appear below.',
             style: AppTypography.font(
               color: AppColors.textTertiary,
               fontSize: 11,
@@ -777,7 +784,8 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     String when = '';
     if (arrival is num) {
       final d = DateTime.fromMillisecondsSinceEpoch(arrival.toInt() * 1000);
-      when = '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+      when =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-'
           '${d.day.toString().padLeft(2, '0')}';
     }
     return Container(
@@ -874,10 +882,8 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   }
 
   Widget _buildTransactionsTab() {
-    // Real per-transaction fee itemization (money page #2), derived from the
-    // provider's OWN paid bookings via the shared fee module. Gross → platform
-    // fee (intro 18% on a family's first booking, 4% thereafter — mirrors
-    // resolve_platform_fee_bps) → coach net. Read-only; moves no money (L-003).
+    // Recorded per-transaction itemization. Missing historical fee facts remain
+    // unknown and are never recomputed from the current 0% policy.
     final txns = _txns;
     if (txns == null) {
       return const Center(
@@ -890,11 +896,16 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
         ),
       );
     }
-    var gross = 0.0, fee = 0.0, net = 0.0;
+    var gross = 0.0, fee = 0.0, beforeProcessing = 0.0, unknown = 0;
     for (final t in txns) {
       gross += t.gross;
-      fee += t.fee;
-      net += t.net;
+      if (t.feeKnown) {
+        fee += t.fee;
+        beforeProcessing += t.net;
+      } else {
+        unknown++;
+        beforeProcessing += t.gross;
+      }
     }
 
     return SingleChildScrollView(
@@ -913,8 +924,8 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
               const SizedBox(width: 12),
               Expanded(
                 child: _txnSummaryCard(
-                  'YOUR NET',
-                  _money(net),
+                  'BEFORE PROCESSING',
+                  _money(beforeProcessing),
                   AppColors.successGreen,
                 ),
               ),
@@ -922,8 +933,9 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           ),
           const SizedBox(height: 12),
           Text(
-            'Platform fees ${_money(fee)} · projected from the current fee '
-            'schedule. Your Stripe payout is the authoritative record.',
+            'Recorded Sporve fees ${_money(fee)}. Sporve currently charges 0% '
+            'per booking under workspace subscriptions. Stripe processing is '
+            'separate.${unknown > 0 ? ' $unknown historical fee record${unknown == 1 ? ' is' : 's are'} unavailable.' : ''}',
             style: AppTypography.font(
               color: AppColors.textTertiary,
               fontSize: 11,
@@ -1000,8 +1012,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     );
   }
 
-  /// One itemized paid-booking row: gross → fee (with intro/recurring rate) → net.
-  /// This is the IDENTICAL itemization shape the org/trainer will later see.
+  /// One paid-booking row using only webhook-recorded money facts.
   Widget _txnRow(ProviderTxn t) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1024,10 +1035,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    [
-                      if (t.athlete.isNotEmpty) t.athlete,
-                      t.date,
-                    ].join(' • '),
+                    [if (t.athlete.isNotEmpty) t.athlete, t.date].join(' • '),
                     style: AppTypography.font(
                       color: AppColors.textTertiary,
                       fontSize: 11,
@@ -1040,7 +1048,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
             ),
             const SizedBox(width: 12),
             Text(
-              _money(t.net),
+              _money(t.feeKnown ? t.net : t.gross),
               style: AppTypography.mono(
                 size: 15,
                 weight: FontWeight.bold,
@@ -1050,20 +1058,24 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           ],
         ),
         const SizedBox(height: 8),
-        // Itemization line: gross − fee (rate) = net.
         Row(
           children: [
             OutlinePill(
-              t.isFirst ? 'INTRO ${t.ratePct}' : '${t.ratePct} FEE',
-              color: t.isFirst ? AppColors.warmAccent : AppColors.textTertiary,
+              t.feeKnown ? 'SPORVE ${t.ratePct}' : 'FEE UNKNOWN',
+              color: t.feeKnown ? AppColors.slateText : AppColors.textTertiary,
             ),
             const Spacer(),
-            Text(
-              'Gross ${_money(t.gross)}   −   Fee ${_money(t.fee)}',
-              style: AppTypography.mono(
-                size: 11,
-                weight: FontWeight.w600,
-                color: AppColors.textSecondary,
+            Flexible(
+              child: Text(
+                t.feeKnown
+                    ? 'Gross ${_money(t.gross)}   −   Sporve ${_money(t.fee)}'
+                    : 'Gross ${_money(t.gross)} · fee record unavailable',
+                textAlign: TextAlign.right,
+                style: AppTypography.mono(
+                  size: 11,
+                  weight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
               ),
             ),
           ],
@@ -1073,10 +1085,8 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   }
 
   Widget _buildInvoicesTab() {
-    // Off-platform invoicing (money page #4): bill families Sporve did NOT
-    // source, through the coach OS. Creating/listing DRAFT invoices is real
-    // (coach-owned tables, RLS owner-scoped); the amount + near-zero SaaS fee are
-    // pinned SERVER-SIDE. The live Stripe charge/send is FLAGGED OFF
+    // Off-platform invoicing: creating/listing drafts is real and server-owned.
+    // The live Stripe charge/send is FLAGGED OFF
     // (Env.offPlatformInvoicingCharge) with a test-mode plan (L-003) — a draft
     // moves no money.
     final c = context.watch<ProviderController>();
@@ -1089,8 +1099,9 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
         children: [
           const SizedBox(height: 4),
           Text(
-            'Bill families you brought yourself. Off-platform invoices carry only '
-            'a thin ~2.5% SaaS fee — never the intro rake.',
+            'Draft invoices for families you brought yourself. Sporve is '
+            'subscription-funded; any historical fee shown below is the amount '
+            'recorded by the server.',
             style: AppTypography.font(
               color: AppColors.textTertiary,
               fontSize: 12,
@@ -1215,7 +1226,8 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
         Row(
           children: [
             Text(
-              'SaaS fee ${_money(fee)} · you net ${_money(amount - fee)}',
+              'Recorded Sporve fee ${_money(fee)} · before processing '
+              '${_money(amount - fee)}',
               style: AppTypography.font(
                 color: AppColors.textTertiary,
                 fontSize: 11,
@@ -1273,7 +1285,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
   }
 
   /// Draft an off-platform invoice: capture the family + one line item, create a
-  /// coach contact + a DRAFT invoice (amount + SaaS fee pinned server-side). No
+  /// coach contact + a DRAFT invoice (money facts pinned server-side). No
   /// charge (L-003).
   Future<void> _createInvoiceDialog() async {
     final nameCtl = TextEditingController();
@@ -1305,27 +1317,36 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _dialogField('Family name', nameCtl),
-                _dialogField('Email', emailCtl,
-                    keyboard: TextInputType.emailAddress),
+                _dialogField(
+                  'Email',
+                  emailCtl,
+                  keyboard: TextInputType.emailAddress,
+                ),
                 _dialogField('What for', labelCtl),
                 Row(
                   children: [
                     Expanded(
-                      child: _dialogField('Amount (\$)', amountCtl,
-                          keyboard: TextInputType.number),
+                      child: _dialogField(
+                        'Amount (\$)',
+                        amountCtl,
+                        keyboard: TextInputType.number,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 70,
-                      child: _dialogField('Qty', qtyCtl,
-                          keyboard: TextInputType.number),
+                      child: _dialogField(
+                        'Qty',
+                        qtyCtl,
+                        keyboard: TextInputType.number,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'A ~2.5% SaaS fee applies (server-computed). No charge until '
-                  'you send — sending is finalized separately.',
+                  'This saves a draft only; it does not move money. Sporve uses '
+                  'workspace subscriptions, and Stripe processing is separate.',
                   style: AppTypography.font(
                     color: AppColors.textTertiary,
                     fontSize: 11,
@@ -1338,8 +1359,10 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
           actions: [
             TextButton(
               onPressed: busy ? null : () => Navigator.pop(dctx),
-              child: Text('Cancel',
-                  style: AppTypography.font(color: AppColors.textTertiary)),
+              child: Text(
+                'Cancel',
+                style: AppTypography.font(color: AppColors.textTertiary),
+              ),
             ),
             TextButton(
               onPressed: busy
@@ -1375,7 +1398,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                               'label': labelCtl.text.trim(),
                               'qty': qty < 1 ? 1 : qty,
                               'unit_amount_cents': (dollars * 100).round(),
-                            }
+                            },
                           ],
                         });
                       }
@@ -1439,8 +1462,10 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
             child: TextField(
               controller: controller,
               keyboardType: keyboard,
-              style:
-                  AppTypography.font(color: AppColors.textPrimary, fontSize: 14),
+              style: AppTypography.font(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
               cursorColor: AppColors.slateText,
               decoration: const InputDecoration(border: InputBorder.none),
             ),
@@ -1471,8 +1496,8 @@ class _ProviderWithdrawalScreenState extends State<ProviderWithdrawalScreen> {
     if (_selectedAmount == '2.5k') amount = 2500.00;
     if (_selectedAmount == '5k') amount = 5000.00;
 
-    double fee = amount * 0.0025;
-    double receive = amount - fee;
+    const double fee = 0;
+    final double receive = amount - fee;
 
     return GradientScaffold(
       body: SafeArea(
@@ -1665,7 +1690,7 @@ class _ProviderWithdrawalScreenState extends State<ProviderWithdrawalScreen> {
                     ),
                     const SizedBox(height: 12),
                     _buildSummaryRow(
-                      'Transfer fee (0.25%)',
+                      'Sporve transfer fee',
                       '-\$${fee.toStringAsFixed(2)}',
                       AppColors.warning,
                     ),

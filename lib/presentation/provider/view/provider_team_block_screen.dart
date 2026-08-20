@@ -609,7 +609,7 @@ class _ProviderTeamBlockScreenState extends State<ProviderTeamBlockScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Est. platform fee', style: AppTypography.font(color: AppColors.textTertiary, fontSize: 12)),
+              Text('Sporve fee', style: AppTypography.font(color: AppColors.textTertiary, fontSize: 12)),
               Text(_money(preview.feeTotals.feeCents), style: AppTypography.font(color: AppColors.textTertiary, fontSize: 12)),
             ],
           ),

@@ -6,10 +6,8 @@
 /// (seeing their net). One module, one math, so the two sides can NEVER disagree
 /// (spec #5: "identical itemization shown to both sides").
 ///
-/// It LAYERS on top of [FeeItemization] from `platform_fee.dart`: the Sporve
-/// rake (platform fee) is computed there and reused here VERBATIM, so a booking's
-/// platform-fee line is identical whether you look at the money page (#3) or this
-/// commission preview. We do not re-derive the platform fee — we consume it.
+/// It layers on [FeeItemization] from `platform_fee.dart`: the current 0% Sporve
+/// fee is reused here so commission previews cannot drift from billing policy.
 ///
 /// MONEY HONESTY (L-003): this file moves NO money and is READ-ONLY DISPLAY. It
 /// computes the RATES + SNAPSHOT math the org and trainer see; the actual split
@@ -61,13 +59,14 @@ class CommissionRate {
   });
 
   factory CommissionRate.fromRow(Map<String, dynamic> row) => CommissionRate(
-        type: commissionTypeFromString(row['commission_type']?.toString()),
-        value: (row['commission_value'] as num?) ?? 0,
-        effectiveFrom: DateTime.tryParse(
-                (row['effective_from'] ?? row['created_at'] ?? '').toString())
-                ?.toUtc() ??
-            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-      );
+    type: commissionTypeFromString(row['commission_type']?.toString()),
+    value: (row['commission_value'] as num?) ?? 0,
+    effectiveFrom:
+        DateTime.tryParse(
+          (row['effective_from'] ?? row['created_at'] ?? '').toString(),
+        )?.toUtc() ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+  );
 }
 
 /// The rate in effect at [at]: the LATEST rate whose [effectiveFrom] is `<= at`.
@@ -89,8 +88,8 @@ CommissionRate? commissionInEffect(List<CommissionRate> rates, DateTime at) {
 /// The org's cut in CENTS for a [grossCents] booking at a given rate. Percent
 /// mirrors the SQL snapshot math `round(gross_cents * value / 100)`; flat is
 /// `round(value * 100)` (dollars→cents). Clamped to [0, [maxCents]] so the
-/// trainer's net can never go negative when a flat fee exceeds what's left after
-/// the platform rake.
+/// trainer's net can never go negative when a flat fee exceeds the available
+/// amount.
 int computeOrgCommissionCents(
   int grossCents,
   CommissionType type,
@@ -111,21 +110,20 @@ int computeOrgCommissionCents(
 class CommissionItemization {
   final int grossCents;
 
-  /// Sporve's rake (from [FeeItemization] — reused, not re-derived).
+  /// Sporve's fee (from [FeeItemization] — reused, not re-derived).
   final int platformFeeCents;
   final int platformFeeBps;
 
   /// The org's cut.
   final int orgCommissionCents;
 
-  /// What the trainer nets: gross − platform fee − org commission.
+  /// What the trainer nets: gross − Sporve fee − org commission.
   final int trainerNetCents;
 
   final CommissionType commissionType;
   final num commissionValue;
 
-  /// True when the platform fee is the FIRST-booking introduction rate (the two
-  /// sides both see whether this is an intro or a recurring line).
+  /// Legacy relationship metadata; it does not affect the current 0% fee.
   final bool isFirst;
   final String currency;
 
@@ -141,8 +139,8 @@ class CommissionItemization {
     required this.currency,
   });
 
-  /// Compute the split for a booking. [isFirst] selects the intro vs recurring
-  /// platform rate (via [FeeItemization.marketplace], the shared rake source).
+  /// Compute the split for a booking. [isFirst] remains legacy metadata; the
+  /// current Sporve fee is 0% for every relationship.
   factory CommissionItemization.compute({
     required int grossCents,
     required CommissionType commissionType,
@@ -150,15 +148,12 @@ class CommissionItemization {
     required bool isFirst,
     String currency = 'USD',
   }) {
-    // Reuse platform_fee.dart VERBATIM so the rake line is byte-identical to the
-    // money page (#3). We take only the platform-fee slice here.
-    final rake = FeeItemization.marketplace(
+    final sporveFee = FeeItemization.subscriptionFunded(
       bookingId: '',
       grossCents: grossCents,
-      isFirst: isFirst,
       currency: currency,
     );
-    final maxCommission = grossCents - rake.feeCents;
+    final maxCommission = grossCents - sporveFee.feeCents;
     final org = computeOrgCommissionCents(
       grossCents,
       commissionType,
@@ -167,10 +162,10 @@ class CommissionItemization {
     );
     return CommissionItemization(
       grossCents: grossCents,
-      platformFeeCents: rake.feeCents,
-      platformFeeBps: rake.feeBps,
+      platformFeeCents: sporveFee.feeCents,
+      platformFeeBps: sporveFee.feeBps,
       orgCommissionCents: org,
-      trainerNetCents: grossCents - rake.feeCents - org,
+      trainerNetCents: grossCents - sporveFee.feeCents - org,
       commissionType: commissionType,
       commissionValue: commissionValue,
       isFirst: isFirst,
@@ -193,18 +188,17 @@ class CommissionItemization {
     required num commissionValue,
     required bool isFirst,
     String currency = 'USD',
-  }) =>
-      CommissionItemization(
-        grossCents: grossCents,
-        platformFeeCents: platformFeeCents,
-        platformFeeBps: platformFeeBps,
-        orgCommissionCents: orgCommissionCents,
-        trainerNetCents: grossCents - platformFeeCents - orgCommissionCents,
-        commissionType: commissionType,
-        commissionValue: commissionValue,
-        isFirst: isFirst,
-        currency: currency,
-      );
+  }) => CommissionItemization(
+    grossCents: grossCents,
+    platformFeeCents: platformFeeCents,
+    platformFeeBps: platformFeeBps,
+    orgCommissionCents: orgCommissionCents,
+    trainerNetCents: grossCents - platformFeeCents - orgCommissionCents,
+    commissionType: commissionType,
+    commissionValue: commissionValue,
+    isFirst: isFirst,
+    currency: currency,
+  );
 
   double get gross => grossCents / 100.0;
   double get platformFee => platformFeeCents / 100.0;
@@ -216,7 +210,7 @@ class CommissionItemization {
       ? '${commissionValue.round()}%'
       : '\$${commissionValue.round()} / session';
 
-  /// "18%" / "4%" — the platform rake rate as a display string.
+  /// Sporve's current fee rate as a display string.
   String get platformRatePct {
     final pct = platformFeeBps / 100.0;
     return pct == pct.roundToDouble()
@@ -248,7 +242,7 @@ class CommissionSnapshot {
   /// Capture the snapshot for a booking placed at [at], using the org's rate
   /// history. Mirrors the SQL trigger that writes the `bookings.commission_*`
   /// columns on insert. When no rate is in effect, the cut is zero (the trainer
-  /// keeps everything but the platform rake), matching the legacy default.
+  /// keeps the post-Sporve-fee amount), matching the legacy default.
   factory CommissionSnapshot.capture({
     required String bookingId,
     required int grossCents,

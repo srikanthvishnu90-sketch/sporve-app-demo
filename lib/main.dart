@@ -23,6 +23,7 @@ import 'core/push/push_service.dart';
 import 'presentation/client/controllers/progress_updates_controller.dart';
 import 'presentation/client/controllers/athlete_timeline_controller.dart';
 import 'presentation/provider/controllers/provider_controller.dart';
+import 'presentation/provider/controllers/billing_controller.dart';
 import 'presentation/provider/controllers/parent_update_controller.dart';
 import 'presentation/provider/controllers/lifecycle_controller.dart';
 import 'presentation/shared/controllers/waitlist_controller.dart';
@@ -92,6 +93,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ProgressUpdatesController(repo)),
         ChangeNotifierProvider(create: (_) => AthleteTimelineController(repo)),
         ChangeNotifierProvider(create: (_) => ProviderController(repo)),
+        ChangeNotifierProvider(create: (_) => BillingController(repo)),
         ChangeNotifierProvider(create: (_) => ParentUpdateController(repo)),
         ChangeNotifierProvider(create: (_) => LifecycleController(repo)),
         ChangeNotifierProvider(create: (_) => WaitlistController(repo)),

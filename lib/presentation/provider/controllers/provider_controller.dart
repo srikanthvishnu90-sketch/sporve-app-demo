@@ -5,9 +5,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/earnings_csv.dart';
 import '../../../core/utils/platform_fee.dart';
 
-/// One itemized paid-booking row for the money page's Transactions view:
-/// gross → platform fee → coach net, with the first-vs-recurring rate label.
-/// Dollars for display; the underlying math is cents (platform_fee.dart).
+/// One paid-booking row for the money page: gross → recorded Sporve fee →
+/// provider amount before processing. Missing webhook facts remain unknown.
 class ProviderTxn {
   final String date;
   final String athlete;
@@ -20,6 +19,8 @@ class ProviderTxn {
   final int feeBps;
   final String ratePct;
   final bool isFirst;
+  final bool feeKnown;
+  final bool isRecorded;
   final String currency;
   const ProviderTxn({
     required this.date,
@@ -33,6 +34,8 @@ class ProviderTxn {
     required this.feeBps,
     required this.ratePct,
     required this.isFirst,
+    required this.feeKnown,
+    required this.isRecorded,
     required this.currency,
   });
 }
@@ -939,17 +942,12 @@ class ProviderController with ChangeNotifier {
   }
 
   // ── Coach OS money page (P0 #3) — READ-ONLY earnings + fee itemization ──────
-  // Pulls the provider's OWN paid bookings (RLS-scoped) and derives, client-side,
-  // the per-transaction fee itemization (gross → platform fee → net) using the
-  // SHARED pure module core/utils/platform_fee.dart — the SAME shape the org /
-  // trainer will later see. Fees mirror the DB fee schedule
-  // (resolve_platform_fee_bps / platform_fees): the first paid booking with a
-  // family is the intro rate, the rest are recurring. Moves no money; opens no
-  // Stripe surface (L-003). The authoritative fee is set server-side at charge
-  // time — this is the current-schedule projection, labeled as such in the UI.
+  // Pulls the provider's OWN paid bookings (RLS-scoped) and uses webhook-recorded
+  // money facts. Missing historical fees remain unknown; today's 0% policy is
+  // never back-applied to an older payment.
 
   /// One display row per paid booking, itemized. `gross/fee/net` are dollars;
-  /// `feeBps` + `isFirst` drive the "18% intro" / "4%" label.
+  /// `feeKnown` distinguishes an exact recorded zero from missing history.
   Future<List<ProviderTxn>> transactionItemizations() async {
     final rows = await _repo.getProviderEarnings();
     if (rows.isEmpty) return const [];
@@ -970,14 +968,16 @@ class ProviderController with ChangeNotifier {
         feeBps: it.feeBps,
         ratePct: it.ratePct,
         isFirst: it.isFirst,
+        feeKnown: it.feeKnown,
+        isRecorded: it.isRecorded,
         currency: it.currency,
       ));
     }
     return out;
   }
 
-  /// Build the fee itemization list aligned to [rows] (same order). A booking's
-  /// family key groups first-vs-recurring; sortKey orders which came first.
+  /// Build the recorded-money itemization aligned to [rows] (same order).
+  /// Relationship ordering is retained only for historical metadata.
   List<FeeItemization> _itemize(List<Map<String, dynamic>> rows) {
     final inputs = <FeeInput>[];
     for (var i = 0; i < rows.length; i++) {
@@ -992,6 +992,13 @@ class ProviderController with ChangeNotifier {
             : 'family_$i',
         sortKey: (r['createdAt'] ?? r['date'] ?? '').toString(),
         grossCents: (gross * 100).round(),
+        recordedFeeCents: r['platformFee'] is num
+            ? ((r['platformFee'] as num).toDouble() * 100).round()
+            : null,
+        recordedFeeBps: (r['platformFeeBps'] as num?)?.toInt(),
+        recordedNetCents: r['providerPayout'] is num
+            ? ((r['providerPayout'] as num).toDouble() * 100).round()
+            : null,
         currency: r['currency']?.toString() ?? 'USD',
       ));
     }
@@ -1037,9 +1044,9 @@ class ProviderController with ChangeNotifier {
         status: r['status']?.toString() ?? '',
         paymentStatus: r['paymentStatus']?.toString() ?? '',
         gross: (r['gross'] as num?)?.toDouble() ?? 0,
-        // REAL per-booking fee from the shared itemization (not the flat 10%
-        // estimate) — the CSV's net is now the fee-schedule projection.
-        fee: items[i].fee,
+        // Only emit an exact fee when the booking webhook recorded one. The CSV
+        // leaves missing historical fee/net cells blank.
+        fee: items[i].feeKnown ? items[i].fee : null,
         currency: r['currency']?.toString() ?? 'USD',
       ));
     }
@@ -1055,9 +1062,8 @@ class ProviderController with ChangeNotifier {
   List<Map<String, dynamic>> get payouts => List.unmodifiable(_payouts);
   bool get payoutsLoaded => _payoutsLoaded;
 
-  /// The coach's expected pending payout: net of all paid bookings not yet paid
-  /// out by Stripe. Derived from stored booking prices (never fabricated); shown
-  /// as "pending" and clearly distinguished from real "paid out" Stripe rows.
+  /// Gross paid-booking amount before Stripe processing. Kept under the legacy
+  /// getter name to avoid widening this change through unrelated screens.
   double _pendingPayoutNet = 0;
   double get pendingPayoutNet => _pendingPayoutNet;
 
@@ -1065,7 +1071,7 @@ class ProviderController with ChangeNotifier {
     try {
       final rows = await _repo.getProviderEarnings();
       final items = _itemize(rows);
-      _pendingPayoutNet = totalsOf(items).net;
+      _pendingPayoutNet = totalsOf(items).gross;
       final real = await _repo.getProviderPayouts();
       _payouts
         ..clear()
@@ -1108,7 +1114,7 @@ class ProviderController with ChangeNotifier {
     return id;
   }
 
-  /// Create a DRAFT invoice. Amount + SaaS fee are pinned server-side; this
+  /// Create a DRAFT invoice. Money facts are pinned server-side; this
   /// charges nothing (L-003). Returns the new id or null on failure.
   Future<String?> createInvoiceDraft(Map<String, dynamic> draft) async {
     final id = await _repo.createCoachInvoiceDraft(draft);

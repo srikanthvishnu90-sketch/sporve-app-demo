@@ -465,9 +465,15 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
                                 Get.toNamed(AppRoutes.providerFinances),
                           ),
                           _buildListOption(
-                            icon: Icons.credit_card_outlined,
-                            title: 'Payment Methods',
-                            subtitle: 'Cards and billing',
+                            icon: Icons.workspace_premium_outlined,
+                            title: 'Plan & Billing',
+                            subtitle: 'Free, Pro, or Enterprise workspace plan',
+                            onTap: () => Get.toNamed(AppRoutes.providerBilling),
+                          ),
+                          _buildListOption(
+                            icon: Icons.account_balance_outlined,
+                            title: 'Payout Account',
+                            subtitle: 'Stripe Connect and bank transfers',
                             onTap: () =>
                                 Get.toNamed(AppRoutes.providerPayoutsPayments),
                           ),

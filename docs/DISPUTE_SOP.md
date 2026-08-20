@@ -37,7 +37,7 @@ When a parent initiates a chargeback or payment dispute via their issuing bank:
 | :--- | :--- |
 | **Dispute Initiated** | Stripe assesses a $15.00 dispute processing fee. The disputed charge amount is temporarily held by Stripe. |
 | **Dispute Won** | Held charge amount + $15.00 fee are returned to Sporve and credited back to the provider's payout balance. |
-| **Dispute Lost** | The provider absorbs the lost session fee. Sporve retains the platform commission fee unless the failure was due to a platform system outage. |
+| **Dispute Lost** | The provider absorbs the lost session amount and any Stripe-assessed dispute costs. Sporve does not retain a booking commission; workspace subscription charges are separate. |
 
 ---
 

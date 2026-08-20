@@ -169,8 +169,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   // Pricing — provider-set price from the selected tier (falls back to 75).
   late double _sessionPrice;
   // Price integrity: the parent pays EXACTLY the session price shown here, which
-  // is also what stripe-create-checkout charges. The platform fee is taken from
-  // the coach's payout server-side — never added to the parent's total.
+  // is also what stripe-create-checkout charges. Sporve charges providers by
+  // workspace subscription, so no Sporve booking fee is added or deducted.
   double get _total => _sessionPrice;
   String _money(double v) => '\$${v.toStringAsFixed(2)}';
 

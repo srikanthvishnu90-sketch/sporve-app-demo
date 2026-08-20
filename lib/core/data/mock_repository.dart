@@ -1,6 +1,7 @@
 import '../mock/mock_data.dart';
 import '../models/query_intent.dart';
 import '../models/query_intent_parser.dart';
+import '../models/subscription.dart';
 import '../matching/provider_matcher.dart';
 import '../utils/platform_fee.dart';
 import '../utils/team_split.dart';
@@ -15,6 +16,56 @@ import 'app_repository.dart';
 /// logic lives here: same data, same shapes as MockData.
 class MockRepository implements AppRepository {
   const MockRepository();
+
+  // Billing is visible in preview mode, but preview mode never fabricates a
+  // successful Stripe purchase or portal session.
+  @override
+  Future<List<SubscriptionPlan>> getSubscriptionPlans() async => const [
+    SubscriptionPlan(
+      tier: SubscriptionTier.free,
+      aiMonthlyQuota: 3,
+      seatLimit: 1,
+      workspaceEnabled: false,
+      purchasable: true,
+      monthlyPriceUsd: 0,
+    ),
+    SubscriptionPlan(
+      tier: SubscriptionTier.pro,
+      aiMonthlyQuota: null,
+      seatLimit: 3,
+      workspaceEnabled: false,
+      purchasable: true,
+      monthlyPriceUsd: 34.99,
+    ),
+    SubscriptionPlan(
+      tier: SubscriptionTier.enterprise,
+      aiMonthlyQuota: null,
+      seatLimit: null,
+      workspaceEnabled: false,
+      purchasable: false,
+      monthlyPriceUsd: 149,
+    ),
+  ];
+
+  @override
+  Future<ProviderSubscription> getProviderSubscription() async =>
+      const ProviderSubscription.free();
+
+  @override
+  Future<Uri> createSubscriptionCheckout({
+    required SubscriptionTier plan,
+    required Uri successUrl,
+    required Uri cancelUrl,
+  }) async {
+    throw const BillingException('Purchases are unavailable in preview mode.');
+  }
+
+  @override
+  Future<Uri> createBillingPortal({required Uri returnUrl}) async {
+    throw const BillingException(
+      'Billing management is unavailable in preview mode.',
+    );
+  }
 
   // ── Programs & sessions ──────────────────────────────────────────────────
   @override
@@ -58,25 +109,33 @@ class MockRepository implements AppRepository {
       // Offline demo: mirror the RLS filter (verified + active only) so the
       // athlete picker behaves the same as it does against Supabase.
       _orgMembers
-          .where((m) =>
-              (m['organization_id']?.toString() ?? organizationId) ==
-                  organizationId &&
-              (m['is_active'] ?? true) == true &&
-              (m['background_check_status'] ?? 'verified') == 'verified')
+          .where(
+            (m) =>
+                (m['organization_id']?.toString() ?? organizationId) ==
+                    organizationId &&
+                (m['is_active'] ?? true) == true &&
+                (m['background_check_status'] ?? 'verified') == 'verified',
+          )
           .map((m) => Map<String, dynamic>.from(m))
           .toList();
   @override
   Future<String?> createOrgMember(Map<String, dynamic> member) async {
     final id = 'mem_${DateTime.now().millisecondsSinceEpoch}';
-    _orgMembers.insert(0, {...member, 'id': id, 'background_check_status': 'none'});
+    _orgMembers.insert(0, {
+      ...member,
+      'id': id,
+      'background_check_status': 'none',
+    });
     return id;
   }
+
   @override
   Future<bool> updateOrgMember(String id, Map<String, dynamic> patch) async {
     final i = _orgMembers.indexWhere((m) => m['id'] == id);
     if (i >= 0) _orgMembers[i] = {..._orgMembers[i], ...patch, 'id': id};
     return i >= 0;
   }
+
   @override
   Future<bool> deleteOrgMember(String id) async {
     _orgMembers.removeWhere((m) => m['id'] == id);
@@ -88,13 +147,16 @@ class MockRepository implements AppRepository {
 
   @override
   Future<List<Map<String, dynamic>>> getCommissionRates(String memberId) async {
-    final rows = _commissionRates
-        .where((r) => r['organization_member_id'] == memberId)
-        .map((r) => Map<String, dynamic>.from(r))
-        .toList()
-      ..sort((a, b) => (b['effective_from'] ?? '')
-          .toString()
-          .compareTo((a['effective_from'] ?? '').toString()));
+    final rows =
+        _commissionRates
+            .where((r) => r['organization_member_id'] == memberId)
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList()
+          ..sort(
+            (a, b) => (b['effective_from'] ?? '').toString().compareTo(
+              (a['effective_from'] ?? '').toString(),
+            ),
+          );
     return rows;
   }
 
@@ -126,7 +188,8 @@ class MockRepository implements AppRepository {
 
   @override
   Future<Map<String, dynamic>?> findAffiliatableAccount(
-      String identifier) async {
+    String identifier,
+  ) async {
     // Offline demo: no user directory to search — always "no match" so the UI
     // falls through to Door B (invite by email).
     return null;
@@ -249,7 +312,9 @@ class MockRepository implements AppRepository {
 
   @override
   Future<List<Map<String, dynamic>>> getWaitlistForProvider() => Future.value(
-    _waitlist.where((e) => e['status'] == 'waiting' || e['status'] == 'offered').toList(),
+    _waitlist
+        .where((e) => e['status'] == 'waiting' || e['status'] == 'offered')
+        .toList(),
   );
 
   @override
@@ -274,7 +339,9 @@ class MockRepository implements AppRepository {
           'serviceId': _waitlist[i]['programId'],
           'slotDate': null,
           'slotTime': null,
-          'expiresAt': DateTime.now().add(const Duration(hours: 24)).toIso8601String(),
+          'expiresAt': DateTime.now()
+              .add(const Duration(hours: 24))
+              .toIso8601String(),
           'draftMessageId': null,
           'createdAt': DateTime.now().toIso8601String(),
         });
@@ -288,10 +355,11 @@ class MockRepository implements AppRepository {
   static final List<Map<String, dynamic>> _waitlistOffers = [];
 
   @override
-  Future<List<Map<String, dynamic>>> getWaitlistOffers({String? providerId}) async =>
-      _waitlistOffers
-          .where((o) => o['status'] != 'declined' && o['status'] != 'expired')
-          .toList();
+  Future<List<Map<String, dynamic>>> getWaitlistOffers({
+    String? providerId,
+  }) async => _waitlistOffers
+      .where((o) => o['status'] != 'declined' && o['status'] != 'expired')
+      .toList();
 
   @override
   Future<Map<String, dynamic>> draftWaitlistOffer(String offerId) async {
@@ -308,7 +376,8 @@ class MockRepository implements AppRepository {
       (e) => e['_id'] == offer['entryId'],
       orElse: () => const {},
     );
-    final program = (entry['programTitle']?.toString().trim().isNotEmpty ?? false)
+    final program =
+        (entry['programTitle']?.toString().trim().isNotEmpty ?? false)
         ? entry['programTitle'].toString()
         : 'the program';
     final name = entry['athleteFirstName']?.toString();
@@ -324,13 +393,17 @@ class MockRepository implements AppRepository {
       'offer_id': offerId,
       'draft_id': draftId,
       'reply_text': replyText,
-      'note': 'Draft saved (coach-only, demo). Review and send from the '
+      'note':
+          'Draft saved (coach-only, demo). Review and send from the '
           'existing draft card — never auto-sent.',
     };
   }
 
   @override
-  Future<String?> acceptWaitlistOffer(String offerId, {String? athleteId}) async {
+  Future<String?> acceptWaitlistOffer(
+    String offerId, {
+    String? athleteId,
+  }) async {
     final i = _waitlistOffers.indexWhere((o) => o['_id'] == offerId);
     if (i == -1) return null;
     final offer = _waitlistOffers[i];
@@ -360,16 +433,20 @@ class MockRepository implements AppRepository {
   // demo repo is a stateless wrapper, so slot + skip state lives in shared static
   // lists that mirror the recurring_slots / slot_exceptions shapes.
   static final List<Map<String, dynamic>> _recurringSlots = [];
-  static final List<Map<String, dynamic>> _slotExceptions = []; // {slotId,date,reason}
+  static final List<Map<String, dynamic>> _slotExceptions =
+      []; // {slotId,date,reason}
 
   @override
   Future<List<Map<String, dynamic>>> getMyRecurringSlots() async {
     final list = List<Map<String, dynamic>>.from(_recurringSlots);
     // active first, then by weekday — mirrors the Supabase order.
     list.sort((a, b) {
-      final act = ((b['active'] ?? true) ? 1 : 0) - ((a['active'] ?? true) ? 1 : 0);
+      final act =
+          ((b['active'] ?? true) ? 1 : 0) - ((a['active'] ?? true) ? 1 : 0);
       if (act != 0) return act;
-      return ((a['dayOfWeek'] ?? 0) as int).compareTo((b['dayOfWeek'] ?? 0) as int);
+      return ((a['dayOfWeek'] ?? 0) as int).compareTo(
+        (b['dayOfWeek'] ?? 0) as int,
+      );
     });
     return list;
   }
@@ -406,10 +483,15 @@ class MockRepository implements AppRepository {
     String date, {
     String? reason,
   }) async {
-    final exists =
-        _slotExceptions.any((e) => e['slotId'] == slotId && e['date'] == date);
+    final exists = _slotExceptions.any(
+      (e) => e['slotId'] == slotId && e['date'] == date,
+    );
     if (!exists) {
-      _slotExceptions.add({'slotId': slotId, 'date': date, 'reason': reason ?? ''});
+      _slotExceptions.add({
+        'slotId': slotId,
+        'date': date,
+        'reason': reason ?? '',
+      });
     }
     return true;
   }
@@ -428,7 +510,8 @@ class MockRepository implements AppRepository {
   // — so the same edit to _availability re-shapes EVERY service's slots.
   static const String _mockProviderId = 'mock-provider';
   static final List<Map<String, dynamic>> _services = [];
-  static final List<Map<String, dynamic>> _availability = []; // {_id,dayOfWeek,startTime,endTime,isBlocked}
+  static final List<Map<String, dynamic>> _availability =
+      []; // {_id,dayOfWeek,startTime,endTime,isBlocked}
   static final List<Map<String, dynamic>> _locations = [];
   static final List<String> _availabilityExceptions = []; // yyyy-MM-dd
   static int _mockBufferMinutes = 0;
@@ -438,9 +521,12 @@ class MockRepository implements AppRepository {
   Future<List<Map<String, dynamic>>> getMyServices() async {
     final list = List<Map<String, dynamic>>.from(_services);
     list.sort((a, b) {
-      final act = ((b['active'] ?? true) ? 1 : 0) - ((a['active'] ?? true) ? 1 : 0);
+      final act =
+          ((b['active'] ?? true) ? 1 : 0) - ((a['active'] ?? true) ? 1 : 0);
       if (act != 0) return act;
-      return (b['createdAt'] ?? '').toString().compareTo((a['createdAt'] ?? '').toString());
+      return (b['createdAt'] ?? '').toString().compareTo(
+        (a['createdAt'] ?? '').toString(),
+      );
     });
     return list;
   }
@@ -473,7 +559,9 @@ class MockRepository implements AppRepository {
     });
     // Item #6: org staffing — which trainers may run this service.
     final ids = (service['assignableMemberIds'] as List?)?.cast<String>();
-    if (ids != null && ids.isNotEmpty) _serviceStaffing[id] = List<String>.from(ids);
+    if (ids != null && ids.isNotEmpty) {
+      _serviceStaffing[id] = List<String>.from(ids);
+    }
     return id;
   }
 
@@ -502,7 +590,10 @@ class MockRepository implements AppRepository {
       List<String>.from(_serviceStaffing[serviceId] ?? const []);
 
   @override
-  Future<bool> updateService(String serviceId, Map<String, dynamic> patch) async {
+  Future<bool> updateService(
+    String serviceId,
+    Map<String, dynamic> patch,
+  ) async {
     final i = _services.indexWhere((s) => s['_id'] == serviceId);
     if (i == -1) return false;
     for (final k in const [
@@ -550,12 +641,11 @@ class MockRepository implements AppRepository {
     )['name'];
     final from = DateTime.parse(fromDate);
     final to = DateTime.parse(toDate);
-    final vacation =
-        _mockVacationUntil == null ? null : DateTime.parse(_mockVacationUntil!);
+    final vacation = _mockVacationUntil == null
+        ? null
+        : DateTime.parse(_mockVacationUntil!);
     final out = <Map<String, dynamic>>[];
-    for (var d = from;
-        !d.isAfter(to);
-        d = d.add(const Duration(days: 1))) {
+    for (var d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
       final iso = d.toIso8601String().substring(0, 10);
       // 0=Sun..6=Sat (Dart weekday is 1=Mon..7=Sun)
       final dow = d.weekday % 7;
@@ -569,7 +659,11 @@ class MockRepository implements AppRepository {
         final end = _parseHm(b['endTime']?.toString());
         if (start == null || end == null) continue;
         final step = duration + _mockBufferMinutes;
-        for (var m = start; m + duration <= end; m += step == 0 ? duration : step) {
+        for (
+          var m = start;
+          m + duration <= end;
+          m += step == 0 ? duration : step
+        ) {
           out.add({
             'date': iso,
             'startTime': _fmtHms(m),
@@ -633,9 +727,9 @@ class MockRepository implements AppRepository {
   static final List<Map<String, dynamic>> _packCredits = [];
 
   Map<String, dynamic> _serviceOf(String serviceId) => _services.firstWhere(
-        (s) => s['_id'] == serviceId,
-        orElse: () => const {},
-      );
+    (s) => s['_id'] == serviceId,
+    orElse: () => const {},
+  );
 
   int _serviceCapacity(String serviceId) {
     final svc = _serviceOf(serviceId);
@@ -647,14 +741,21 @@ class MockRepository implements AppRepository {
   // Item #6 resource layer (mirrors enforce_booking_venue_conflict, 20260729_000600):
   // a DIFFERENT service already occupying the same (venue, date, time) is a
   // double-book. Same service_id (group seats sharing one slot) is NOT a conflict.
-  bool _venueTaken(String serviceId, String? locationId, String slotDate, String slotTime) {
+  bool _venueTaken(
+    String serviceId,
+    String? locationId,
+    String slotDate,
+    String slotTime,
+  ) {
     if (locationId == null) return false; // no venue -> nothing to conflict on
-    return _serviceBookings.any((b) =>
-        b['locationId'] == locationId &&
-        b['slotDate'] == slotDate &&
-        (b['slotTime'] ?? '') == slotTime &&
-        b['serviceId'] != serviceId &&
-        (b['status'] == 'pending' || b['status'] == 'confirmed'));
+    return _serviceBookings.any(
+      (b) =>
+          b['locationId'] == locationId &&
+          b['slotDate'] == slotDate &&
+          (b['slotTime'] ?? '') == slotTime &&
+          b['serviceId'] != serviceId &&
+          (b['status'] == 'pending' || b['status'] == 'confirmed'),
+    );
   }
 
   // Item #6 staffing rule (mirrors enforce_service_assignment, 20260729_000610):
@@ -662,7 +763,9 @@ class MockRepository implements AppRepository {
   // honest failure reason string. Only ASSIGNABLE (org) services carry the rule.
   String? _assignmentReject(String serviceId, String? assignedMemberId) {
     final svc = _serviceOf(serviceId);
-    if (svc['assignable'] != true) return null; // solo service — no staffing rule
+    if (svc['assignable'] != true) {
+      return null; // solo service — no staffing rule
+    }
     final type = (svc['serviceType'] ?? 'private').toString();
     if (assignedMemberId == null) {
       // "any available trainer" — group/camp ONLY, never a private 1-on-1.
@@ -792,18 +895,22 @@ class MockRepository implements AppRepository {
     required String slotTime,
   }) async {
     return _serviceBookings
-        .where((b) =>
-            b['serviceId'] == serviceId &&
-            b['slotDate'] == slotDate &&
-            (b['slotTime'] ?? '') == slotTime &&
-            (b['status'] == 'pending' || b['status'] == 'confirmed'))
-        .map((b) => <String, dynamic>{
-              'bookingId': b['id'],
-              'athleteFirstName': b['athleteFirstName'],
-              'athleteAgeBand': b['athleteAgeBand'],
-              'status': b['status'],
-              'paymentStatus': b['paymentStatus'],
-            })
+        .where(
+          (b) =>
+              b['serviceId'] == serviceId &&
+              b['slotDate'] == slotDate &&
+              (b['slotTime'] ?? '') == slotTime &&
+              (b['status'] == 'pending' || b['status'] == 'confirmed'),
+        )
+        .map(
+          (b) => <String, dynamic>{
+            'bookingId': b['id'],
+            'athleteFirstName': b['athleteFirstName'],
+            'athleteAgeBand': b['athleteAgeBand'],
+            'status': b['status'],
+            'paymentStatus': b['paymentStatus'],
+          },
+        )
         .toList();
   }
 
@@ -911,7 +1018,8 @@ class MockRepository implements AppRepository {
     final ebCutoff = svc['earlyBirdCutoff'] as String?;
     final deposit = svc['depositCents'] as int?;
     // early-bird applies when set AND asOf <= cutoff (date compare, no toLocal).
-    final isEarlyBird = ebPrice != null &&
+    final isEarlyBird =
+        ebPrice != null &&
         ebCutoff != null &&
         !DateTime.parse(asOf).isAfter(DateTime.parse(ebCutoff));
     final effectiveFull = isEarlyBird ? ebPrice : full;
@@ -1031,7 +1139,9 @@ class MockRepository implements AppRepository {
     int? effort,
     String? note,
   }) async {
-    if (skills.isEmpty && effort == null && (note == null || note.trim().isEmpty)) {
+    if (skills.isEmpty &&
+        effort == null &&
+        (note == null || note.trim().isEmpty)) {
       return {'error': 'Tap at least one skill, an effort level, or a note.'};
     }
     final svc = _serviceOf(serviceId);
@@ -1048,17 +1158,22 @@ class MockRepository implements AppRepository {
     };
     final skillPhrase = skills.isEmpty ? null : skills.take(4).join(', ');
     final recap = [
-      if (skillPhrase != null) 'Great day at camp — the group worked on $skillPhrase.'
-      else 'Great day at camp today.',
+      if (skillPhrase != null)
+        'Great day at camp — the group worked on $skillPhrase.'
+      else
+        'Great day at camp today.',
       if (effortWord != null) 'The group showed $effortWord throughout.',
       if (note != null && note.trim().isNotEmpty) note.trim(),
     ].join(' ');
-    final registrants = _campRoster.where((r) => r['serviceId'] == serviceId).toList();
+    final registrants = _campRoster
+        .where((r) => r['serviceId'] == serviceId)
+        .toList();
     return {
       'created': registrants.length,
       'skipped': 0,
       'recap_text': recap,
-      'note': 'Drafts only (mock) — the coach reviews and sends each through '
+      'note':
+          'Drafts only (mock) — the coach reviews and sends each through '
           'the existing parent-update rails. Nothing was sent.',
     };
   }
@@ -1084,7 +1199,8 @@ class MockRepository implements AppRepository {
       'drafted': families,
       'families': families,
       'skipped': 0,
-      'note': 'Drafts only (mock) — each family gets a coach-only draft. '
+      'note':
+          'Drafts only (mock) — each family gets a coach-only draft. '
           'Nothing was sent; the coach approves + sends from the inbox.',
     };
   }
@@ -1096,7 +1212,8 @@ class MockRepository implements AppRepository {
   static final List<Map<String, dynamic>> _teamBlocks = [];
   static final List<Map<String, dynamic>> _teamBlockMembers = [];
   static final List<Map<String, dynamic>> _splitPayLinks = [];
-  static final List<Map<String, dynamic>> _teamBlockAthletes = []; // provisioned kids
+  static final List<Map<String, dynamic>> _teamBlockAthletes =
+      []; // provisioned kids
 
   /// Test-only view of the provisioned (COPPA-consented) athletes.
   static List<Map<String, dynamic>> get teamBlockAthletesForTest =>
@@ -1146,7 +1263,8 @@ class MockRepository implements AppRepository {
     String? memberLabel,
   }) async {
     if (!_teamBlocks.any((b) => b['id'] == teamBlockId)) return null;
-    final id = 'tbm-${DateTime.now().microsecondsSinceEpoch}-${_teamBlockMembers.length}';
+    final id =
+        'tbm-${DateTime.now().microsecondsSinceEpoch}-${_teamBlockMembers.length}';
     _teamBlockMembers.add({
       'id': id,
       'teamBlockId': teamBlockId,
@@ -1170,7 +1288,9 @@ class MockRepository implements AppRepository {
     );
     if (block.isEmpty || block['paymentMode'] != 'split_pay') return null;
     final members = _teamBlockMembers
-        .where((m) => m['teamBlockId'] == teamBlockId && m['status'] != 'removed')
+        .where(
+          (m) => m['teamBlockId'] == teamBlockId && m['status'] != 'removed',
+        )
         .toList();
     if (members.isEmpty) return 0;
     // Penny-exact split — SAME math as team_split.splitShares / the DB function.
@@ -1185,7 +1305,7 @@ class MockRepository implements AppRepository {
       );
       if (existing.isNotEmpty) {
         existing['shareAmountCents'] = share; // refresh, keep token + status
-        existing['platformFeeCents'] = feeCentsFor(share, kFirstBookingFeeBps);
+        existing['platformFeeCents'] = feeCentsFor(share, kSporveBookingFeeBps);
       } else {
         _splitPayLinks.add({
           'id': 'spl-${DateTime.now().microsecondsSinceEpoch}-$i',
@@ -1194,7 +1314,7 @@ class MockRepository implements AppRepository {
           'invitedEmail': members[i]['invitedEmail'],
           'invitedPhone': members[i]['invitedPhone'],
           'shareAmountCents': share,
-          'platformFeeCents': feeCentsFor(share, kFirstBookingFeeBps),
+          'platformFeeCents': feeCentsFor(share, kSporveBookingFeeBps),
           'currency': 'USD',
           'token': 'tok-${DateTime.now().microsecondsSinceEpoch}-$i',
           'status': 'pending',
@@ -1221,7 +1341,9 @@ class MockRepository implements AppRepository {
       (l) => l['token'] == token,
       orElse: () => const {},
     );
-    if (link.isEmpty || link['status'] != 'pending') return null; // used/invalid
+    if (link.isEmpty || link['status'] != 'pending') {
+      return null; // used/invalid
+    }
     final block = _teamBlocks.firstWhere(
       (b) => b['id'] == link['teamBlockId'],
       orElse: () => const {},
@@ -1284,25 +1406,28 @@ class MockRepository implements AppRepository {
     required String teamBlockId,
   }) async {
     return _teamBlockMembers
-        .where((m) => m['teamBlockId'] == teamBlockId && m['status'] != 'removed')
+        .where(
+          (m) => m['teamBlockId'] == teamBlockId && m['status'] != 'removed',
+        )
         .map((m) {
-      final link = _splitPayLinks.firstWhere(
-        (l) => l['memberId'] == m['id'],
-        orElse: () => const {},
-      );
-      return <String, dynamic>{
-        'memberId': m['id'],
-        'memberLabel': m['memberLabel'],
-        'invitedEmail': m['invitedEmail'],
-        'invitedPhone': m['invitedPhone'],
-        'shareAmountCents': link.isEmpty ? null : link['shareAmountCents'],
-        'platformFeeCents': link.isEmpty ? null : link['platformFeeCents'],
-        'linkStatus': link.isEmpty ? null : link['status'],
-        'paidAt': link.isEmpty ? null : link['paidAt'],
-        'memberStatus': m['status'],
-        'athleteFirstName': m['athleteFirstName'],
-      };
-    }).toList();
+          final link = _splitPayLinks.firstWhere(
+            (l) => l['memberId'] == m['id'],
+            orElse: () => const {},
+          );
+          return <String, dynamic>{
+            'memberId': m['id'],
+            'memberLabel': m['memberLabel'],
+            'invitedEmail': m['invitedEmail'],
+            'invitedPhone': m['invitedPhone'],
+            'shareAmountCents': link.isEmpty ? null : link['shareAmountCents'],
+            'platformFeeCents': link.isEmpty ? null : link['platformFeeCents'],
+            'linkStatus': link.isEmpty ? null : link['status'],
+            'paidAt': link.isEmpty ? null : link['paidAt'],
+            'memberStatus': m['status'],
+            'athleteFirstName': m['athleteFirstName'],
+          };
+        })
+        .toList();
   }
 
   static const String _demoParentId = 'demo-parent';
@@ -1321,8 +1446,14 @@ class MockRepository implements AppRepository {
 
   // ── Provider Model Rebuild #6: org scheduling grid + shared inbox ────────────
   String _memberName(String memberId) {
-    final m = _orgMembers.firstWhere((x) => x['id'] == memberId, orElse: () => const {});
-    return (m['name'] ?? m['displayName'] ?? m['trainer_profile']?['display_name'] ?? 'Trainer')
+    final m = _orgMembers.firstWhere(
+      (x) => x['id'] == memberId,
+      orElse: () => const {},
+    );
+    return (m['name'] ??
+            m['displayName'] ??
+            m['trainer_profile']?['display_name'] ??
+            'Trainer')
         .toString();
   }
 
@@ -1338,7 +1469,9 @@ class MockRepository implements AppRepository {
       final status = b['status'];
       if (status != 'pending' && status != 'confirmed') continue;
       final date = b['slotDate']?.toString();
-      if (date == null || date.compareTo(fromDate) < 0 || date.compareTo(toDate) > 0) {
+      if (date == null ||
+          date.compareTo(fromDate) < 0 ||
+          date.compareTo(toDate) > 0) {
         continue;
       }
       final locId = b['locationId'];
@@ -1349,8 +1482,13 @@ class MockRepository implements AppRepository {
       final key = '$locId|$time|$svcId|$date|$member';
       final cell = agg.putIfAbsent(key, () {
         final svc = _serviceOf(svcId);
-        final loc = _locations.firstWhere((l) => l['_id'] == locId, orElse: () => const {});
-        final trainerName = member == null ? 'Any available' : _memberName(member);
+        final loc = _locations.firstWhere(
+          (l) => l['_id'] == locId,
+          orElse: () => const {},
+        );
+        final trainerName = member == null
+            ? 'Any available'
+            : _memberName(member);
         return <String, dynamic>{
           'date': date,
           'slotTime': time,
@@ -1370,10 +1508,12 @@ class MockRepository implements AppRepository {
     // Conflict flag: 2+ distinct services on one (venue, date, time). The guard
     // prevents this being persisted; the flag is honest (false) for guarded data.
     for (final cell in agg.values) {
-      final peers = agg.values.where((o) =>
-          o['locationId'] == cell['locationId'] &&
-          o['date'] == cell['date'] &&
-          o['slotTime'] == cell['slotTime']);
+      final peers = agg.values.where(
+        (o) =>
+            o['locationId'] == cell['locationId'] &&
+            o['date'] == cell['date'] &&
+            o['slotTime'] == cell['slotTime'],
+      );
       final distinctServices = peers.map((o) => o['serviceId']).toSet();
       cell['hasConflict'] = distinctServices.length > 1;
     }
@@ -1404,7 +1544,9 @@ class MockRepository implements AppRepository {
       final staffed = _serviceStaffing[serviceId] ?? const [];
       if (staffed.length == 1) member = staffed.first;
     }
-    final i = _orgConversations.indexWhere((c) => c['conversationId'] == conversationId);
+    final i = _orgConversations.indexWhere(
+      (c) => c['conversationId'] == conversationId,
+    );
     final svc = serviceId == null ? const {} : _serviceOf(serviceId);
     final row = <String, dynamic>{
       'conversationId': conversationId,
@@ -1435,10 +1577,13 @@ class MockRepository implements AppRepository {
   Future<List<Map<String, dynamic>>> orgInbox() async {
     final rows = List<Map<String, dynamic>>.from(_orgConversations);
     rows.sort((a, b) {
-      final dp = ((b['hasPendingDraft'] ?? false) ? 1 : 0) -
+      final dp =
+          ((b['hasPendingDraft'] ?? false) ? 1 : 0) -
           ((a['hasPendingDraft'] ?? false) ? 1 : 0);
       if (dp != 0) return dp;
-      return (b['lastMessageAt'] ?? '').toString().compareTo((a['lastMessageAt'] ?? '').toString());
+      return (b['lastMessageAt'] ?? '').toString().compareTo(
+        (a['lastMessageAt'] ?? '').toString(),
+      );
     });
     return rows;
   }
@@ -1447,9 +1592,13 @@ class MockRepository implements AppRepository {
   Future<List<Map<String, dynamic>>> getWeeklyAvailability() async {
     final list = List<Map<String, dynamic>>.from(_availability);
     list.sort((a, b) {
-      final dc = ((a['dayOfWeek'] ?? 0) as int).compareTo((b['dayOfWeek'] ?? 0) as int);
+      final dc = ((a['dayOfWeek'] ?? 0) as int).compareTo(
+        (b['dayOfWeek'] ?? 0) as int,
+      );
       if (dc != 0) return dc;
-      return (a['startTime'] ?? '').toString().compareTo((b['startTime'] ?? '').toString());
+      return (a['startTime'] ?? '').toString().compareTo(
+        (b['startTime'] ?? '').toString(),
+      );
     });
     return list;
   }
@@ -1460,7 +1609,8 @@ class MockRepository implements AppRepository {
     for (final b in blocks) {
       if (b['dayOfWeek'] == null) continue;
       _availability.add({
-        '_id': 'avail-${_availability.length}-${DateTime.now().microsecondsSinceEpoch}',
+        '_id':
+            'avail-${_availability.length}-${DateTime.now().microsecondsSinceEpoch}',
         'dayOfWeek': b['dayOfWeek'],
         'startTime': _normalizeHms(b['startTime']?.toString()),
         'endTime': _normalizeHms(b['endTime']?.toString()),
@@ -1480,13 +1630,15 @@ class MockRepository implements AppRepository {
 
   @override
   Future<Map<String, dynamic>> getAvailabilitySettings() async => {
-        'bufferMinutes': _mockBufferMinutes,
-        'vacationUntil': _mockVacationUntil,
-      };
+    'bufferMinutes': _mockBufferMinutes,
+    'vacationUntil': _mockVacationUntil,
+  };
 
   @override
-  Future<bool> setAvailabilitySettings(
-      {int? bufferMinutes, String? vacationUntil}) async {
+  Future<bool> setAvailabilitySettings({
+    int? bufferMinutes,
+    String? vacationUntil,
+  }) async {
     if (bufferMinutes != null) _mockBufferMinutes = bufferMinutes;
     _mockVacationUntil = vacationUntil;
     return true;
@@ -1513,8 +1665,10 @@ class MockRepository implements AppRepository {
   @override
   Future<List<Map<String, dynamic>>> getMyLocations() async {
     final list = List<Map<String, dynamic>>.from(_locations);
-    list.sort((a, b) =>
-        (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString()));
+    list.sort(
+      (a, b) =>
+          (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString()),
+    );
     return list;
   }
 
@@ -1538,7 +1692,10 @@ class MockRepository implements AppRepository {
   }
 
   @override
-  Future<bool> updateLocation(String locationId, Map<String, dynamic> patch) async {
+  Future<bool> updateLocation(
+    String locationId,
+    Map<String, dynamic> patch,
+  ) async {
     final i = _locations.indexWhere((l) => l['_id'] == locationId);
     if (i == -1) return false;
     for (final k in const [
@@ -1578,12 +1735,14 @@ class MockRepository implements AppRepository {
       final prog = b['programId'];
       final sess = b['sessionId'];
       final ath = b['athleteId'];
-      final family =
-          (b['searcherId'] ?? (ath is Map ? ath['_id'] : null) ?? '').toString();
+      final family = (b['searcherId'] ?? (ath is Map ? ath['_id'] : null) ?? '')
+          .toString();
       out.add({
         'id': (b['_id'] ?? '').toString(),
         'family': family,
-        'date': (sess is Map ? sess['startDate'] ?? sess['date'] : null) ?? b['createdAt'],
+        'date':
+            (sess is Map ? sess['startDate'] ?? sess['date'] : null) ??
+            b['createdAt'],
         'createdAt': b['createdAt'],
         'athlete': ath is Map ? (ath['firstName'] ?? '') : '',
         'program': prog is Map ? (prog['title'] ?? '') : '',
@@ -1591,6 +1750,10 @@ class MockRepository implements AppRepository {
         'status': b['status'] ?? '',
         'paymentStatus': pay,
         'gross': b['finalPrice'] ?? 0,
+        'platformFee': b['platformFee'],
+        'platformFeeBps': b['platformFeeBps'],
+        'providerPayout': b['providerPayout'],
+        'feeRecordedAt': b['feeRecordedAt'],
         'currency': b['currency'] ?? 'USD',
       });
     }
@@ -1625,8 +1788,7 @@ class MockRepository implements AppRepository {
   @override
   Future<String?> createCoachInvoiceDraft(Map<String, dynamic> draft) async {
     final id = 'inv_${DateTime.now().millisecondsSinceEpoch}';
-    // Mirror the server: sum the line items + derive the near-zero SaaS fee, so
-    // the demo shows the same numbers the DB trigger would pin.
+    // Subscription-funded preview: draft invoices carry no Sporve fee.
     final items = (draft['lineItems'] as List?) ?? const [];
     var amount = 0;
     for (final it in items) {
@@ -1636,7 +1798,7 @@ class MockRepository implements AppRepository {
         amount += qty * unit;
       }
     }
-    final fee = (amount * 250 / 10000).round();
+    const fee = 0;
     final contact = _mockContacts.firstWhere(
       (c) => c['id'] == draft['contactId'],
       orElse: () => const {'displayName': 'Family'},
@@ -1678,13 +1840,12 @@ class MockRepository implements AppRepository {
   };
 
   @override
-  Future<Map<String, dynamic>> draftRecap(
-    Map<String, dynamic> payload,
-  ) async {
+  Future<Map<String, dynamic>> draftRecap(Map<String, dynamic> payload) async {
     // Offline demo: a grounded recap built ONLY from the tapped facts (mirrors
     // the draft-recap function's contract — nothing invented).
     final name = (payload['childFirstName'] as String?)?.trim();
-    final skills = (payload['skills'] as List?)?.whereType<String>().toList() ??
+    final skills =
+        (payload['skills'] as List?)?.whereType<String>().toList() ??
         const <String>[];
     final effort = payload['effort'] as int?;
     final who = (name == null || name.isEmpty) ? 'Your athlete' : name;
@@ -1694,8 +1855,9 @@ class MockRepository implements AppRepository {
       3 => 'outstanding effort',
       _ => null,
     };
-    final skillPhrase =
-        skills.isEmpty ? 'the fundamentals' : skills.take(3).join(', ');
+    final skillPhrase = skills.isEmpty
+        ? 'the fundamentals'
+        : skills.take(3).join(', ');
     final recap = [
       'Great session with $who today — we worked on $skillPhrase.',
       if (effortWord != null) '$who showed $effortWord throughout.',
@@ -2247,15 +2409,19 @@ class MockRepository implements AppRepository {
       'sessionNotes': p['sessionNotes'],
       'faq': faq is List
           ? faq
-              .whereType<Map>()
-              .map((e) => {
+                .whereType<Map>()
+                .map(
+                  (e) => {
                     'question': (e['question'] ?? '').toString(),
                     'answer': (e['answer'] ?? '').toString(),
-                  })
-              .where((e) =>
-                  e['question']!.trim().isNotEmpty &&
-                  e['answer']!.trim().isNotEmpty)
-              .toList()
+                  },
+                )
+                .where(
+                  (e) =>
+                      e['question']!.trim().isNotEmpty &&
+                      e['answer']!.trim().isNotEmpty,
+                )
+                .toList()
           : const <Map<String, String>>[],
     };
   }
@@ -2271,14 +2437,17 @@ class MockRepository implements AppRepository {
     final faqIn = policies['faq'];
     final cleanFaq = faqIn is List
         ? faqIn
-            .whereType<Map>()
-            .map((e) => {
+              .whereType<Map>()
+              .map(
+                (e) => {
                   'question': (e['question'] ?? '').toString().trim(),
                   'answer': (e['answer'] ?? '').toString().trim(),
-                })
-            .where((e) =>
-                e['question']!.isNotEmpty && e['answer']!.isNotEmpty)
-            .toList()
+                },
+              )
+              .where(
+                (e) => e['question']!.isNotEmpty && e['answer']!.isNotEmpty,
+              )
+              .toList()
         : const <Map<String, String>>[];
 
     _coachPolicies
@@ -2688,8 +2857,8 @@ class MockRepository implements AppRepository {
       'no_supply': rank == 0,
       'note': rank == 0
           ? (wantSport
-              ? 'No verified $sport matches yet in your area.'
-              : 'No verified matches yet in your area.')
+                ? 'No verified $sport matches yet in your area.'
+                : 'No verified matches yet in your area.')
           : '',
       'eligible_count': rank,
     };
@@ -2733,19 +2902,21 @@ class MockRepository implements AppRepository {
       // SAFETY gate (never relaxed): a verified background check is mandatory.
       if (!_mockVerified(program)) continue;
       if (wantSport) {
-        final ps =
-            (program['sportType'] ?? program['sport'] ?? '').toString();
+        final ps = (program['sportType'] ?? program['sport'] ?? '').toString();
         if (!ps.toLowerCase().contains(wantedSport)) continue;
       }
       if (budgetPerSessionCents != null) {
-        final priceCents =
-            (((program['price'] as num?)?.toDouble() ?? 0) * 100).round();
+        final priceCents = (((program['price'] as num?)?.toDouble() ?? 0) * 100)
+            .round();
         if (priceCents > budgetPerSessionCents) continue;
       }
       candidates.add(program);
     }
-    candidates.sort((a, b) => ((b['averageRating'] as num?) ?? 0)
-        .compareTo((a['averageRating'] as num?) ?? 0));
+    candidates.sort(
+      (a, b) => ((b['averageRating'] as num?) ?? 0).compareTo(
+        (a['averageRating'] as num?) ?? 0,
+      ),
+    );
     final seen = <String>{};
     final ranked = <Map<String, dynamic>>[];
     for (final p in candidates) {
@@ -2759,10 +2930,11 @@ class MockRepository implements AppRepository {
   // CHECK is required (identity 'verificationStatus' alone is not enough).
   static bool _mockVerified(Map<String, dynamic> program) {
     final prov = program['providerId'];
-    final bg = (program['background_check_status'] ??
-            (prov is Map ? prov['background_check_status'] : null) ??
-            (prov is Map ? prov['backgroundCheckStatus'] : null))
-        ?.toString();
+    final bg =
+        (program['background_check_status'] ??
+                (prov is Map ? prov['background_check_status'] : null) ??
+                (prov is Map ? prov['backgroundCheckStatus'] : null))
+            ?.toString();
     return bg == 'verified';
   }
 
@@ -2886,8 +3058,20 @@ class MockRepository implements AppRepository {
   // Connectives/stopwords that must never dangle at the end of a headline once
   // the ~5-word/~40-char cap has clipped mid-phrase (e.g. "…Make Fun And").
   static const List<String> _trailingStopwords = [
-    'and', 'or', 'to', 'the', 'a', 'an', 'for',
-    'with', 'of', 'in', 'on', 'at', 'by', '&',
+    'and',
+    'or',
+    'to',
+    'the',
+    'a',
+    'an',
+    'for',
+    'with',
+    'of',
+    'in',
+    'on',
+    'at',
+    'by',
+    '&',
   ];
 
   // Trim any trailing connective/stopword left dangling after the cap, repeated
@@ -2895,8 +3079,9 @@ class MockRepository implements AppRepository {
   static String _stripTrailingStopwords(String s) {
     final words = s.split(' ').where((w) => w.isNotEmpty).toList();
     while (words.length > 1) {
-      final last =
-          words.last.replaceAll(RegExp(r'[.,;:!?]+$'), '').toLowerCase();
+      final last = words.last
+          .replaceAll(RegExp(r'[.,;:!?]+$'), '')
+          .toLowerCase();
       if (!_trailingStopwords.contains(last)) break;
       words.removeLast();
     }

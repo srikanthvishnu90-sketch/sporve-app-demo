@@ -1,4 +1,4 @@
-/// Coach OS — per-transaction PLATFORM FEE itemization (P0 #2 / #3, money page).
+/// Booking-money itemization for a subscription-funded Sporve workspace.
 ///
 /// PURE Dart, ZERO Flutter/Supabase imports so it is trivially unit-testable and
 /// safe on every target. This is the SINGLE source of truth for the itemization
@@ -7,42 +7,23 @@
 /// "IDENTICAL itemization shape the coach and (later) the org/trainer both see").
 ///
 /// MONEY HONESTY (L-003): this file moves NO money and is READ-ONLY DISPLAY. The
-/// authoritative platform fee for each charge is set SERVER-SIDE by Stripe at
-/// charge time (`stripe-create-checkout` → `application_fee_amount`), derived
-/// there from `resolve_platform_fee_bps` / `platform_fees`. The rates below
-/// MIRROR that DB config so the coach sees a faithful preview, but the coach's
-/// Stripe payout / 1099-K is the authoritative fee record. A row whose real
-/// charged fee is later mirrored onto the booking should override the computed
-/// fee — until then this is the current fee-schedule projection, labeled as such
-/// in the UI + CSV.
-///
-/// Fee schedule (basis points) mirrors `platform_fees` defaults
-/// (supabase/migrations/20260728_000101_platform_fees.sql): the FULL introduction
-/// rate on a family's FIRST paid booking with a coach, a THIN relationship rate
-/// on every booking thereafter — "we charge for introductions, not
-/// relationships." Off-platform invoices (families Sporve did not source) carry a
-/// near-zero SaaS rate (docs/COACH-OS-INVOICING-DESIGN.md §2).
+/// authoritative fee for a completed charge is the nullable amount recorded on
+/// the booking by the Stripe webhook. Missing historical values stay unknown;
+/// they are never rebuilt using today's policy. New bookings and invoices have
+/// one policy: Sporve deducts nothing because revenue comes from subscriptions.
 library;
 
-/// 18% — full introduction rate on a family's FIRST paid booking with a coach.
-const int kFirstBookingFeeBps = 1800;
-
-/// 4% — thin relationship rate on every subsequent booking with the same coach.
-const int kRecurringFeeBps = 400;
-
-/// ~2.5% — near-zero SaaS rate on an OFF-PLATFORM invoice (a family the coach
-/// brought, not an introduction Sporve earned). Mirrors the NEW
-/// `platform_fees.offplatform_rate_bps`; tunable server-side, never client-set.
-const int kOffPlatformFeeBps = 250;
+/// The only current Sporve transaction-fee setting. Stripe processing is
+/// separate and is intentionally not estimated by the client.
+const int kSporveBookingFeeBps = 0;
 
 /// Fee to charge on a gross amount (minor units / cents) at a bps rate. Mirrors
 /// the server EXACTLY: `Math.round((amount * bps) / 10000)`
 /// (stripe-create-checkout/index.ts) so the coach's preview equals the charge.
 int feeCentsFor(int grossCents, int bps) => (grossCents * bps / 10000).round();
 
-/// One booking's fee itemization: gross → platform fee → coach net. All money in
-/// integer minor units (cents) to match the server's cents math with no float
-/// drift. Dollar getters are conveniences for display only.
+/// One booking's itemization: gross → Sporve fee → amount before processor fees.
+/// All money uses integer minor units (cents) to avoid float drift.
 class FeeItemization {
   final String bookingId;
   final int grossCents;
@@ -50,12 +31,19 @@ class FeeItemization {
   final int feeCents;
   final int netCents;
 
-  /// True when this is the family's FIRST paid booking with the coach (the intro
-  /// rate applied). Off-platform invoices set this false and use the SaaS bps.
+  /// False means an older paid row has no webhook-captured fee fact. In that
+  /// case [feeCents] is zero only as a display placeholder and [netCents] is the
+  /// pre-processing gross—not a claimed bank payout.
+  final bool feeKnown;
+
+  /// True when the amount came from a completed payment record, rather than a
+  /// current-policy preview.
+  final bool isRecorded;
+
+  /// Legacy first-relationship metadata. It no longer changes Sporve's fee.
   final bool isFirst;
 
-  /// True for an off-platform invoice line (near-zero SaaS rate), so the UI can
-  /// label the fee "SaaS fee" instead of "platform fee".
+  /// True for an off-platform invoice line.
   final bool isOffPlatform;
   final String currency;
 
@@ -65,57 +53,126 @@ class FeeItemization {
     required this.feeBps,
     required this.feeCents,
     required this.netCents,
+    required this.feeKnown,
+    required this.isRecorded,
     required this.isFirst,
     required this.currency,
     this.isOffPlatform = false,
   });
 
-  /// Marketplace booking itemization. [isFirst] selects the intro vs recurring
-  /// rate (resolve_platform_fee_bps semantics).
+  /// Current booking preview. There is no first-booking, recurring-booking, or
+  /// marketplace commission branch in the subscription model.
+  factory FeeItemization.subscriptionFunded({
+    required String bookingId,
+    required int grossCents,
+    String currency = 'USD',
+    bool isOffPlatform = false,
+  }) {
+    final fee = feeCentsFor(grossCents, kSporveBookingFeeBps);
+    return FeeItemization(
+      bookingId: bookingId,
+      grossCents: grossCents,
+      feeBps: kSporveBookingFeeBps,
+      feeCents: fee,
+      netCents: grossCents - fee,
+      feeKnown: true,
+      isRecorded: false,
+      isFirst: false,
+      isOffPlatform: isOffPlatform,
+      currency: currency,
+    );
+  }
+
+  /// Compatibility constructor for stored relationship metadata. New code must
+  /// use [FeeItemization.subscriptionFunded]; [isFirst] never changes money.
+  @Deprecated('Use FeeItemization.subscriptionFunded')
   factory FeeItemization.marketplace({
     required String bookingId,
     required int grossCents,
     required bool isFirst,
     String currency = 'USD',
   }) {
-    final bps = isFirst ? kFirstBookingFeeBps : kRecurringFeeBps;
-    final fee = feeCentsFor(grossCents, bps);
+    final fee = feeCentsFor(grossCents, kSporveBookingFeeBps);
     return FeeItemization(
       bookingId: bookingId,
       grossCents: grossCents,
-      feeBps: bps,
+      feeBps: kSporveBookingFeeBps,
       feeCents: fee,
       netCents: grossCents - fee,
+      feeKnown: true,
+      isRecorded: false,
       isFirst: isFirst,
       currency: currency,
     );
   }
 
-  /// Off-platform invoice itemization — near-zero SaaS rate, never the intro rake.
+  /// Current invoice preview. It shares the subscription-funded zero-fee path.
   factory FeeItemization.offPlatform({
     required String bookingId,
     required int grossCents,
-    int bps = kOffPlatformFeeBps,
+    String currency = 'USD',
+  }) => FeeItemization.subscriptionFunded(
+    bookingId: bookingId,
+    grossCents: grossCents,
+    currency: currency,
+    isOffPlatform: true,
+  );
+
+  /// A webhook-captured historical line. This is the only factory earnings
+  /// history should use when it claims an exact Sporve fee or provider amount.
+  factory FeeItemization.recorded({
+    required String bookingId,
+    required int grossCents,
+    required int feeCents,
+    int? feeBps,
+    int? netCents,
+    bool isFirst = false,
+    bool isOffPlatform = false,
     String currency = 'USD',
   }) {
-    final fee = feeCentsFor(grossCents, bps);
+    final safeFee = feeCents.clamp(0, grossCents);
+    final safeNet = (netCents ?? (grossCents - safeFee)).clamp(0, grossCents);
+    final resolvedBps =
+        feeBps ??
+        (grossCents == 0 ? 0 : (safeFee * 10000 / grossCents).round());
     return FeeItemization(
       bookingId: bookingId,
       grossCents: grossCents,
-      feeBps: bps,
-      feeCents: fee,
-      netCents: grossCents - fee,
-      isFirst: false,
-      isOffPlatform: true,
+      feeBps: resolvedBps,
+      feeCents: safeFee,
+      netCents: safeNet,
+      feeKnown: true,
+      isRecorded: true,
+      isFirst: isFirst,
+      isOffPlatform: isOffPlatform,
       currency: currency,
     );
   }
+
+  /// A historical paid row without fee facts. Values remain usable for gross
+  /// reporting while the UI/CSV explicitly leaves fee and net unknown.
+  factory FeeItemization.unknown({
+    required String bookingId,
+    required int grossCents,
+    bool isFirst = false,
+    String currency = 'USD',
+  }) => FeeItemization(
+    bookingId: bookingId,
+    grossCents: grossCents,
+    feeBps: 0,
+    feeCents: 0,
+    netCents: grossCents,
+    feeKnown: false,
+    isRecorded: false,
+    isFirst: isFirst,
+    currency: currency,
+  );
 
   double get gross => grossCents / 100.0;
   double get fee => feeCents / 100.0;
   double get net => netCents / 100.0;
 
-  /// "18%" / "4%" / "2.5%" — the rate as a display string.
+  /// The rate as a display string. Callers must check [feeKnown] first.
   String get ratePct {
     final pct = feeBps / 100.0;
     return pct == pct.roundToDouble()
@@ -124,10 +181,8 @@ class FeeItemization {
   }
 }
 
-/// One coach earnings line to itemize. The [familyKey] groups a coach's bookings
-/// by the paying family (searcher/athlete) so first-vs-recurring can be resolved
-/// exactly the way `resolve_platform_fee_bps(searcher, provider)` does — the
-/// EARLIEST paid booking with a family pays the intro rate, the rest are thin.
+/// One coach earnings line to itemize. [familyKey] and [sortKey] remain only to
+/// interpret historical relationship metadata; they do not select a fee rate.
 class FeeInput {
   final String bookingId;
   final String familyKey;
@@ -137,6 +192,9 @@ class FeeInput {
   final String sortKey;
   final int grossCents;
   final String currency;
+  final int? recordedFeeCents;
+  final int? recordedFeeBps;
+  final int? recordedNetCents;
 
   const FeeInput({
     required this.bookingId,
@@ -144,17 +202,14 @@ class FeeInput {
     required this.sortKey,
     required this.grossCents,
     this.currency = 'USD',
+    this.recordedFeeCents,
+    this.recordedFeeBps,
+    this.recordedNetCents,
   });
 }
 
-/// Itemize a coach's paid bookings into gross → fee → net lines, marking the
-/// FIRST paid booking with each family as the intro-rate line and the rest as
-/// recurring. Returns one [FeeItemization] per input, in the SAME order as
-/// [inputs] (so a caller can zip it back onto its own rows).
-///
-/// This mirrors `resolve_platform_fee_bps`: the rate is per (family, coach), not
-/// per family globally and not per booking in isolation. Deterministic:
-/// grouped by [FeeInput.familyKey], ordered by (sortKey, bookingId).
+/// Itemize paid history. Recorded values win; missing values remain unknown.
+/// First-family grouping is retained only as historical metadata.
 List<FeeItemization> itemizeCoachEarnings(List<FeeInput> inputs) {
   // Determine, per family, which booking id is the earliest (the intro one).
   final byFamily = <String, List<FeeInput>>{};
@@ -163,20 +218,38 @@ List<FeeItemization> itemizeCoachEarnings(List<FeeInput> inputs) {
   }
   final firstIds = <String>{};
   for (final group in byFamily.values) {
-    final sorted = [...group]..sort((a, b) {
-      final c = a.sortKey.compareTo(b.sortKey);
-      return c != 0 ? c : a.bookingId.compareTo(b.bookingId);
-    });
+    final sorted = [...group]
+      ..sort((a, b) {
+        final c = a.sortKey.compareTo(b.sortKey);
+        return c != 0 ? c : a.bookingId.compareTo(b.bookingId);
+      });
     if (sorted.isNotEmpty) firstIds.add(sorted.first.bookingId);
   }
-  return inputs
-      .map((i) => FeeItemization.marketplace(
-            bookingId: i.bookingId,
-            grossCents: i.grossCents,
-            isFirst: firstIds.contains(i.bookingId),
-            currency: i.currency,
-          ))
-      .toList();
+  return inputs.map((i) {
+    final isFirst = firstIds.contains(i.bookingId);
+    final derivedFee =
+        i.recordedFeeCents ??
+        (i.recordedNetCents == null
+            ? null
+            : i.grossCents - i.recordedNetCents!);
+    if (derivedFee != null) {
+      return FeeItemization.recorded(
+        bookingId: i.bookingId,
+        grossCents: i.grossCents,
+        feeCents: derivedFee,
+        feeBps: i.recordedFeeBps,
+        netCents: i.recordedNetCents,
+        isFirst: isFirst,
+        currency: i.currency,
+      );
+    }
+    return FeeItemization.unknown(
+      bookingId: i.bookingId,
+      grossCents: i.grossCents,
+      isFirst: isFirst,
+      currency: i.currency,
+    );
+  }).toList();
 }
 
 /// Aggregate of a list of itemizations — the coach's running totals for the
@@ -186,12 +259,14 @@ class FeeTotals {
   final int grossCents;
   final int feeCents;
   final int netCents;
+  final int unknownFeeCount;
   final String currency;
   const FeeTotals({
     required this.count,
     required this.grossCents,
     required this.feeCents,
     required this.netCents,
+    required this.unknownFeeCount,
     required this.currency,
   });
 
@@ -202,11 +277,13 @@ class FeeTotals {
 
 FeeTotals totalsOf(List<FeeItemization> items) {
   var gross = 0, fee = 0, net = 0;
+  var unknown = 0;
   var currency = 'USD';
   for (final i in items) {
     gross += i.grossCents;
     fee += i.feeCents;
     net += i.netCents;
+    if (!i.feeKnown) unknown++;
     if (i.currency.isNotEmpty) currency = i.currency;
   }
   return FeeTotals(
@@ -214,6 +291,7 @@ FeeTotals totalsOf(List<FeeItemization> items) {
     grossCents: gross,
     feeCents: fee,
     netCents: net,
+    unknownFeeCount: unknown,
     currency: currency,
   );
 }

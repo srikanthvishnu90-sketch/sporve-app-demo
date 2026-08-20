@@ -2,23 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../controllers/provider_controller.dart';
-import '../../../core/utils/platform_fee.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 
-/// Fee figures shown in the payout breakdown. The Sporve commission is the
-/// TIERED platform rate (mirrors platform_fee.dart / the `platform_fees` config /
-/// resolve_platform_fee_bps): the full intro rate on a family's first paid
-/// booking with a coach, a thin rate thereafter — "we charge for introductions,
-/// not relationships." The Stripe line is the processor's published fee.
-final String kPlatformIntroLabel =
-    '${(kFirstBookingFeeBps / 100).toStringAsFixed(0)}%'; // 18%
-final String kPlatformRecurringLabel =
-    '${(kRecurringFeeBps / 100).toStringAsFixed(0)}%'; // 4%
-const String kStripeProcessingFeeLabel = '2.9% + \$0.30';
+const String kSporveBookingFeeLabel = '0%';
+const String kStripeProcessingFeeLabel = 'Set by Stripe';
 
 class ProviderPayoutsPaymentsScreen extends StatefulWidget {
   const ProviderPayoutsPaymentsScreen({super.key});
@@ -144,16 +135,15 @@ class _ProviderPayoutsPaymentsScreenState
   }
 
   Widget _buildPayoutsTab() {
-    // Money page #1: PENDING (net derived from paid bookings — an estimate) is
-    // shown distinctly from PAID OUT (real Stripe payouts, empty until the
-    // stripe-provider-payouts fn is deployed). Never fabricates a payout (L-003).
+    // Booking gross is distinct from real Stripe payouts. Processor fees and
+    // payout timing are authoritative in Stripe, never fabricated here.
     final c = context.watch<ProviderController>();
     final payouts = c.payouts;
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       children: [
         Text(
-          'PENDING PAYOUT',
+          'PAID BOOKINGS',
           style: AppTypography.font(
             color: AppColors.textTertiary,
             fontSize: 11,
@@ -172,8 +162,8 @@ class _ProviderPayoutsPaymentsScreenState
         ),
         const SizedBox(height: 4),
         Text(
-          'Your net from paid sessions, not yet transferred. Estimate from your '
-          'bookings — actual bank payouts appear below.',
+          'Gross after any recorded Sporve fee, before Stripe processing. '
+          'Actual bank payouts appear below.',
           style: AppTypography.font(
             color: AppColors.textTertiary,
             fontSize: 11,
@@ -213,15 +203,17 @@ class _ProviderPayoutsPaymentsScreenState
         else
           ...payouts.map((payout) {
             final cents = (payout['amountCents'] as num?)?.toInt() ?? 0;
-            final status =
-                (payout['status']?.toString() ?? 'pending').toUpperCase();
+            final status = (payout['status']?.toString() ?? 'pending')
+                .toUpperCase();
             final last4 = payout['bankLast4']?.toString();
             final arrival = payout['arrivalDate'];
             String when = '';
             if (arrival is num) {
               final d = DateTime.fromMillisecondsSinceEpoch(
-                  arrival.toInt() * 1000);
-              when = '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+                arrival.toInt() * 1000,
+              );
+              when =
+                  '${d.year}-${d.month.toString().padLeft(2, '0')}-'
                   '${d.day.toString().padLeft(2, '0')}';
             }
             return Container(
@@ -631,15 +623,13 @@ class _ProviderPayoutsPaymentsScreenState
             ),
             child: Column(
               children: [
-                _buildFeeRow('Sporve — first booking', kPlatformIntroLabel),
-                const Divider(color: AppColors.hairline, height: 24),
-                _buildFeeRow('Sporve — recurring', kPlatformRecurringLabel),
+                _buildFeeRow('Sporve booking fee', kSporveBookingFeeLabel),
                 const Divider(color: AppColors.hairline, height: 24),
                 _buildFeeRow('Stripe processing', kStripeProcessingFeeLabel),
                 const Divider(color: AppColors.hairline, height: 24),
-                _buildFeeRow('ACH transfer fee', '\$0'),
+                _buildFeeRow('Transfer fees', 'Set by Stripe'),
                 const Divider(color: AppColors.hairline, height: 24),
-                _buildFeeRow('Payout speed', '1–2 business days'),
+                _buildFeeRow('Payout speed', 'Your Stripe schedule'),
               ],
             ),
           ),
