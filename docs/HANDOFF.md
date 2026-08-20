@@ -66,9 +66,11 @@ Updated: 2026-08-20
 ## Unresolved risks
 
 - GitHub `main` was force-rewritten after this checkout and still contains the
-  automatic-task payload at handoff time. This branch deliberately starts from
-  the prior repository commit and removes the payload; do not merge remote
-  `main` into it before the repository owner completes an incident review.
+  automatic-task payload at handoff time. This branch preserves the reviewed
+  clean tree, records current `main` as a parent so the branch is safely
+  mergeable, and explicitly deletes the payload. Do not merge additional
+  default-branch changes into it before the repository owner completes an
+  incident review.
 - The managed environment denied process inspection. Anyone who opened an
   affected checkout in VS Code should treat local credentials as potentially
   exposed, disconnect the machine, review running processes and network logs,
