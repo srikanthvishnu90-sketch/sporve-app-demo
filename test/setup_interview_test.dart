@@ -9,10 +9,10 @@
 //   • Honest failure: an empty service set does not fake success.
 //   flutter test test/setup_interview_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
-import 'package:flutter_structure/core/data/sport_templates.dart';
-import 'package:flutter_structure/presentation/provider/controllers/setup_interview_controller.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
+import 'package:sporve_app/core/data/sport_templates.dart';
+import 'package:sporve_app/presentation/provider/controllers/setup_interview_controller.dart';
 
 void main() {
   const AppRepository repo = MockRepository();

@@ -3,7 +3,7 @@ import '../../../core/ui/ambient_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import '../../../core/constants/app_assets.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
@@ -33,21 +33,21 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   // Aurora surface palette (spec §12). Opaque members come from AppColors
   // tokens; the translucent glow/tint overlays stay inline (hook-exempt).
   static const _bg = AppColors.chatCanvas;
-  static const _aurora1 = Color(0x806082A8);
-  static const _aurora2 = Color(0x6148588A);
+  static const _aurora1 = AppColors.blueTint;
+  static const _aurora2 = AppColors.slateTint;
   static const _greeting = AppColors.chatTextBright;
   static const _betaLabel = AppColors.chatTextMuted;
   static const _topIcon = AppColors.chatIcon;
   static const _logoText = AppColors.chatLogoText;
-  static const _logoBg = Color(0x386082A8);
-  static const _logoBorder = Color(0x8C8CAFD2);
-  static const _logoGlow = Color(0x5978A0C8);
+  static const _logoBg = AppColors.blueTint;
+  static const _logoBorder = AppColors.blueText;
+  static const _logoGlow = AppColors.blueTint;
   static const _pillBg = AppColors.chatSurface;
   static const _inputText = AppColors.chatInputText;
   static const _placeholder = AppColors.chatPlaceholder;
   static const _mic = AppColors.chatTextMuted;
   static const _disclaimer = AppColors.chatDisclaimer;
-  static const _userBubble = Color(0x2E6082A8);
+  static const _userBubble = AppColors.blueTint;
   static const _errorText = AppColors.chatError;
 
   /// Contextual suggestion pool derived from real state (decision #8); three
@@ -142,9 +142,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(child: _inputPill()),
-                      ],
+                      children: [Expanded(child: _inputPill())],
                     ),
                   ),
                   Padding(
@@ -269,7 +267,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             bottomLeft: Radius.circular(16),
             bottomRight: Radius.circular(4),
           ),
-          border: Border.all(color: const Color(0x556082A8)),
+          border: Border.all(color: AppColors.blueTint),
         ),
         child: Text(
           text,
@@ -309,7 +307,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   ),
                   border: Border.all(
                     color: m.isError
-                        ? const Color(0x66E8899A)
+                        ? AppColors.negativeTint
                         : Colors.white.withValues(alpha: 0.07),
                   ),
                 ),
@@ -491,13 +489,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
-          const Color(0x8C8CAFD2),
-          const Color(0x405A6EA0),
+          AppColors.blueText,
+          AppColors.blueTint,
           Colors.white.withValues(alpha: 0.08),
         ],
         stops: const [0.0, 0.45, 1.0],
       ),
-      boxShadow: const [BoxShadow(color: Color(0x296E96C8), blurRadius: 26)],
+      boxShadow: const [BoxShadow(color: AppColors.blueTint, blurRadius: 26)],
     ),
     child: Container(
       decoration: BoxDecoration(

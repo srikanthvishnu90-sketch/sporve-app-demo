@@ -1,14 +1,15 @@
-import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/config/env.dart';
 import '../../../core/data/app_repository.dart';
 import '../../authentication/controllers/auth_provider.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/utils/session_time.dart';
+import '../../../core/utils/provider_trust.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/sport_colors.dart';
@@ -25,13 +26,10 @@ class BookingFlowScreen extends StatefulWidget {
   State<BookingFlowScreen> createState() => _BookingFlowScreenState();
 }
 
-class _BookingFlowScreenState extends State<BookingFlowScreen> {
-  // Offline demo has no Stripe backend — mirror main.dart's repo switch.
-  static const bool _useMockRepo = bool.fromEnvironment(
-    'USE_MOCK_REPO',
-    defaultValue: false,
-  );
+enum _PaymentReturnState { none, processing, checkBack, cancelled, failed }
 
+class _BookingFlowScreenState extends State<BookingFlowScreen>
+    with WidgetsBindingObserver {
   int _currentStep =
       1; // Step 1: Book Slot, Step 2: Review & Pay, Step 3: Getting Ready, Step 4: Confirmed
   int _selectedDay = 4;
@@ -43,6 +41,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   String? _realBookingId;
   String _paymentStatus = 'unpaid';
   bool _checkoutLoading = false;
+  bool _checkingPayment = false;
+  _PaymentReturnState _paymentReturnState = _PaymentReturnState.none;
 
   // Real session + child selection (E). Bookings attach to the session the user
   // actually picks, and always carry a chosen athlete_id.
@@ -153,12 +153,12 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   Map<String, dynamic>? _program;
   String _sessionTitle = 'Training Session';
   String _coach = 'Academy';
-  String _tier = 'STANDARD';
 
   // Concierge attribution (Prompt 3): when this booking is made by APPROVING a
   // plan_proposal, we store bookings.plan_proposal_id for attribution. The
   // signed Stripe webhook accepts the proposal only after verified payment.
   String? _planProposalId;
+  Map<String, String> _initialPaymentReturn = const {};
 
   // Sport identity of the booked program — themes the sport-context CTAs,
   // selections, and icon tile with the sport's color (exterior accent). Generic
@@ -166,7 +166,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   String get _sport => (_program?['sportType'] ?? 'basketball').toString();
   Color get _sportColor => SportColors.of(_sport);
 
-  // Pricing — provider-set price from the selected tier (falls back to 75).
+  // Pricing — one provider-set price. D4 removed new booking tiers.
   late double _sessionPrice;
   // Price integrity: the parent pays EXACTLY the session price shown here, which
   // is also what stripe-create-checkout charges. Sporve charges providers by
@@ -222,6 +222,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final now = DateTime.now();
     _calYear = now.year;
     _calMonth = now.month;
@@ -229,13 +230,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
     final args = Get.arguments;
     if (args is Map) {
+      final paymentReturn = args['paymentReturn'];
+      if (paymentReturn is Map) {
+        _initialPaymentReturn = paymentReturn.map(
+          (key, value) => MapEntry(key.toString(), value.toString()),
+        );
+      }
       _program = args['program'] is Map
           ? Map<String, dynamic>.from(args['program'])
           : null;
       _sessionTitle = (args['title'] ?? _program?['title'] ?? _sessionTitle)
           .toString();
       _coach = (args['coach'] ?? _coach).toString();
-      _tier = (args['tier'] ?? _tier).toString();
       _planProposalId = args['planProposalId']?.toString();
       _sessionPrice = (args['price'] is num)
           ? (args['price'] as num).toDouble()
@@ -264,6 +270,20 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _realBookingId != null &&
+        _paymentStatus != 'paid') {
+      _pollPaymentStatus(_realBookingId!);
+    }
+  }
 
   /// Stripe Checkout return handler (web). After a payment the browser lands
   /// back on a hash-route fragment like `…/#/booking-flow?b=<id>&status=success`
@@ -273,31 +293,129 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   /// for "I paid but nothing happened". A cancel return just leaves the user in
   /// the flow to retry; the booking stays unpaid.
   ///
-  /// FOLLOW-UP (out of this single-file scope): whether a cold load actually
-  /// resolves this fragment to BookingFlowScreen depends on the app-launch
-  /// router (splash/auth gate reading `Uri.base.fragment`). Wiring that deep
-  /// link so `/#/booking-flow?b=…&status=success` reaches this screen after the
-  /// redirect is the remaining piece; this handler covers the case where it does
-  /// (e.g. an already-mounted screen) and is a no-op everywhere else.
   Future<void> _handleStripeReturn() async {
-    final fragment = Uri.base.fragment; // "/booking-flow?b=<id>&status=success"
-    if (fragment.isEmpty) return;
-    final params = Uri.tryParse(fragment)?.queryParameters ?? const {};
+    final params = _initialPaymentReturn.isNotEmpty
+        ? _initialPaymentReturn
+        : kIsWeb
+        ? (Uri.tryParse(Uri.base.fragment)?.queryParameters ?? const {})
+        : Uri.base.queryParameters;
     final status = params['status'];
     final bookingId = params['b'];
-    if (status != 'success' || bookingId == null || bookingId.isEmpty) return;
-
-    final home = context.read<HomeProvider>();
-    await home.fetchBookings(); // re-read paymentStatus from the backend
+    if (bookingId == null || bookingId.isEmpty) return;
+    if (status == 'cancelled') {
+      if (!mounted) return;
+      setState(() {
+        _realBookingId = bookingId;
+        _bookingSaved = true;
+        _currentStep = 2;
+        _paymentReturnState = _PaymentReturnState.cancelled;
+      });
+      return;
+    }
+    if (status != 'success') return;
     if (!mounted) return;
-    final saved = home.bookingById(bookingId);
-    final paid = saved?['paymentStatus']?.toString() == 'paid';
     setState(() {
       _realBookingId = bookingId;
-      _paymentStatus =
-          saved?['paymentStatus']?.toString() ?? _paymentStatus;
-      if (paid) _currentStep = 4; // show the in-app Confirmed screen
+      _bookingSaved = true;
+      _currentStep = 3;
+      _paymentReturnState = _PaymentReturnState.processing;
     });
+    await _pollPaymentStatus(bookingId);
+  }
+
+  Future<void> _pollPaymentStatus(String bookingId) async {
+    if (_checkingPayment) return;
+    _checkingPayment = true;
+    try {
+      const delays = [
+        Duration.zero,
+        Duration(milliseconds: 700),
+        Duration(seconds: 2),
+      ];
+      for (final delay in delays) {
+        if (delay > Duration.zero) await Future<void>.delayed(delay);
+        if (!mounted) return;
+        final rows = await context.read<AppRepository>().getBookingsOrThrow();
+        Map<String, dynamic>? saved;
+        for (final row in rows) {
+          if (row is Map && row['_id']?.toString() == bookingId) {
+            saved = Map<String, dynamic>.from(row);
+            break;
+          }
+        }
+        final status = saved?['paymentStatus']?.toString() ?? 'processing';
+        if (!mounted) return;
+        setState(() {
+          _paymentStatus = status;
+          if (saved != null) _hydrateFromPersistedBooking(saved);
+        });
+        if (status == 'paid') {
+          await context.read<HomeProvider>().fetchBookings();
+          if (!mounted) return;
+          setState(() {
+            _paymentReturnState = _PaymentReturnState.none;
+            _currentStep = 4;
+          });
+          return;
+        }
+        if (status == 'failed') {
+          setState(() {
+            _paymentReturnState = _PaymentReturnState.failed;
+            _currentStep = 2;
+          });
+          return;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _currentStep = 3;
+        _paymentReturnState = _PaymentReturnState.checkBack;
+      });
+    } catch (error) {
+      debugPrint('payment status refresh failed: $error');
+      if (!mounted) return;
+      setState(() {
+        _currentStep = 3;
+        _paymentReturnState = _PaymentReturnState.checkBack;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _checkingPayment = false);
+      } else {
+        _checkingPayment = false;
+      }
+    }
+  }
+
+  void _hydrateFromPersistedBooking(Map<String, dynamic> booking) {
+    final session = booking['sessionId'];
+    if (session is Map) {
+      final row = Map<String, dynamic>.from(session);
+      _selectedSession = row;
+      _sessionTitle = (row['title'] ?? _sessionTitle).toString();
+      final start = parseSessionStart(row);
+      if (start != null) {
+        _calYear = start.year;
+        _calMonth = start.month;
+        _selectedDay = start.day;
+        _selectedTime =
+            (row['startTime']?.toString().trim().isNotEmpty ?? false)
+            ? row['startTime'].toString()
+            : formatTime12h(start);
+      }
+    }
+    final program = booking['programId'];
+    if (program is Map) {
+      _program = Map<String, dynamic>.from(program);
+      _coach = (_program?['providerName'] ?? _program?['coachName'] ?? _coach)
+          .toString();
+    }
+    final recordedPrice = booking['finalPrice'] ?? booking['totalAmount'];
+    if (recordedPrice is num) _sessionPrice = recordedPrice.toDouble();
+    _selectedAthleteName =
+        booking['athleteName']?.toString() ?? _selectedAthleteName;
+    _selectedTrainerName =
+        booking['assignedTrainerName']?.toString() ?? _selectedTrainerName;
   }
 
   /// Load the program's REAL upcoming sessions + the searcher's children so the
@@ -341,6 +459,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   /// Pick a real session and sync the calendar/time display to it.
   void _selectSession(Map<String, dynamic> s, {bool notify = true}) {
     final start = parseSessionStart(s);
+    if (start == null) {
+      if (notify) _snack('This session time is unavailable. Choose another.');
+      return;
+    }
     void apply() {
       _selectedSession = s;
       _calYear = start.year;
@@ -384,23 +506,16 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return;
     }
 
-    // QA Day 07: Block booking if coach failed Stripe Connect KYC or payouts disabled
-    final prov = _program?['providerId'];
-    if (prov is Map) {
-      final kyc = (prov['kycStatus'] ?? prov['verificationStatus'] ?? '').toString().toLowerCase();
-      final chargesEnabled = prov['stripeChargesEnabled'] == true || prov['stripe_charges_enabled'] == true;
-      if (kyc == 'rejected' || kyc == 'failed') {
-        _snack('Bookings paused: This coach failed Stripe Connect KYC verification.');
-        return;
-      }
-      if (prov.containsKey('stripeChargesEnabled') && !chargesEnabled && kyc == 'unverified') {
-        _snack('Bookings paused: Coach Stripe payout setup is incomplete.');
-        return;
-      }
+    if (_program == null || !providerTrusted(_program!)) {
+      _snack(
+        'Bookings are paused until this coach completes approval and their background check.',
+      );
+      return;
     }
 
     // QA Day 07: 1:1 Coaching requires selecting a named trainer (never "Any available")
-    final isOneOnOne = (_program?['pricingModel'] ?? '').toString() == 'single_session';
+    final isOneOnOne =
+        (_program?['pricingModel'] ?? '').toString() == 'single_session';
     if (isOneOnOne && _trainers.isNotEmpty && _selectedTrainerId == null) {
       _snack('Please select a specific coach for 1:1 coaching.');
       return;
@@ -551,7 +666,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   // parents must select a specific named trainer.
   Widget _buildTrainerPicker() {
     if (_trainers.isEmpty) return const SizedBox.shrink();
-    final isOneOnOne = (_program?['pricingModel'] ?? '').toString() == 'single_session';
+    final isOneOnOne =
+        (_program?['pricingModel'] ?? '').toString() == 'single_session';
     final allowAny = !isOneOnOne;
     final totalCards = allowAny ? _trainers.length + 1 : _trainers.length;
 
@@ -644,24 +760,25 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: AppColors.surface2,
-                  backgroundImage:
-                      photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                  backgroundImage: photoUrl.isNotEmpty
+                      ? NetworkImage(photoUrl)
+                      : null,
                   child: photoUrl.isNotEmpty
                       ? null
                       : (isAny
-                          ? Icon(
-                              Icons.groups_outlined,
-                              size: 20,
-                              color: AppColors.textTertiary,
-                            )
-                          : Text(
-                              initials.toUpperCase(),
-                              style: AppTypography.font(
-                                color: AppColors.textSecondary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            )),
+                            ? Icon(
+                                Icons.groups_outlined,
+                                size: 20,
+                                color: AppColors.textTertiary,
+                              )
+                            : Text(
+                                initials.toUpperCase(),
+                                style: AppTypography.font(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )),
                 ),
                 Icon(
                   selected ? Icons.check_circle : Icons.circle_outlined,
@@ -733,16 +850,17 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           ..._programSessions.map((s) {
             final start = parseSessionStart(s);
             final selected = _selectedSession?['_id'] == s['_id'];
-            final label =
-                '${_weekdayNames[start.weekday - 1]}, '
-                '${_monthNames[start.month - 1].substring(0, 3)} ${start.day}';
+            final label = start == null
+                ? 'Date unavailable'
+                : '${_weekdayNames[start.weekday - 1]}, '
+                      '${_monthNames[start.month - 1].substring(0, 3)} ${start.day}';
             final time = (s['startTime']?.toString().isNotEmpty ?? false)
                 ? s['startTime'].toString()
                 : formatTime12h(start);
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: GestureDetector(
-                onTap: () => _selectSession(s),
+                onTap: start == null ? null : () => _selectSession(s),
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -838,47 +956,24 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   Future<void> _persistBooking() async {
     if (_bookingSaved && _realBookingId != null) return; // already created
 
-    final now = DateTime.now();
-    // The calendar shows the real current month, so use the selected date directly.
-    final isoDate =
-        '${_calYear.toString().padLeft(4, '0')}-${_calMonth.toString().padLeft(2, '0')}-${_selectedDay.toString().padLeft(2, '0')}T00:00:00.000Z';
+    final session = _selectedSession;
+    if (session == null) {
+      throw const RepositoryActionException(
+        'Choose an available session before booking.',
+      );
+    }
 
-    // Use the REAL session the user picked (carries a uuid _id) so the booking
-    // attaches to it directly; fall back to a synthetic shape only if somehow
-    // none was selected.
-    final session =
-        _selectedSession ??
-        {
-          '_id': 'sess_${now.millisecondsSinceEpoch}',
-          'title': _sessionTitle,
-          'startDate': isoDate,
-          'date': isoDate,
-          'startTime': _selectedTime,
-          'programId': _program?['_id'],
-        };
-
+    // Creation carries references only. The server owns the booking id, price,
+    // currency, lifecycle status, payment status, and creation timestamp.
     final booking = <String, dynamic>{
-      '_id': 'book_${now.millisecondsSinceEpoch}',
       'programId':
           _program, // full object so Home/Schedule resolve sport + coach
       'sessionId': session,
       'athleteId': _selectedAthleteId, // chosen child (RLS sets searcher_id)
-      'athleteName': _selectedAthleteName, // denormalized display for provider
-      // Booksy attribution — null when "Any available" is chosen. Recorded on
-      // the booking; never affects price/charge. The name is denormalized so
-      // the offline mock demo can display it without a join.
+      // Booksy attribution — null when "Any available" is chosen. The server
+      // validates the member and derives any display name.
       if (_selectedTrainerId != null) 'assignedMemberId': _selectedTrainerId,
-      if (_selectedTrainerName != null)
-        'assignedTrainerName': _selectedTrainerName,
-      'selectedTier': _tier,
-      'originalPrice': _sessionPrice,
-      'finalPrice': _total,
-      'currency': 'USD',
-      'status': 'pending',
-      // Real payment happens via Stripe Checkout (#20b) — start unpaid.
-      'paymentStatus': 'unpaid',
       if (_planProposalId != null) 'planProposalId': _planProposalId,
-      'createdAt': now.toIso8601String(),
     };
 
     // addBooking rethrows the real PostgrestException on a DB failure so the
@@ -896,13 +991,24 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _bookingSaved = id != null; // only block re-create once it truly succeeded
   }
 
-  /// THE payment moment ("Confirm & Pay"): create the UNPAID booking, then open
-  /// Stripe hosted Checkout via the `stripe-create-checkout` Edge Function
-  /// (invoke attaches the user's JWT). Non-2xx throws FunctionException — surface
-  /// the real reason from its details instead of failing silently.
+  /// THE payment moment ("Confirm & Pay"): create the UNPAID booking, then ask
+  /// the repository for a Stripe-hosted Checkout URL. The client sends no amount
+  /// and never writes payment status.
   Future<void> _handleConfirmAndPay() async {
     if (_checkoutLoading) return; // Prevent double-tap / double-submit
     final messenger = ScaffoldMessenger.of(context);
+    final repository = context.read<AppRepository>();
+    if (_program == null || !providerTrusted(_program!)) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This provider is not currently eligible for paid bookings.',
+          ),
+          backgroundColor: AppColors.negative,
+        ),
+      );
+      return;
+    }
     // Defense-in-depth: never persist a booking without a chosen athlete, no
     // matter how this action is reached (the step-gate is not the only path).
     if (_selectedAthleteId == null) {
@@ -936,98 +1042,67 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         return;
       }
 
-      // OFFLINE DEMO (USE_MOCK_REPO): there is no Stripe backend — mark the
-      // booking paid + confirmed and drive the in-app success screens end to
-      // end (Getting Ready → Confirmed), instead of erroring on a live call.
-      if (_useMockRepo) {
-        if (!mounted) return;
-        final home = context.read<HomeProvider>();
-        await home.markBookingPaid(id);
-        if (_planProposalId != null && mounted) {
-          await context.read<AppRepository>().updateProposalStatus(
-            _planProposalId!,
-            'accepted',
+      final Uri successUrl;
+      final Uri cancelUrl;
+      if (kIsWeb) {
+        final origin = Uri.parse(Uri.base.origin);
+        successUrl = origin.replace(
+          fragment: '${AppRoutes.bookingFlow}?b=$id&status=success',
+        );
+        cancelUrl = origin.replace(
+          fragment: '${AppRoutes.bookingFlow}?b=$id&status=cancelled',
+        );
+      } else {
+        final base = Uri.tryParse(Env.checkoutReturnUrl);
+        if (base == null || base.scheme != 'https' || base.host.isEmpty) {
+          throw const RepositoryActionException(
+            'Mobile checkout return is not configured. No charge was started.',
           );
         }
-        if (!mounted) return;
-        setState(() {
-          _paymentStatus = 'paid';
-          _currentStep = 3;
-        });
-        await Future.delayed(const Duration(milliseconds: 1400));
-        if (!mounted) return;
-        setState(() => _currentStep = 4);
-        return;
-      }
-
-      // Distinct return destinations so a completed payment and an abandoned
-      // one are no longer indistinguishable (the old bug: both pointed at
-      // Uri.base.origin, dumping the user at the app root with no confirmation).
-      // Flutter web uses hash routing, so we return to a hash-route fragment the
-      // app can read on launch. Success carries the booking id + status=success
-      // (so the return handler can re-fetch paymentStatus and show Confirmed);
-      // cancel returns to the flow with status=cancelled.
-      final origin = Uri.base.origin;
-      final successUrl =
-          '$origin/#${AppRoutes.bookingFlow}?b=$id&status=success';
-      final cancelUrl = '$origin/#${AppRoutes.bookingFlow}?status=cancelled';
-
-      final res = await Supabase.instance.client.functions
-          .invoke(
-            'stripe-create-checkout',
-            body: {
-              'bookingId': id,
-              'idempotencyKey': 'chk_$id',
-              'successUrl': successUrl,
-              'cancelUrl': cancelUrl,
-            },
-          )
-          // Never let a slow/cold-starting edge function freeze the pay button
-          // forever — fail after 20s with a retry message instead of an
-          // infinite spinner (the classic "payment froze" complaint).
-          .timeout(const Duration(seconds: 20));
-      final data = (res.data as Map?) ?? {};
-      if (data['error'] != null) {
-        debugPrint('stripe-create-checkout ${data['error']}');
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(data['error'].toString()),
-            backgroundColor: AppColors.negative,
-          ),
+        successUrl = base.replace(
+          queryParameters: {
+            ...base.queryParameters,
+            'b': id,
+            'status': 'success',
+          },
         );
-        return;
-      }
-      final checkoutUrl = data['checkoutUrl'] as String?;
-      if (checkoutUrl != null && checkoutUrl.isNotEmpty) {
-        await launchUrl(Uri.parse(checkoutUrl), webOnlyWindowName: '_self');
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Could not start checkout. Please try again.'),
-            backgroundColor: AppColors.negative,
-          ),
+        cancelUrl = base.replace(
+          queryParameters: {
+            ...base.queryParameters,
+            'b': id,
+            'status': 'cancelled',
+          },
         );
       }
-    } on FunctionException catch (e) {
-      final d = e.details;
-      final msg = (d is Map && d['error'] != null)
-          ? d['error'].toString()
-          : 'Payment error (status ${e.status})';
-      debugPrint('FN stripe-create-checkout -> ${e.status} ${e.details}');
-      messenger.showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: AppColors.negative),
+
+      final checkoutUrl = await repository.createBookingCheckout(
+        bookingId: id,
+        successUrl: successUrl,
+        cancelUrl: cancelUrl,
       );
-    } on TimeoutException {
+      final launched = await launchUrl(
+        checkoutUrl,
+        mode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+        webOnlyWindowName: kIsWeb ? '_self' : null,
+      );
+      if (!launched) {
+        throw const RepositoryActionException(
+          'Stripe Checkout could not open. Please try again.',
+        );
+      }
+    } on RepositoryActionException catch (e) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Checkout is taking too long — please try again.'),
-          backgroundColor: AppColors.negative,
-        ),
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.negative),
       );
     } catch (e) {
-      debugPrint('FN stripe-create-checkout -> $e');
+      debugPrint('create booking checkout -> $e');
       messenger.showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: AppColors.negative),
+        const SnackBar(
+          content: Text('Payment could not be started. Please try again.'),
+          backgroundColor: AppColors.negative,
+        ),
       );
     } finally {
       if (mounted) setState(() => _checkoutLoading = false);
@@ -1677,89 +1752,91 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 // Shown at checkout so the parent knows the refund terms before
                 // paying (Airbnb model). Policy comes from the program's
                 // cancellationPolicy field ('flexible' | 'moderate' | 'strict').
-                Builder(builder: (_) {
-                  final policy = (_program?['cancellationPolicy'] as String? ??
-                          'flexible')
-                      .toLowerCase();
-                  final (label, lines) = switch (policy) {
-                    'strict' => (
+                Builder(
+                  builder: (_) {
+                    final policy =
+                        (_program?['cancellationPolicy'] as String? ??
+                                'flexible')
+                            .toLowerCase();
+                    final (label, lines) = switch (policy) {
+                      'strict' => (
                         'STRICT CANCELLATION',
                         [
                           '• Free cancellation ≥ 48 hours before the session',
                           '• 50% refund if cancelled < 48 hours before',
                           '• No refund if cancelled < 2 hours or no-show',
-                        ]
+                        ],
                       ),
-                    'moderate' => (
+                      'moderate' => (
                         'MODERATE CANCELLATION',
                         [
                           '• Free cancellation ≥ 24 hours before the session',
                           '• 50% refund if cancelled < 24 hours before',
                           '• No refund if cancelled < 2 hours or no-show',
-                        ]
+                        ],
                       ),
-                    _ => (
+                      _ => (
                         'FLEXIBLE CANCELLATION',
                         [
                           '• Free cancellation up to 4 hours before the session',
                           '• 50% refund if cancelled < 4 hours before',
                           '• No refund for no-shows',
-                        ]
+                        ],
                       ),
-                  };
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(AppRadii.card),
-                      border: Border.all(color: AppColors.hairline),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.policy_outlined,
-                              color: AppColors.slateText,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              label,
-                              style: AppTypography.font(
-                                color: AppColors.textTertiary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                    };
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppRadii.card),
+                        border: Border.all(color: AppColors.hairline),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.policy_outlined,
+                                color: AppColors.slateText,
+                                size: 18,
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        ...lines.map(
-                          (line) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              line,
-                              style: AppTypography.font(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                                height: 1.4,
+                              const SizedBox(width: 10),
+                              Text(
+                                label,
+                                style: AppTypography.font(
+                                  color: AppColors.textTertiary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ...lines.map(
+                            (line) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Text(
+                                line,
+                                style: AppTypography.font(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+                        ],
+                      ),
+                    );
+                  },
+                ),
 
                 const SizedBox(height: 24),
 
                 // Secured by Stripe pad banner
-
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -1794,6 +1871,46 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           ),
         ),
 
+        if (_paymentReturnState == _PaymentReturnState.cancelled)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.warningTint,
+              borderRadius: BorderRadius.circular(AppRadii.tile),
+              border: Border.all(color: AppColors.warning),
+            ),
+            child: Text(
+              'Checkout was cancelled. The booking is still unpaid and your slot is not confirmed.',
+              style: AppTypography.font(
+                color: AppColors.warning,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ),
+
+        if (_paymentReturnState == _PaymentReturnState.failed)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.negativeTint,
+              borderRadius: BorderRadius.circular(AppRadii.tile),
+              border: Border.all(color: AppColors.negative),
+            ),
+            child: Text(
+              'Stripe reported that the payment failed. The booking remains unpaid; you can try again.',
+              style: AppTypography.font(
+                color: AppColors.negative,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ),
+
         // Step 2 Footer button
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -1821,7 +1938,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   ),
                 ),
                 SporveButton(
-                  'Confirm & Pay ${_money(_total)}',
+                  '${_bookingSaved ? 'Complete payment' : 'Confirm & Pay'} ${_money(_total)}',
                   variant: SporveButtonVariant.primary,
                   color: _sportColor, // sport-context CTA carries sport color
                   icon: Icons.lock_outline,
@@ -1831,9 +1948,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   // on sign-in, resumes _handleConfirmAndPay exactly once.
                   onPressed: _checkoutLoading
                       ? null
-                      : () => context
-                          .read<AuthProvider>()
-                          .requireAuth(_handleConfirmAndPay),
+                      : () => context.read<AuthProvider>().requireAuth(
+                          _handleConfirmAndPay,
+                        ),
                 ),
               ],
             ),
@@ -1843,8 +1960,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     );
   }
 
-  // --- STEP 3: GETTING READY LOADER ---
+  // --- STEP 3: PAYMENT WEBHOOK WAIT / CHECK-BACK ---
   Widget _buildStep3GettingReady() {
+    final waiting = _paymentReturnState == _PaymentReturnState.processing;
     return Container(
       key: const ValueKey(3),
       width: double.infinity,
@@ -1853,19 +1971,26 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Circular progress ring spinner
-          const SizedBox(
-            height: 60,
-            width: 60,
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.slateText),
-              strokeWidth: 4.5,
+          if (waiting)
+            const SizedBox(
+              height: 60,
+              width: 60,
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.slateFg),
+                strokeWidth: 4.5,
+              ),
+            )
+          else
+            const Icon(
+              Icons.schedule_outlined,
+              color: AppColors.warning,
+              size: 60,
             ),
-          ),
           const SizedBox(height: 32),
 
           Text(
-            'GETTING YOU READY',
+            waiting ? 'Payment processing…' : 'Payment still processing',
+            textAlign: TextAlign.center,
             style: AppTypography.font(
               color: AppColors.textPrimary,
               fontSize: 24,
@@ -1876,36 +2001,37 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           const SizedBox(height: 8),
 
           Text(
-            'PERSONALIZING YOUR SESSION',
+            waiting
+                ? 'Waiting for Stripe to confirm the payment with Sporve.'
+                : 'Stripe has not confirmed this booking yet. It remains unconfirmed until the server records payment.',
+            textAlign: TextAlign.center,
             style: AppTypography.font(
-              color: AppColors.textTertiary,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              height: 1.5,
             ),
           ),
-          const SizedBox(height: 48),
-
-          // Coach message box card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.card),
-              border: Border.all(color: AppColors.hairline),
+          if (!waiting) ...[
+            const SizedBox(height: 32),
+            SporveButton(
+              'Check payment status',
+              onPressed: _realBookingId == null
+                  ? null
+                  : () {
+                      setState(() {
+                        _paymentReturnState = _PaymentReturnState.processing;
+                      });
+                      _pollPaymentStatus(_realBookingId!);
+                    },
+              loading: _checkingPayment,
             ),
-            child: Text(
-              '"Arrive 10 minutes early to warm up and prepare mentally."',
-              textAlign: TextAlign.center,
-              style: AppTypography.font(
-                color: AppColors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                height: 1.4,
-              ),
+            const SizedBox(height: 12),
+            SporveButton(
+              'Back to schedule',
+              variant: SporveButtonVariant.secondary,
+              onPressed: () => Get.offAllNamed(AppRoutes.mainNav),
             ),
-          ),
+          ],
         ],
       ),
     );

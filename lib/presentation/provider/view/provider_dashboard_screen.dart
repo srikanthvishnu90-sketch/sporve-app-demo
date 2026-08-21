@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/data/app_repository.dart';
+import '../../../core/config/env.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
@@ -29,6 +31,19 @@ class ProviderDashboardScreen extends StatefulWidget {
 }
 
 class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
+  Uri _connectReturnUri() {
+    if (kIsWeb) return Uri.parse(Uri.base.origin);
+    final configured = Uri.tryParse(Env.connectReturnUrl);
+    if (configured == null ||
+        configured.scheme != 'https' ||
+        configured.host.isEmpty) {
+      throw const RepositoryActionException(
+        'Mobile payout return is not configured. Stripe was not opened.',
+      );
+    }
+    return configured;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -60,12 +75,9 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
   /// onboarding URL is intentionally ignored — we are not redirecting here.
   Future<void> _refreshPayoutsFromStripe(ProviderController controller) async {
     try {
-      await Supabase.instance.client.functions.invoke(
-        'stripe-connect-onboarding',
-        body: {'returnUrl': Uri.base.origin},
+      await context.read<AppRepository>().createProviderConnectSession(
+        returnUrl: _connectReturnUri(),
       );
-    } on FunctionException catch (e) {
-      debugPrint('refresh payouts -> ${e.status} ${e.details}');
     } catch (e) {
       debugPrint('refresh payouts -> $e');
     }
@@ -99,18 +111,12 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
   /// returned onboarding URL — or reflects an already-active account.
   Future<void> _handleSetupPayouts(BuildContext context) async {
     final controller = context.read<ProviderController>();
+    final repository = context.read<AppRepository>();
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final res = await Supabase.instance.client.functions.invoke(
-        'stripe-connect-onboarding',
-        body: {'returnUrl': Uri.base.origin},
+      final data = await repository.createProviderConnectSession(
+        returnUrl: _connectReturnUri(),
       );
-      final data = (res.data as Map?) ?? {};
-      if (data['error'] != null) {
-        debugPrint('stripe-connect-onboarding ${data['error']}');
-        _payoutsSnack(messenger, data['error'].toString(), ok: false);
-        return;
-      }
       final onboardingUrl = data['onboardingUrl'] as String?;
       final chargesEnabled = data['chargesEnabled'] == true;
       if (onboardingUrl != null && onboardingUrl.isNotEmpty) {
@@ -120,6 +126,9 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
         // instead of silently doing nothing if the launch is blocked.
         final launched = await launchUrl(
           Uri.parse(onboardingUrl),
+          mode: kIsWeb
+              ? LaunchMode.platformDefault
+              : LaunchMode.externalApplication,
           webOnlyWindowName: '_blank',
         );
         if (!launched) {
@@ -140,16 +149,15 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
           ok: false,
         );
       }
-    } on FunctionException catch (e) {
-      final d = e.details;
-      final msg = (d is Map && d['error'] != null)
-          ? d['error'].toString()
-          : 'Payout setup error (status ${e.status})';
-      debugPrint('FN stripe-connect-onboarding -> ${e.status} ${e.details}');
-      _payoutsSnack(messenger, msg, ok: false);
+    } on RepositoryActionException catch (e) {
+      _payoutsSnack(messenger, e.message, ok: false);
     } catch (e) {
-      debugPrint('FN stripe-connect-onboarding -> $e');
-      _payoutsSnack(messenger, '$e', ok: false);
+      debugPrint('createProviderConnectSession -> $e');
+      _payoutsSnack(
+        messenger,
+        'Payout setup could not be started. Please try again.',
+        ok: false,
+      );
     }
   }
 
@@ -172,6 +180,7 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
     ProviderController controller,
   ) {
     final active = controller.stripeChargesEnabled;
+    final started = controller.stripeAccountId?.isNotEmpty == true;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 24),
@@ -215,7 +224,9 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
             )
           else ...[
             Text(
-              'Connect a Stripe account to receive payouts from your bookings.',
+              started
+                  ? 'Your Stripe account exists, but payout setup is not complete.'
+                  : 'Connect a Stripe account to receive payouts from your bookings.',
               style: AppTypography.font(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -224,7 +235,7 @@ class _ProviderDashboardScreenState extends State<ProviderDashboardScreen> {
             ),
             const SizedBox(height: 16),
             SporveButton(
-              'Set up payouts',
+              started ? 'Finish payout setup' : 'Set up payouts',
               onPressed: () => _handleSetupPayouts(context),
               variant: SporveButtonVariant.primary,
             ),

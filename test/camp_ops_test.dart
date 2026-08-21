@@ -9,7 +9,7 @@
 //   • camp_price_due math: early-bird + deposit → due-now/balance, cents-exact.
 //   flutter test test/camp_ops_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
 
 void main() {
   const repo = MockRepository();

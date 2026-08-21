@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/utils/platform_fee.dart';
+import 'package:sporve_app/core/utils/platform_fee.dart';
 
 void main() {
   group('subscription-funded current policy', () {

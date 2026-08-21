@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../../core/routes/app_routes.dart';
@@ -31,6 +31,14 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
 
   String _selectedInitialTeamId = 'unassigned';
   String _searchQuery = '';
+
+  bool _isPersistedRosterId(String value) {
+    final id = value.trim();
+    final parsed = Uri.tryParse(id);
+    return id.length > 5 &&
+        !id.startsWith('temp_') &&
+        !(parsed?.hasScheme ?? false);
+  }
 
   @override
   void initState() {
@@ -67,7 +75,11 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
           ),
           child: Row(
             children: [
-              Skeleton(width: 44, height: 44, radius: BorderRadius.circular(22)),
+              Skeleton(
+                width: 44,
+                height: 44,
+                radius: BorderRadius.circular(22),
+              ),
               const SizedBox(width: 16),
               const Expanded(
                 child: Column(
@@ -211,12 +223,16 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                               final sourceTeamId = athlete['teamId'].toString();
                               final targetTeamId = team.id;
                               final pc = context.read<ProviderController>();
-                              
+
                               bool success = false;
-                              if (!athleteId.startsWith('temp_') && !athleteId.contains('images.unsplash.com') && athleteId.length > 5) {
-                                success = await pc.moveRosterAthlete(athleteId, sourceTeamId, targetTeamId);
+                              if (_isPersistedRosterId(athleteId)) {
+                                success = await pc.moveRosterAthlete(
+                                  athleteId,
+                                  sourceTeamId,
+                                  targetTeamId,
+                                );
                               }
-                              
+
                               if (success) {
                                 Get.snackbar(
                                   'Moved Player',
@@ -240,10 +256,17 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                           },
                           borderRadius: BorderRadius.circular(AppRadii.tile),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                             decoration: BoxDecoration(
-                              color: isCurrent ? AppColors.surface2 : Colors.transparent,
-                              borderRadius: BorderRadius.circular(AppRadii.tile),
+                              color: isCurrent
+                                  ? AppColors.surface2
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.tile,
+                              ),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -251,13 +274,21 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                                 Text(
                                   team.name,
                                   style: AppTypography.font(
-                                    color: isCurrent ? AppColors.textPrimary : AppColors.textSecondary,
+                                    color: isCurrent
+                                        ? AppColors.textPrimary
+                                        : AppColors.textSecondary,
                                     fontSize: 13,
-                                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                    fontWeight: isCurrent
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                   ),
                                 ),
                                 if (isCurrent)
-                                  const Icon(Icons.check_circle, color: AppColors.slateText, size: 16),
+                                  const Icon(
+                                    Icons.check_circle,
+                                    color: AppColors.slateText,
+                                    size: 16,
+                                  ),
                               ],
                             ),
                           ),
@@ -336,11 +367,18 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    const Icon(Icons.search, color: AppColors.textTertiary, size: 20),
+                    const Icon(
+                      Icons.search,
+                      color: AppColors.textTertiary,
+                      size: 20,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextField(
-                        style: AppTypography.font(color: AppColors.textPrimary, fontSize: 14),
+                        style: AppTypography.font(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                        ),
                         cursorColor: AppColors.slateText,
                         onChanged: (val) {
                           setState(() {
@@ -349,7 +387,10 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                         },
                         decoration: InputDecoration(
                           hintText: 'Search athlete...',
-                          hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 14),
+                          hintStyle: AppTypography.font(
+                            color: AppColors.textTertiary,
+                            fontSize: 14,
+                          ),
                           border: InputBorder.none,
                         ),
                       ),
@@ -442,14 +483,23 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                           border: Border.all(color: AppColors.hairline),
                           borderRadius: BorderRadius.circular(AppRadii.tile),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
                         child: TextField(
                           controller: _broadcastController,
                           maxLines: 4,
-                          style: AppTypography.font(color: AppColors.textPrimary, fontSize: 13),
+                          style: AppTypography.font(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                          ),
                           decoration: InputDecoration(
                             hintText: 'Type your announcement...',
-                            hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 13),
+                            hintStyle: AppTypography.font(
+                              color: AppColors.textTertiary,
+                              fontSize: 13,
+                            ),
                             border: InputBorder.none,
                           ),
                         ),
@@ -526,7 +576,11 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      _buildTextField(label: 'Team Name', hint: 'e.g. Apex U18', controller: _teamNameController),
+                      _buildTextField(
+                        label: 'Team Name',
+                        hint: 'e.g. Apex U18',
+                        controller: _teamNameController,
+                      ),
                       const SizedBox(height: 20),
                       Row(
                         children: [
@@ -549,10 +603,16 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                               'Create team',
                               variant: SporveButtonVariant.primary,
                               onPressed: () async {
-                                if (_teamNameController.text.trim().isNotEmpty) {
-                                  final teamName = _teamNameController.text.trim();
+                                if (_teamNameController.text
+                                    .trim()
+                                    .isNotEmpty) {
+                                  final teamName = _teamNameController.text
+                                      .trim();
                                   final pc = context.read<ProviderController>();
-                                  final success = await pc.createRosterTeam(teamName, 'Soccer');
+                                  final success = await pc.createRosterTeam(
+                                    teamName,
+                                    'Soccer',
+                                  );
                                   if (success) {
                                     setState(() {
                                       _showCreateTeamForm = false;
@@ -565,9 +625,12 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                                       colorText: AppColors.textPrimary,
                                     );
                                   } else {
-                                    final newId = 'team_${DateTime.now().millisecondsSinceEpoch}';
+                                    final newId =
+                                        'team_${DateTime.now().millisecondsSinceEpoch}';
                                     setState(() {
-                                      _teams.add(CoachTeam(id: newId, name: teamName));
+                                      _teams.add(
+                                        CoachTeam(id: newId, name: teamName),
+                                      );
                                       _showCreateTeamForm = false;
                                       _teamNameController.clear();
                                     });
@@ -612,11 +675,23 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      _buildTextField(label: 'Full name', hint: 'Alex Burton', controller: _nameController),
+                      _buildTextField(
+                        label: 'Full name',
+                        hint: 'Alex Burton',
+                        controller: _nameController,
+                      ),
                       const SizedBox(height: 16),
-                      _buildTextField(label: 'Email', hint: 'athlete@example.com', controller: _emailController),
+                      _buildTextField(
+                        label: 'Email',
+                        hint: 'athlete@example.com',
+                        controller: _emailController,
+                      ),
                       const SizedBox(height: 16),
-                      _buildTextField(label: 'Phone', hint: '(555) 000-0000', controller: _phoneController),
+                      _buildTextField(
+                        label: 'Phone',
+                        hint: '(555) 000-0000',
+                        controller: _phoneController,
+                      ),
                       const SizedBox(height: 16),
                       _buildTeamDropdown(),
                       const SizedBox(height: 20),
@@ -643,10 +718,12 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                               'Add athlete',
                               variant: SporveButtonVariant.primary,
                               onPressed: () {
-                                if (_nameController.text.trim().isNotEmpty && _emailController.text.trim().isNotEmpty) {
+                                if (_nameController.text.trim().isNotEmpty &&
+                                    _emailController.text.trim().isNotEmpty) {
                                   setState(() {
                                     _athletes.add({
-                                      'id': DateTime.now().millisecondsSinceEpoch,
+                                      'id':
+                                          DateTime.now().millisecondsSinceEpoch,
                                       'name': _nameController.text.trim(),
                                       'email': _emailController.text.trim(),
                                       'jersey': '',
@@ -682,7 +759,10 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
                   child: Center(
                     child: Text(
                       'No athletes on your roster yet.',
-                      style: AppTypography.font(color: AppColors.textSecondary, fontSize: 13),
+                      style: AppTypography.font(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ),
@@ -690,263 +770,318 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
               // Collapsible Accordion Sections per Team (only once real data is in).
               if (pc.rosterLoaded && activeAthletes.isNotEmpty)
                 ...activeTeams.map((team) {
-                final teamPlayers = activeAthletes.where((a) {
-                  final matchesTeam = a['teamId'] == team.id;
-                  if (_searchQuery.isEmpty) return matchesTeam;
-                  final matchesSearch = a['name'].toString().toLowerCase().contains(_searchQuery) ||
-                      a['email'].toString().toLowerCase().contains(_searchQuery);
-                  return matchesTeam && matchesSearch;
-                }).toList();
+                  final teamPlayers = activeAthletes.where((a) {
+                    final matchesTeam = a['teamId'] == team.id;
+                    if (_searchQuery.isEmpty) return matchesTeam;
+                    final matchesSearch =
+                        a['name'].toString().toLowerCase().contains(
+                          _searchQuery,
+                        ) ||
+                        a['email'].toString().toLowerCase().contains(
+                          _searchQuery,
+                        );
+                    return matchesTeam && matchesSearch;
+                  }).toList();
 
-                if (teamPlayers.isEmpty && _searchQuery.isNotEmpty) {
-                  return const SizedBox.shrink();
-                }
+                  if (teamPlayers.isEmpty && _searchQuery.isNotEmpty) {
+                    return const SizedBox.shrink();
+                  }
 
-                final bool isExpanded = _teamExpanded[team.id] ?? true;
+                  final bool isExpanded = _teamExpanded[team.id] ?? true;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Team Section Header
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _teamExpanded[team.id] = !isExpanded;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
-                              color: AppColors.textSecondary,
-                              size: 22,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              team.name.toUpperCase(),
-                              style: AppTypography.font(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Team Section Header
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _teamExpanded[team.id] = !isExpanded;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isExpanded
+                                    ? Icons.keyboard_arrow_down
+                                    : Icons.keyboard_arrow_right,
+                                color: AppColors.textSecondary,
+                                size: 22,
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '${teamPlayers.length}',
+                              const SizedBox(width: 8),
+                              Text(
+                                team.name.toUpperCase(),
                                 style: AppTypography.font(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 11,
+                                  color: Colors.white,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${teamPlayers.length}',
+                                  style: AppTypography.font(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    
-                    // Players List under this team
-                    if (isExpanded) ...[
-                      if (teamPlayers.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 30, bottom: 20, top: 4),
-                          child: Text(
-                            'No players in this team yet.',
-                            style: AppTypography.font(color: AppColors.textTertiary, fontSize: 12),
-                          ),
-                        )
-                      else
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: teamPlayers.length,
-                          itemBuilder: (context, index) {
-                            final athlete = teamPlayers[index];
 
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 16),
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
+                      // Players List under this team
+                      if (isExpanded) ...[
+                        if (teamPlayers.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              left: 30,
+                              bottom: 20,
+                              top: 4,
+                            ),
+                            child: Text(
+                              'No players in this team yet.',
+                              style: AppTypography.font(
+                                color: AppColors.textTertiary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          )
+                        else
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: teamPlayers.length,
+                            itemBuilder: (context, index) {
+                              final athlete = teamPlayers[index];
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
                                   color: AppColors.surface,
-                                  borderRadius: BorderRadius.circular(AppRadii.card),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.card,
+                                  ),
                                   border: Border.all(color: AppColors.hairline),
                                 ),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      // Avatar stack with jersey number
-                                      Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          Container(
-                                            height: 48,
-                                            width: 48,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              border: Border.all(color: AppColors.hairline, width: 1.5),
-                                            ),
-                                            child: SporveImage(
-                                              athlete['imageUrl'],
-                                              width: 48,
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        // Avatar stack with jersey number
+                                        Stack(
+                                          clipBehavior: Clip.none,
+                                          children: [
+                                            Container(
                                               height: 48,
-                                              fit: BoxFit.cover,
-                                              radius: 24,
-                                            ),
-                                          ),
-                                          if ((athlete['jersey'] ?? '')
-                                              .toString()
-                                              .isNotEmpty)
-                                            Positioned(
-                                              bottom: -2,
-                                              right: -4,
-                                              child: Container(
-                                                padding: const EdgeInsets.all(3),
-                                                decoration: const BoxDecoration(
-                                                  color: Colors.white,
-                                                  shape: BoxShape.circle,
+                                              width: 48,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: AppColors.hairline,
+                                                  width: 1.5,
                                                 ),
-                                                child: Text(
-                                                  athlete['jersey'].toString(),
-                                                  style: AppTypography.font(
-                                                    color: Colors.black,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
+                                              ),
+                                              child: SporveImage(
+                                                athlete['imageUrl'],
+                                                width: 48,
+                                                height: 48,
+                                                fit: BoxFit.cover,
+                                                radius: 24,
+                                              ),
+                                            ),
+                                            if ((athlete['jersey'] ?? '')
+                                                .toString()
+                                                .isNotEmpty)
+                                              Positioned(
+                                                bottom: -2,
+                                                right: -4,
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    3,
+                                                  ),
+                                                  decoration:
+                                                      const BoxDecoration(
+                                                        color: Colors.white,
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                  child: Text(
+                                                    athlete['jersey']
+                                                        .toString(),
+                                                    style: AppTypography.font(
+                                                      color: Colors.black,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(width: 16),
-                                      // Details
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          ],
+                                        ),
+                                        const SizedBox(width: 16),
+                                        // Details
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                athlete['name'],
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppTypography.font(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                athlete['email'],
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppTypography.font(
+                                                  color: AppColors.textTertiary,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        // Status Chips
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
                                           children: [
-                                            Text(
-                                              athlete['name'],
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: AppTypography.font(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                              ),
+                                            _buildStatusChip(
+                                              text: athlete['isAvailable']
+                                                  ? 'Available'
+                                                  : 'Away',
+                                              color: athlete['isAvailable']
+                                                  ? AppColors.successGreen
+                                                  : AppColors.negative,
                                             ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              athlete['email'],
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: AppTypography.font(
-                                                color: AppColors.textTertiary,
-                                                fontSize: 11,
-                                              ),
+                                            const SizedBox(height: 4),
+                                            _buildStatusChip(
+                                              text: athlete['isPaid']
+                                                  ? 'Paid'
+                                                  : 'Unpaid',
+                                              color: athlete['isPaid']
+                                                  ? AppColors.successGreen
+                                                  : AppColors.warmAccent,
+                                              isFilled: athlete['isPaid'],
                                             ),
                                           ],
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      // Status Chips
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        children: [
-                                          _buildStatusChip(
-                                            text: athlete['isAvailable'] ? 'Available' : 'Away',
-                                            color: athlete['isAvailable'] ? AppColors.successGreen : AppColors.negative,
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Action buttons row
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: SporveButton(
+                                            'Message',
+                                            onPressed: () => Get.toNamed(
+                                              AppRoutes.chatDetails,
+                                              arguments: athlete['name'],
+                                            ),
+                                            variant:
+                                                SporveButtonVariant.secondary,
+                                            onDark: true,
+                                            size: SporveButtonSize.compact,
+                                            icon: Icons.chat_bubble_outline,
                                           ),
-                                          const SizedBox(height: 4),
-                                          _buildStatusChip(
-                                            text: athlete['isPaid'] ? 'Paid' : 'Unpaid',
-                                            color: athlete['isPaid'] ? AppColors.successGreen : AppColors.warmAccent,
-                                            isFilled: athlete['isPaid'],
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: SporveButton(
+                                            'History',
+                                            onPressed: () => _showSessionsPopup(
+                                              athlete['name'],
+                                            ),
+                                            variant:
+                                                SporveButtonVariant.secondary,
+                                            onDark: true,
+                                            size: SporveButtonSize.compact,
+                                            icon: Icons.history,
                                           ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  // Action buttons row
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: SporveButton(
-                                          'Message',
-                                          onPressed: () => Get.toNamed(AppRoutes.chatDetails, arguments: athlete['name']),
-                                          variant: SporveButtonVariant.secondary,
-                                          onDark: true,
-                                          size: SporveButtonSize.compact,
-                                          icon: Icons.chat_bubble_outline,
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: SporveButton(
-                                          'History',
-                                          onPressed: () => _showSessionsPopup(athlete['name']),
-                                          variant: SporveButtonVariant.secondary,
-                                          onDark: true,
-                                          size: SporveButtonSize.compact,
-                                          icon: Icons.history,
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: SporveButton(
+                                            'Move',
+                                            onPressed: () =>
+                                                _showMoveAthleteDialog(athlete),
+                                            variant:
+                                                SporveButtonVariant.secondary,
+                                            onDark: true,
+                                            size: SporveButtonSize.compact,
+                                            icon: Icons.swap_horiz,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: SporveButton(
-                                          'Move',
-                                          onPressed: () => _showMoveAthleteDialog(athlete),
-                                          variant: SporveButtonVariant.secondary,
-                                          onDark: true,
-                                          size: SporveButtonSize.compact,
-                                          icon: Icons.swap_horiz,
+                                        const SizedBox(width: 8),
+                                        SporveIconButton(
+                                          Icons.close,
+                                          color: AppColors.negative,
+                                          size: 44,
+                                          iconSize: 18,
+                                          onTap: () async {
+                                            final athleteId = athlete['id']
+                                                .toString();
+                                            final teamId = athlete['teamId']
+                                                .toString();
+                                            final pc = context
+                                                .read<ProviderController>();
+                                            bool success = false;
+                                            if (_isPersistedRosterId(
+                                              athleteId,
+                                            )) {
+                                              success = await pc
+                                                  .removeRosterAthlete(
+                                                    teamId,
+                                                    athleteId,
+                                                  );
+                                            }
+                                            if (!success) {
+                                              // Remove by identity from the local
+                                              // store (no-op if it isn't there) —
+                                              // never index into a different list.
+                                              setState(() {
+                                                _athletes.remove(athlete);
+                                              });
+                                            }
+                                          },
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      SporveIconButton(
-                                        Icons.close,
-                                        color: AppColors.negative,
-                                        size: 44,
-                                        iconSize: 18,
-                                        onTap: () async {
-                                          final athleteId = athlete['id'].toString();
-                                          final teamId = athlete['teamId'].toString();
-                                          final pc = context.read<ProviderController>();
-                                          bool success = false;
-                                          if (!athleteId.startsWith('temp_') && !athleteId.contains('images.unsplash.com') && athleteId.length > 5) {
-                                            success = await pc.removeRosterAthlete(teamId, athleteId);
-                                          }
-                                          if (!success) {
-                                            // Remove by identity from the local
-                                            // store (no-op if it isn't there) —
-                                            // never index into a different list.
-                                            setState(() {
-                                              _athletes.remove(athlete);
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                      const SizedBox(height: 12),
                     ],
-                    const SizedBox(height: 12),
-                  ],
-                );
-              }),
+                  );
+                }),
 
               const SizedBox(height: 40),
             ],
@@ -962,7 +1097,11 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
       children: [
         Text(
           'Assign Team',
-          style: AppTypography.font(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+          style: AppTypography.font(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 6),
         Container(
@@ -979,13 +1118,19 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
               dropdownColor: AppColors.surface2,
               value: _selectedInitialTeamId,
               isExpanded: true,
-              icon: const Icon(Icons.arrow_drop_down, color: AppColors.textSecondary),
+              icon: const Icon(
+                Icons.arrow_drop_down,
+                color: AppColors.textSecondary,
+              ),
               items: activeTeams.map((team) {
                 return DropdownMenuItem<String>(
                   value: team.id,
                   child: Text(
                     team.name,
-                    style: AppTypography.font(color: Colors.white, fontSize: 13),
+                    style: AppTypography.font(
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
                   ),
                 );
               }).toList(),
@@ -1013,7 +1158,11 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
       children: [
         Text(
           label,
-          style: AppTypography.font(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+          style: AppTypography.font(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 6),
         Container(
@@ -1029,7 +1178,10 @@ class _ProviderRosterScreenState extends State<ProviderRosterScreen> {
             style: AppTypography.font(color: Colors.white, fontSize: 13),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 13),
+              hintStyle: AppTypography.font(
+                color: AppColors.textTertiary,
+                fontSize: 13,
+              ),
               border: InputBorder.none,
             ),
           ),

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/models/subscription.dart';
+import 'package:sporve_app/core/models/subscription.dart';
 
 void main() {
   group('SubscriptionPlan', () {

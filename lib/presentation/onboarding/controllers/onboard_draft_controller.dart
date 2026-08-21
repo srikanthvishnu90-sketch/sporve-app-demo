@@ -1,11 +1,15 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/data/app_repository.dart';
 
 /// Holds the AI onboarding-intake inputs, calls the `provider-onboard-draft`
 /// Edge Function, and exposes the returned DRAFT for the review screen to
 /// pre-fill. Provider/ChangeNotifier only (no reactive GetX). Nothing here is
 /// saved or published — that happens only on the review screen's explicit Save.
 class OnboardDraftProvider extends ChangeNotifier {
+  final AppRepository _repository;
+
+  OnboardDraftProvider(this._repository);
+
   // ── Intake inputs (all optional) ──────────────────────────────────────────
   String pastedBio = '';
   String transcript = '';
@@ -61,12 +65,7 @@ class OnboardDraftProvider extends ChangeNotifier {
         body['imageBase64'] = imageBase64;
         if (imageMediaType != null) body['imageMediaType'] = imageMediaType;
       }
-      // Slug must match the deployed function name (lowercase, hyphen).
-      final res = await Supabase.instance.client.functions.invoke(
-        'provider-onboard-draft',
-        body: body,
-      );
-      final data = (res.data as Map?) ?? {};
+      final data = await _repository.generateProviderOnboardDraft(body);
       if (data['error'] != null) {
         _error = data['error'].toString();
         return false;
@@ -78,9 +77,8 @@ class OnboardDraftProvider extends ChangeNotifier {
       }
       _error = 'The draft service returned no draft. Please try again.';
       return false;
-    } on FunctionException catch (e) {
-      debugPrint('provider-onboard-draft -> ${e.status} ${e.details}');
-      _error = 'Could not generate a draft (status ${e.status}). You can fill it in manually.';
+    } on RepositoryActionException catch (e) {
+      _error = e.message;
       return false;
     } catch (e) {
       debugPrint('provider-onboard-draft -> $e');

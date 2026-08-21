@@ -10,7 +10,9 @@ dark gray values alone does not satisfy field usability.
 
 - Canvas: `AppColors.ink`
 - Surfaces: `surface`, `surface2`, `surface3`
-- Primary action and selection: `slate`
+- Primary action and selection: Persimmon `slate` (`#DA5A05`)
+- Structural text/icons: lifted `slateFg`, never the old low-contrast fill
+- Positive, warning, negative, and link roles use distinct semantic hues
 - Destructive actions only: `destructiveRed`
 - Verified trust evidence only: `trustGold`
 - Sport colors identify sport context, not generic decoration
@@ -20,8 +22,9 @@ Flutter tokens in `lib/core/theme/app_colors.dart` are authoritative.
 
 ## Typography
 
-Inter is the only product typeface. Use the scale in
-`lib/core/theme/app_typography.dart`. Body copy is at least 13 logical pixels;
+Oswald is the display family at 18px and above, Hanken Grotesk is the body
+family, and JetBrains Mono is reserved for prices, dates, counts, and other data.
+Use the scale in `lib/core/theme/app_typography.dart`. Body copy is at least 13 logical pixels;
 interactive labels remain readable under text scaling. Reserve compact labels
 for metadata, not instructions or essential status.
 

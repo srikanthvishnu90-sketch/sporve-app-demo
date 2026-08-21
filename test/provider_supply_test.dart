@@ -7,8 +7,8 @@
 //   • Whole-day exceptions and vacation subtract from the multiplication.
 //   flutter test test/provider_supply_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
 
 void main() {
   const AppRepository repo = MockRepository();

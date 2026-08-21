@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,9 +13,10 @@ import '../../widgets/sport_glyph.dart';
 import '../../widgets/sporve_button.dart';
 import '../controllers/home_controller.dart';
 import '../../../core/utils/session_time.dart';
+import '../../../core/utils/booking_tier.dart';
 
 class AthleteSession {
-  final DateTime date;
+  final DateTime? date;
   final String emoji;
   final String time;
   final String location;
@@ -24,6 +25,9 @@ class AthleteSession {
   final String? tip;
   final String? id; // booking _id (identity for rating/reviewed state)
   final Map<String, dynamic>? program; // resolved program (address/coords/etc.)
+  final Map<String, dynamic>?
+  booking; // immutable payment/policy snapshot facts
+  final String? tierLabel; // historical only; new bookings never select a tier
 
   const AthleteSession({
     required this.date,
@@ -35,7 +39,18 @@ class AthleteSession {
     this.tip,
     this.id,
     this.program,
+    this.booking,
+    this.tierLabel,
   });
+}
+
+int _compareSessionDatesDescending(AthleteSession a, AthleteSession b) {
+  final left = a.date;
+  final right = b.date;
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return right.compareTo(left);
 }
 
 class ScheduleScreen extends StatefulWidget {
@@ -226,7 +241,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             .where(isCancelled)
             .map((booking) => _mapBookingToSession(booking, homeProvider))
             .toList()
-          ..sort((a, b) => b.date.compareTo(a.date));
+          ..sort(_compareSessionDatesDescending);
 
     // Merge with static sessions for demo or use only dynamic
     final allSessions = [..._athleteSessions, ...dynamicSessions];
@@ -235,15 +250,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
     // Past sessions for the Archive & Rebook section (real data, newest first).
     final pastSessions =
-        allSessions.where((s) => s.date.isBefore(DateTime.now())).toList()
-          ..sort((a, b) => b.date.compareTo(a.date));
+        allSessions
+            .where((s) => s.date?.isBefore(DateTime.now()) ?? false)
+            .toList()
+          ..sort(_compareSessionDatesDescending);
 
     final daySessions = allSessions
         .where(
           (s) =>
-              s.date.year == _selectedDate.year &&
-              s.date.month == _selectedDate.month &&
-              s.date.day == _selectedDate.day,
+              s.date?.year == _selectedDate.year &&
+              s.date?.month == _selectedDate.month &&
+              s.date?.day == _selectedDate.day,
         )
         .toList();
 
@@ -378,7 +395,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                       emoji: session.emoji,
                                       title: session.title,
                                       subtext:
-                                          '${_pastLabel(session.date)} • ${session.subtitle.toUpperCase()}',
+                                          '${_pastLabel(session.date!)} • ${session.subtitle.toUpperCase()}'
+                                          '${session.tierLabel == null ? '' : ' • ${session.tierLabel!.toUpperCase()}'}',
                                       footer: _pastFooter(session),
                                     ),
                                   ),
@@ -414,7 +432,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                     emoji: session.emoji,
                                     title: session.title,
                                     subtext:
-                                        'CANCELLED • ${session.subtitle.toUpperCase()}',
+                                        'CANCELLED • ${session.subtitle.toUpperCase()}'
+                                        '${session.tierLabel == null ? '' : ' • ${session.tierLabel!.toUpperCase()}'}',
                                     footer: _cancelledFooter(session),
                                   ),
                                 ),
@@ -494,6 +513,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           : 'COACH',
       id: booking['_id']?.toString(),
       program: program != null ? Map<String, dynamic>.from(program) : null,
+      booking: Map<String, dynamic>.from(booking),
+      tierLabel: historicalBookingTierLabel(booking),
     );
   }
 
@@ -514,9 +535,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   // (first match); falls back to slate when the sport is unmapped/none.
   Color _sportDotColor(DateTime date) {
     for (final s in _allSessions) {
-      if (s.date.year == date.year &&
-          s.date.month == date.month &&
-          s.date.day == date.day) {
+      if (s.date?.year == date.year &&
+          s.date?.month == date.month &&
+          s.date?.day == date.day) {
         return SportColors.of(s.program?['sportType']?.toString() ?? s.emoji);
       }
     }
@@ -625,9 +646,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
               final hasSessions = _allSessions.any(
                 (s) =>
-                    s.date.year == cellDate.year &&
-                    s.date.month == cellDate.month &&
-                    s.date.day == cellDate.day,
+                    s.date?.year == cellDate.year &&
+                    s.date?.month == cellDate.month &&
+                    s.date?.day == cellDate.day,
               );
 
               return GestureDetector(
@@ -730,9 +751,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
               final hasSessions = _allSessions.any(
                 (s) =>
-                    s.date.year == date.year &&
-                    s.date.month == date.month &&
-                    s.date.day == date.day,
+                    s.date?.year == date.year &&
+                    s.date?.month == date.month &&
+                    s.date?.day == date.day,
               );
 
               return Expanded(
@@ -942,6 +963,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               letterSpacing: 1.0,
             ),
           ),
+          if (session.tierLabel case final tierLabel?) ...[
+            const SizedBox(height: 8),
+            OutlinePill(tierLabel, color: AppColors.warning),
+          ],
 
           // Optional Coach Tip Box (coach = social/relationship → blue)
           if (tip != null) ...[
@@ -1032,7 +1057,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           // "Report no-show" — only visible after the session start time has
           // passed, giving the parent a guaranteed-refund path if the coach
           // didn't appear.
-          if (session.date.isBefore(DateTime.now())) ...[
+          if (session.date?.isBefore(DateTime.now()) ?? false) ...[
             const SizedBox(height: 4),
             Center(
               child: _cardTextAction(
@@ -1121,58 +1146,42 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _confirmCancel(AthleteSession session) async {
-    final policy =
-        (session.program?['cancellationPolicy'] as String? ?? 'flexible')
-            .toLowerCase();
-    final now = DateTime.now();
-    final hoursLeft = session.date.difference(now).inHours;
-
-    String refundEstimate;
-    if (policy == 'strict') {
-      if (hoursLeft >= 48) {
-        refundEstimate = 'Full refund (100%)';
-      } else if (hoursLeft >= 2) {
-        refundEstimate = 'Partial refund (50%)';
-      } else {
-        refundEstimate = 'No refund (< 2 hours before start)';
-      }
-    } else if (policy == 'moderate') {
-      if (hoursLeft >= 24) {
-        refundEstimate = 'Full refund (100%)';
-      } else if (hoursLeft >= 2) {
-        refundEstimate = 'Partial refund (50%)';
-      } else {
-        refundEstimate = 'No refund (< 2 hours before start)';
-      }
-    } else {
-      // flexible
-      if (hoursLeft >= 4) {
-        refundEstimate = 'Full refund (100%)';
-      } else if (hoursLeft >= 0) {
-        refundEstimate = 'Partial refund (50%)';
-      } else {
-        refundEstimate = 'No refund (session already started)';
-      }
-    }
+    final snapshot = session.booking?['cancellationPolicySnapshot'];
+    final snapshotLabel = snapshot is Map
+        ? (snapshot['label'] ?? snapshot['policy'] ?? snapshot['name'])
+              ?.toString()
+        : snapshot?.toString();
 
     final ok = await _confirmSheet(
       'Cancel session?',
       'This cancels "${session.title}".\n\n'
-          '• Cancellation policy: ${policy.toUpperCase()}\n'
-          '• Estimated refund: $refundEstimate\n\n'
-          'You can book again anytime.',
+          '${snapshotLabel == null || snapshotLabel.isEmpty ? 'The server will calculate any refund from the policy captured when you booked.' : 'Captured policy: $snapshotLabel'}\n\n'
+          'The amount and payment status are not changed until the server and Stripe confirm them.',
       'Cancel session',
       AppColors.destructiveRed,
     );
     if (!ok || !mounted) return;
     final home = context.read<HomeProvider>();
-    final done = session.id != null && await home.cancelBooking(session.id!);
+    final result = session.id == null
+        ? const <String, dynamic>{
+            'success': false,
+            'error': 'This booking has no server identifier.',
+          }
+        : await home.requestBookingCancellation(session.id!);
     if (!mounted) return;
+    final done = result['success'] == true;
+    final refunded = result['refundedAmount'] as num?;
+    final outcome =
+        result['message']?.toString() ??
+        (refunded == null
+            ? 'Cancellation processed. Refresh to see the recorded refund state.'
+            : 'Recorded refund: \$${refunded.toStringAsFixed(2)}.');
     Get.snackbar(
-      done ? 'Cancelled' : 'Error',
+      done ? 'Cancellation submitted' : 'Cancellation failed',
       done
-          ? 'Your session was cancelled. Refund status: $refundEstimate'
-          : 'Could not cancel right now. Please try again.',
+          ? outcome
+          : (result['error']?.toString() ??
+                'Could not cancel right now. Please try again.'),
       snackPosition: SnackPosition.TOP,
       backgroundColor: AppColors.surface2,
       colorText: AppColors.textPrimary,
@@ -1180,25 +1189,34 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   /// Parent-side no-show report — shown after the session start time has
-  /// passed and no completion was recorded. Guaranteed refund promise.
+  /// passed and no completion was recorded. Stripe/server decide the refund.
   Future<void> _reportNoShow(AthleteSession session) async {
     final ok = await _confirmSheet(
       'Report coach no-show?',
-      'If your coach did not show up, we\'ll process a full refund automatically. '
-          'Your report will be reviewed and the coach will be notified.',
+      'Your report will be reviewed and the server will evaluate the booking\'s captured refund policy. The coach will be notified.',
       'Report no-show',
       AppColors.destructiveRed,
     );
     if (!ok || !mounted) return;
-    // Cancel the booking (triggers refund path on the backend).
     final home = context.read<HomeProvider>();
-    final done = session.id != null && await home.cancelBooking(session.id!);
+    final result = session.id == null
+        ? const <String, dynamic>{
+            'success': false,
+            'error': 'This booking has no server identifier.',
+          }
+        : await home.requestBookingCancellation(
+            session.id!,
+            reason: 'coach_no_show',
+          );
     if (!mounted) return;
+    final done = result['success'] == true;
     Get.snackbar(
       done ? 'Report submitted' : 'Error',
       done
-          ? 'We received your report. A full refund will be issued within 3–5 business days.'
-          : 'Could not submit right now. Please contact support.',
+          ? (result['message']?.toString() ??
+                'We received your report. Refresh to see the recorded refund state.')
+          : (result['error']?.toString() ??
+                'Could not submit right now. Please contact support.'),
       snackPosition: SnackPosition.TOP,
       backgroundColor: AppColors.surface2,
       colorText: AppColors.textPrimary,
@@ -1260,32 +1278,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             const SizedBox(height: 24),
             // Option 1: Cancel and pick a new time
             GestureDetector(
-              onTap: () {
-                Navigator.of(ctx).pop();
-                // Cancel the existing booking, then open booking flow for
-                // the same program with fresh date/time selection.
-                if (session.id != null) {
-                  context.read<HomeProvider>().cancelBooking(session.id!);
-                }
-                final program = session.program;
-                if (program != null) {
-                  final provider = program['providerId'];
-                  final business = provider is Map
-                      ? (provider['businessName']?.toString() ?? 'Academy')
-                      : 'Academy';
-                  Get.toNamed(
-                    AppRoutes.bookingFlow,
-                    arguments: {
-                      'program': program,
-                      'title': program['title']?.toString() ??
-                          'Training Session',
-                      'coach': business,
-                      'tier': 'STANDARD',
-                      'price': program['price'] ?? 75,
-                    },
-                  );
-                }
-              },
+              onTap: () => _cancelAndRebook(session, ctx),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -1413,6 +1406,48 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  Future<void> _cancelAndRebook(
+    AthleteSession session,
+    BuildContext sheetContext,
+  ) async {
+    Navigator.of(sheetContext).pop();
+    final bookingId = session.id;
+    if (bookingId == null) return;
+    final result = await context
+        .read<HomeProvider>()
+        .requestBookingCancellation(
+          bookingId,
+          reason: 'Parent requested a new session time.',
+        );
+    if (!mounted) return;
+    if (result['success'] != true) {
+      Get.snackbar(
+        'Reschedule not started',
+        result['error']?.toString() ??
+            'The existing booking could not be cancelled. No new booking was created.',
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: AppColors.negativeTint,
+        colorText: AppColors.textPrimary,
+      );
+      return;
+    }
+
+    final program = session.program;
+    if (program == null) return;
+    final provider = program['providerId'];
+    final business = provider is Map
+        ? (provider['businessName']?.toString() ?? 'Academy')
+        : 'Academy';
+    Get.toNamed(
+      AppRoutes.bookingFlow,
+      arguments: {
+        'program': program,
+        'title': program['title']?.toString() ?? 'Training Session',
+        'coach': business,
+        'price': program['price'] ?? 75,
+      },
+    );
+  }
 
   // FIGMA REBOOK BANNER
   Widget _buildRebookBanner(AthleteSession recent) {
@@ -1687,7 +1722,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
 
     // "Same time next week": add 7 days to the original session date.
-    final nextDate = recent.date.add(const Duration(days: 7));
+    final nextDate = recent.date?.add(const Duration(days: 7));
 
     final provider = program['providerId'];
     final business = provider is Map
@@ -1700,16 +1735,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         'program': program,
         'title': program['title']?.toString() ?? 'Training Session',
         'coach': business,
-        'tier': 'STANDARD',
         'price': program['price'] ?? 75,
         // Pre-fill calendar + time for "same time next week"
-        'prefillDate': nextDate,
+        'prefillDate': ?nextDate,
         'prefillTime': recent.time, // e.g. "10:30 AM"
       },
     );
   }
-
-
 
   // Rating sheet: 1–5 stars + optional note. On submit, marks the session
   // reviewed so the card flips to the "REVIEWED" block.

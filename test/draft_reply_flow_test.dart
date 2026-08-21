@@ -10,11 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-import 'package:flutter_structure/core/auth/auth_service.dart';
-import 'package:flutter_structure/core/auth/app_user.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/shared/controllers/chat_provider.dart';
-import 'package:flutter_structure/presentation/client/view/chat_details_screen.dart';
+import 'package:sporve_app/core/auth/auth_service.dart';
+import 'package:sporve_app/core/auth/app_user.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/shared/controllers/chat_provider.dart';
+import 'package:sporve_app/presentation/client/view/chat_details_screen.dart';
 
 /// Minimal in-memory repo — only the methods this flow touches are real; the
 /// rest fall through to noSuchMethod (never called here).

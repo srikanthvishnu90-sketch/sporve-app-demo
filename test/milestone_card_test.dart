@@ -4,7 +4,7 @@
 //   flutter test test/milestone_card_test.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/presentation/client/view/milestone_card.dart';
+import 'package:sporve_app/presentation/client/view/milestone_card.dart';
 
 void main() {
   testWidgets('MilestoneCard renders athlete, milestone and context', (

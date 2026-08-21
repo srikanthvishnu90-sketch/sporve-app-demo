@@ -4,7 +4,7 @@ class MockData {
   static final GetStorage _box = GetStorage();
 
   // Bump when the seed data shape/content changes so existing installs re-seed.
-  static const int _seedVersion = 3;
+  static const int _seedVersion = 5;
 
   static void init() {
     if (_box.read('mock_seed_version') != _seedVersion) {
@@ -18,7 +18,7 @@ class MockData {
         "role": "searcher",
         "phoneNumber": "+1 (555) 019-2834",
         "preferredSports": ["Soccer", "Tennis"],
-        "profileImage": "https://picsum.photos/seed/athlete-alex/150/150",
+        "profileImage": "",
       });
 
       _box.write('mock_provider_profile', {
@@ -30,6 +30,9 @@ class MockData {
         "sports": ["Soccer", "Tennis", "Basketball"],
         "location": "Miami, FL",
         "status": "approved",
+        "verificationStatus": "verified",
+        "backgroundCheckStatus": "verified",
+        "backgroundCheckCompletedAt": "2026-01-15T18:00:00.000Z",
         "onboardingCompleted": true,
         "stripeAccountId": "acct_mockstripe123",
       });
@@ -48,14 +51,14 @@ class MockData {
             "phone": "+1 (555) 019-2834",
             "relation": "Father",
           },
-          "profileImage": "https://picsum.photos/seed/coach-jordan/150/150",
+          "profileImage": "",
         },
       ]);
 
       _box.write('mock_programs', [
         {
           "_id": "prog_1",
-          "coverImage": "https://picsum.photos/seed/court-basketball/600/400",
+          "coverImage": "",
           "title": "Elite Soccer Academy - U12 Training",
           "description":
               "High-intensity technical training focusing on dribbling, passing, and match awareness.",
@@ -68,10 +71,7 @@ class MockData {
           "pricingModel": "single_session",
           "maxCapacity": 15,
           "enrolledCount": 8,
-          "gallery": [
-            "https://picsum.photos/seed/court-basketball/600/400",
-            "https://picsum.photos/seed/court-tennis/600/400",
-          ],
+          "gallery": <String>[],
           "whatsIncluded": [
             "Training Bibs",
             "Water Bottles",
@@ -100,11 +100,13 @@ class MockData {
             "businessName": "Apex Performance Club",
             "verificationStatus": "verified",
             "backgroundCheckStatus": "verified",
+            "status": "approved",
+            "backgroundCheckCompletedAt": "2026-01-15T18:00:00.000Z",
           },
         },
         {
           "_id": "prog_2",
-          "coverImage": "https://picsum.photos/seed/court-soccer/600/400",
+          "coverImage": "",
           "title": "Junior Tennis Clinic - All Levels",
           "description":
               "Learn basic and advanced tennis strokes, service, and court strategies from certified instructors.",
@@ -117,7 +119,7 @@ class MockData {
           "pricingModel": "monthly",
           "maxCapacity": 8,
           "enrolledCount": 5,
-          "gallery": ["https://picsum.photos/seed/court-soccer/600/400"],
+          "gallery": <String>[],
           "whatsIncluded": ["Tennis Balls", "Racquet rentals"],
           "location": {
             "type": "Point",
@@ -142,6 +144,8 @@ class MockData {
             "businessName": "Apex Performance Club",
             "verificationStatus": "verified",
             "backgroundCheckStatus": "verified",
+            "status": "approved",
+            "backgroundCheckCompletedAt": "2026-01-15T18:00:00.000Z",
           },
         },
         // Every business carries EXACTLY 5 published listings (uniform browse).
@@ -194,7 +198,7 @@ class MockData {
           "athleteId": {
             "_id": "athlete_1",
             "fullName": "Julian Mercer",
-            "profileImage": "https://picsum.photos/seed/coach-jordan/150/150",
+            "profileImage": "",
           },
           "providerId": "provider_123",
           "programId": {
@@ -287,7 +291,7 @@ class MockData {
               "fullName": "Julian Mercer",
               "email": "alex.mercer@gmail.com",
               "jerseyNumber": "10",
-              "avatar": "https://picsum.photos/seed/coach-jordan/150/150",
+              "avatar": "",
               "isAvailable": true,
               "isPaid": true,
             },
@@ -342,7 +346,7 @@ class MockData {
     int enrolled,
   ) => {
     "_id": id,
-    "coverImage": "https://picsum.photos/seed/$id/600/400",
+    "coverImage": "",
     "title": title,
     "description": desc,
     "sportType": sport,
@@ -354,7 +358,7 @@ class MockData {
     "pricingModel": model,
     "maxCapacity": cap,
     "enrolledCount": enrolled,
-    "gallery": ["https://picsum.photos/seed/$id/600/400"],
+    "gallery": <String>[],
     "whatsIncluded": const [
       "Equipment provided",
       "Professional coaching",
@@ -383,6 +387,8 @@ class MockData {
       "businessName": biz,
       "verificationStatus": verified ? "verified" : "pending",
       "backgroundCheckStatus": verified ? "verified" : "pending",
+      "status": verified ? "approved" : "pending",
+      if (verified) "backgroundCheckCompletedAt": "2026-01-15T18:00:00.000Z",
     },
   };
 

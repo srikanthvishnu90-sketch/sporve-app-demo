@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -77,14 +77,29 @@ class ProviderActivationScreen extends StatelessWidget {
                   Container(
                     height: 140,
                     width: double.infinity,
-                    decoration: BoxDecoration(
-                      image: DecorationImage(
-                        image: provider.coverPhotoPath != null && provider.coverPhotoPath!.isNotEmpty
-                            ? _localImageProvider(provider.coverPhotoPath!)
-                            : const NetworkImage('https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800'),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                    color: AppColors.surface2,
+                    child:
+                        provider.coverPhotoPath != null &&
+                            provider.coverPhotoPath!.isNotEmpty
+                        ? Image(
+                            image: _localImageProvider(
+                              provider.coverPhotoPath!,
+                            ),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Icon(
+                                Icons.image_not_supported_outlined,
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(
+                              Icons.sports_outlined,
+                              color: AppColors.slateFg,
+                              size: 42,
+                            ),
+                          ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(24.0),
@@ -94,47 +109,82 @@ class ProviderActivationScreen extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            if (provider.logoPath != null && provider.logoPath!.isNotEmpty)
+                            if (provider.logoPath != null &&
+                                provider.logoPath!.isNotEmpty)
                               Container(
                                 width: 56,
                                 height: 56,
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(AppRadii.tile),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.tile,
+                                  ),
                                   image: DecorationImage(
-                                    image: _localImageProvider(provider.logoPath!),
+                                    image: _localImageProvider(
+                                      provider.logoPath!,
+                                    ),
                                     fit: BoxFit.cover,
                                   ),
                                 ),
                               )
                             else
                               Text(
-                                provider.institutionName.isEmpty ? 'N' : provider.institutionName[0],
-                                style: AppTypography.font(fontSize: 48, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                                provider.institutionName.isEmpty
+                                    ? 'N'
+                                    : provider.institutionName[0],
+                                style: AppTypography.font(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
                               ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.surface2,
-                                borderRadius: BorderRadius.circular(AppRadii.chip),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.chip,
+                                ),
                                 border: Border.all(color: AppColors.hairline),
                               ),
                               child: Text(
                                 'DRAFT',
-                                style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                                style: AppTypography.font(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ),
                           ],
                         ),
                         Text(
                           provider.institutionName.toUpperCase(),
-                          style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 1.5),
+                          style: AppTypography.font(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                            letterSpacing: 1.5,
+                          ),
                         ),
                         const SizedBox(height: 24),
                         Row(
                           children: [
-                            Expanded(child: _buildInfoItem('MODEL', provider.maxAthletes > 1 ? 'Group' : '1-on-1')),
+                            Expanded(
+                              child: _buildInfoItem(
+                                'MODEL',
+                                provider.maxAthletes > 1 ? 'Group' : '1-on-1',
+                              ),
+                            ),
                             const SizedBox(width: 12),
-                            Expanded(child: _buildInfoItem('CAPACITY', '${provider.maxAthletes} Athletes')),
+                            Expanded(
+                              child: _buildInfoItem(
+                                'CAPACITY',
+                                '${provider.maxAthletes} Athletes',
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -144,13 +194,19 @@ class ProviderActivationScreen extends StatelessWidget {
                               child: _buildInfoItem(
                                 'RATE',
                                 [
-                                  if (provider.perSessionEnabled) '\$${provider.perSessionRate.toStringAsFixed(0)}/session (${provider.perSessionDuration}m)',
-                                  if (provider.perHourEnabled) (() {
-                                    final double hrs = provider.perHourDuration / 60.0;
-                                    final String hrsText = hrs == hrs.toInt() ? '${hrs.toInt()}' : hrs.toStringAsFixed(1);
-                                    return '\$${provider.perHourRate.toStringAsFixed(0)}/hour ($hrsText ${hrsText == '1' ? 'hr' : 'hrs'})';
-                                  })(),
-                                  if (provider.perSeasonEnabled) '\$${provider.perSeasonRate.toStringAsFixed(0)}/season (${provider.perSeasonDuration} Month${provider.perSeasonDuration > 1 ? 's' : ''})',
+                                  if (provider.perSessionEnabled)
+                                    '\$${provider.perSessionRate.toStringAsFixed(0)}/session (${provider.perSessionDuration}m)',
+                                  if (provider.perHourEnabled)
+                                    (() {
+                                      final double hrs =
+                                          provider.perHourDuration / 60.0;
+                                      final String hrsText = hrs == hrs.toInt()
+                                          ? '${hrs.toInt()}'
+                                          : hrs.toStringAsFixed(1);
+                                      return '\$${provider.perHourRate.toStringAsFixed(0)}/hour ($hrsText ${hrsText == '1' ? 'hr' : 'hrs'})';
+                                    })(),
+                                  if (provider.perSeasonEnabled)
+                                    '\$${provider.perSeasonRate.toStringAsFixed(0)}/season (${provider.perSeasonDuration} Month${provider.perSeasonDuration > 1 ? 's' : ''})',
                                 ].join('\n'),
                               ),
                             ),
@@ -160,20 +216,33 @@ class ProviderActivationScreen extends StatelessWidget {
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
                                   color: AppColors.slateTint,
-                                  borderRadius: BorderRadius.circular(AppRadii.tile),
-                                  border: Border.all(color: AppColors.slateBorder),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.tile,
+                                  ),
+                                  border: Border.all(
+                                    color: AppColors.slateBorder,
+                                  ),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'FREE DEMO',
-                                      style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.slateText, letterSpacing: 0.5),
+                                      style: AppTypography.font(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.slateText,
+                                        letterSpacing: 0.5,
+                                      ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       '30 min • In-person',
-                                      style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.slateText),
+                                      style: AppTypography.font(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.slateText,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -186,20 +255,34 @@ class ProviderActivationScreen extends StatelessWidget {
                           children: [
                             Text(
                               'MEDIA',
-                              style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 1.0),
+                              style: AppTypography.font(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textSecondary,
+                                letterSpacing: 1.0,
+                              ),
                             ),
                             const SizedBox(width: 12),
-                            _buildMediaBadge('Logo',
-                                present: provider.logoPath != null && provider.logoPath!.isNotEmpty),
-                            const SizedBox(width: 8),
-                            _buildMediaBadge('Cover',
-                                present: provider.coverPhotoPath != null && provider.coverPhotoPath!.isNotEmpty),
+                            _buildMediaBadge(
+                              'Logo',
+                              present:
+                                  provider.logoPath != null &&
+                                  provider.logoPath!.isNotEmpty,
+                            ),
                             const SizedBox(width: 8),
                             _buildMediaBadge(
-                                provider.galleryPaths.isEmpty
-                                    ? 'No photos'
-                                    : '${provider.galleryPaths.length} photo${provider.galleryPaths.length == 1 ? '' : 's'}',
-                                present: provider.galleryPaths.isNotEmpty),
+                              'Cover',
+                              present:
+                                  provider.coverPhotoPath != null &&
+                                  provider.coverPhotoPath!.isNotEmpty,
+                            ),
+                            const SizedBox(width: 8),
+                            _buildMediaBadge(
+                              provider.galleryPaths.isEmpty
+                                  ? 'No photos'
+                                  : '${provider.galleryPaths.length} photo${provider.galleryPaths.length == 1 ? '' : 's'}',
+                              present: provider.galleryPaths.isNotEmpty,
+                            ),
                           ],
                         ),
                         const SizedBox(height: 24),
@@ -218,7 +301,11 @@ class ProviderActivationScreen extends StatelessWidget {
                                   color: AppColors.slateText,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.check, color: AppColors.onSlate, size: 16),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: AppColors.onSlate,
+                                  size: 16,
+                                ),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
@@ -227,11 +314,18 @@ class ProviderActivationScreen extends StatelessWidget {
                                   children: [
                                     Text(
                                       'Ready to submit',
-                                      style: AppTypography.font(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary),
+                                      style: AppTypography.font(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: AppColors.textPrimary,
+                                      ),
                                     ),
                                     Text(
                                       'We\'ll review your profile before it appears in discovery.',
-                                      style: AppTypography.font(color: AppColors.textSecondary, fontSize: 11),
+                                      style: AppTypography.font(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -264,11 +358,14 @@ class ProviderActivationScreen extends StatelessWidget {
                         ? null
                         : () async {
                             final messenger = ScaffoldMessenger.of(context);
-                            final success = await provider.submitProviderProfile();
+                            final success = await provider
+                                .submitProviderProfile();
                             if (success) {
                               Get.offAllNamed(AppRoutes.providerTutorial);
                             } else {
-                              final errorMsg = provider.submitError ?? 'Failed to launch profile. Please try again.';
+                              final errorMsg =
+                                  provider.submitError ??
+                                  'Failed to launch profile. Please try again.';
                               messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(errorMsg),
@@ -304,12 +401,21 @@ class ProviderActivationScreen extends StatelessWidget {
         children: [
           Text(
             label,
-            style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 0.5),
+            style: AppTypography.font(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.5,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+            style: AppTypography.font(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
           ),
         ],
       ),
@@ -333,7 +439,11 @@ class ProviderActivationScreen extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: AppTypography.font(fontSize: 11, fontWeight: FontWeight.bold, color: fg),
+            style: AppTypography.font(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
           ),
         ],
       ),

@@ -7,14 +7,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/client/controllers/home_controller.dart';
-import 'package:flutter_structure/presentation/client/widgets/multi_booking_sheet.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/client/controllers/home_controller.dart';
+import 'package:sporve_app/presentation/client/widgets/multi_booking_sheet.dart';
 
 /// A one-seat group service. Starts empty; the mock enforces no-oversell the
 /// same way [MockRepository] does — a claim past capacity returns null.
 class _FakeGroupRepo implements AppRepository {
   final List<Map<String, dynamic>> _bookings = [];
+  String? claimError;
   static const _capacity = 1;
 
   @override
@@ -42,13 +43,15 @@ class _FakeGroupRepo implements AppRepository {
     required String slotDate,
     required String slotTime,
   }) async => _bookings
-      .map((b) => <String, dynamic>{
-            'bookingId': b['id'],
-            'athleteFirstName': b['athleteFirstName'],
-            'athleteAgeBand': b['athleteAgeBand'],
-            'status': 'pending',
-            'paymentStatus': 'unpaid',
-          })
+      .map(
+        (b) => <String, dynamic>{
+          'bookingId': b['id'],
+          'athleteFirstName': b['athleteFirstName'],
+          'athleteAgeBand': b['athleteAgeBand'],
+          'status': 'pending',
+          'paymentStatus': 'unpaid',
+        },
+      )
       .toList();
 
   @override
@@ -60,6 +63,9 @@ class _FakeGroupRepo implements AppRepository {
     String? athleteFirstName,
     String? athleteAgeBand,
   }) async {
+    if (claimError case final message?) {
+      throw RepositoryActionException(message);
+    }
     if (_bookings.length >= _capacity) return null; // honest failure (L-015)
     final id = 'gseat-${_bookings.length + 1}';
     _bookings.add({'id': id, 'athleteFirstName': athleteFirstName});
@@ -140,4 +146,46 @@ void main() {
       );
     },
   );
+
+  testWidgets('group seat: renders the server booking error verbatim', (
+    tester,
+  ) async {
+    final repo = _FakeGroupRepo()
+      ..claimError = 'This athlete already holds a seat in that session.';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<AppRepository>.value(value: repo),
+          ChangeNotifierProvider(create: (_) => HomeProvider(repo)),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => showMultiBookingSheet(
+                  context,
+                  providerId: 'prov-1',
+                  serviceId: 'svc-1',
+                  serviceTitle: 'Youth Group Clinic',
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim seat'));
+    await tester.pump();
+
+    expect(
+      find.text('This athlete already holds a seat in that session.'),
+      findsOneWidget,
+    );
+    expect(repo._bookings, isEmpty);
+  });
 }

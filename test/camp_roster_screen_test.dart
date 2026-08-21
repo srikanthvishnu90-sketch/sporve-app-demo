@@ -11,9 +11,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
-import 'package:flutter_structure/presentation/provider/view/camp_roster_screen.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
+import 'package:sporve_app/presentation/provider/view/camp_roster_screen.dart';
 
 /// Simulates the DB RLS/gate result for a non-staff caller: campRoster ALWAYS
 /// returns zero rows, regardless of what's actually registered — exactly what

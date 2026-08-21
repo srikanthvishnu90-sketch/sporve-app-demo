@@ -13,10 +13,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
-import 'package:flutter_structure/presentation/provider/view/provider_org_grid_screen.dart';
-import 'package:flutter_structure/presentation/provider/widgets/org_service_staffing_sheet.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
+import 'package:sporve_app/presentation/provider/view/provider_org_grid_screen.dart';
+import 'package:sporve_app/presentation/provider/widgets/org_service_staffing_sheet.dart';
 
 /// The venue-conflict guard (enforce_booking_venue_conflict) makes a REAL
 /// conflicting write impossible to persist — so to prove the GRID's own

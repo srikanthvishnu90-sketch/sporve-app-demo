@@ -4,7 +4,7 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/sport_colors.dart';
 
 /// TEMPORARY proof surface (Part 7 of the color recalibration). Renders, on the
-/// real #005f63ff canvas: the obsidian neutral stack, every sport tile
+/// real obsidian canvas: the neutral stack, every sport tile
 /// (well + border + glyph), the same row with bloom, and destructive-red /
 /// trust-gold beside the nearest sport colors to eyeball the collision guards.
 /// Route: /debug/palette. Delete once the palette is approved.
@@ -13,11 +13,32 @@ class PaletteScreen extends StatelessWidget {
 
   // One entry per DISTINCT calibrated base (26 families).
   static const List<String> _sports = [
-    'Basketball', 'Baseball', 'Tennis', 'Rowing', 'Soccer', 'Badminton',
-    'Boxing', 'Football', 'Swimming', 'Track & Field', 'Water Polo',
-    'Gymnastics', 'Ice Hockey', 'Martial Arts', 'Skiing', 'Fencing', 'Golf',
-    'Volleyball', 'Lacrosse', 'Dance', 'Cricket', 'Cheerleading', 'Cycling',
-    'Softball', 'Climbing', 'Wrestling',
+    'Basketball',
+    'Baseball',
+    'Tennis',
+    'Rowing',
+    'Soccer',
+    'Badminton',
+    'Boxing',
+    'Football',
+    'Swimming',
+    'Track & Field',
+    'Water Polo',
+    'Gymnastics',
+    'Ice Hockey',
+    'Martial Arts',
+    'Skiing',
+    'Fencing',
+    'Golf',
+    'Volleyball',
+    'Lacrosse',
+    'Dance',
+    'Cricket',
+    'Cheerleading',
+    'Cycling',
+    'Softball',
+    'Climbing',
+    'Wrestling',
   ];
 
   static String _hex(Color c) =>
@@ -39,14 +60,14 @@ class PaletteScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
           _section('1 · Obsidian neutral stack'),
-          _neutralRow('canvas', AppColors.ink, '#000000'),
-          _neutralRow('surface-1', AppColors.surface, '#0D0D0D'),
-          _neutralRow('surface-2', AppColors.surface2, '#141414'),
-          _neutralRow('surface-3', AppColors.surface3, '#1C1C1C'),
-          _neutralRow('text primary', AppColors.textPrimary, '#F7F7F7'),
-          _neutralRow('text secondary', AppColors.textSecondary, '#A3A3A3'),
-          _neutralRow('text muted', AppColors.textTertiary, '#6B6B6B'),
-          _neutralRow('slate (brand)', AppColors.slate, '#647B8F'),
+          _neutralRow('canvas', AppColors.ink),
+          _neutralRow('surface-1', AppColors.surface),
+          _neutralRow('surface-2', AppColors.surface2),
+          _neutralRow('surface-3', AppColors.surface3),
+          _neutralRow('text primary', AppColors.textPrimary),
+          _neutralRow('text secondary', AppColors.textSecondary),
+          _neutralRow('text muted', AppColors.textTertiary),
+          _neutralRow('Persimmon action', AppColors.slate),
 
           const SizedBox(height: 28),
           _section('2 · Sport tiles — well + border + glyph (on #000)'),
@@ -89,7 +110,7 @@ class PaletteScreen extends StatelessWidget {
     ),
   );
 
-  Widget _neutralRow(String label, Color c, String hex) => Padding(
+  Widget _neutralRow(String label, Color c) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Row(
       children: [
@@ -113,7 +134,7 @@ class PaletteScreen extends StatelessWidget {
           ),
         ),
         Text(
-          hex,
+          _hex(c),
           style: AppTypography.font(
             color: AppColors.textTertiary,
             fontSize: 12,

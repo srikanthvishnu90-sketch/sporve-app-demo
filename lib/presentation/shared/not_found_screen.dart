@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import '../../core/routes/app_routes.dart';
 import '../../core/theme/app_colors.dart';

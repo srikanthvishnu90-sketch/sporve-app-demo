@@ -2,7 +2,7 @@
 // accepts normal images — the pure guard behind every coach photo upload.
 //   flutter test test/image_validation_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/utils/image_validation.dart';
+import 'package:sporve_app/core/utils/image_validation.dart';
 
 void main() {
   test('rejects a non-image file (renamed .exe)', () {

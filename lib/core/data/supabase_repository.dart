@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -68,9 +70,9 @@ class SupabaseRepository implements AppRepository {
           .order('price_usd_month');
       return (rows as List)
           .whereType<Map>()
-          .map((row) => SubscriptionPlan.fromMap(
-                Map<String, dynamic>.from(row),
-              ))
+          .map(
+            (row) => SubscriptionPlan.fromMap(Map<String, dynamic>.from(row)),
+          )
           .toList(growable: false);
     } catch (error) {
       debugPrint('getSubscriptionPlans failed: $error');
@@ -190,6 +192,39 @@ class SupabaseRepository implements AppRepository {
     };
   }
 
+  String _functionActionMessage(FunctionException error, String fallback) {
+    final details = error.details;
+    if (details is Map) {
+      final message = (details['error'] ?? details['message'])
+          ?.toString()
+          .trim();
+      if (message != null && message.isNotEmpty) return message;
+    }
+    if (details is String && details.trim().isNotEmpty) return details.trim();
+    return fallback;
+  }
+
+  Map<String, dynamic> _actionMap(Object? data, String fallback) {
+    if (data is! Map) throw RepositoryActionException(fallback);
+    final result = Map<String, dynamic>.from(data);
+    final error = result['error']?.toString().trim();
+    if (error != null && error.isNotEmpty) {
+      throw RepositoryActionException(error);
+    }
+    return result;
+  }
+
+  RepositoryActionException _databaseActionError(
+    Object error,
+    String fallback,
+  ) {
+    if (error is PostgrestException && error.message.trim().isNotEmpty) {
+      return RepositoryActionException(error.message.trim());
+    }
+    final message = error.toString().trim();
+    return RepositoryActionException(message.isEmpty ? fallback : message);
+  }
+
   // ── Mappers: DB row (snake_case) → UI map (camelCase + _id) ───────────────
 
   Map<String, dynamic> _mapProgram(Map row) {
@@ -242,6 +277,7 @@ class SupabaseRepository implements AppRepository {
               'ownerId': prov['owner_id'],
               'businessName': prov['business_name'],
               'verificationStatus': prov['verification_status'],
+              'status': prov['status'],
               // G5 safety gate reads this (mirrors the server match_eligible:
               // background_check_status = 'verified'). Without it the client
               // matcher fails closed and the concierge returns zero matches.
@@ -316,6 +352,10 @@ class SupabaseRepository implements AppRepository {
       'currency': row['currency'],
       'status': row['status'],
       'paymentStatus': row['payment_status'],
+      'refundStatus': row['refund_status'],
+      'refundedAmount': row['refunded_amount'],
+      'cancellationPolicySnapshot':
+          row['cancellation_policy_snapshot'] ?? row['policy_snapshot'],
       'stripeCheckoutSessionId': row['stripe_checkout_session_id'],
       // Historical money facts captured by the Stripe webhook. Keep nullable:
       // an absent value is unknown, not permission to recompute an old fee from
@@ -366,7 +406,9 @@ class SupabaseRepository implements AppRepository {
     'status': row['status'],
     'onboardingCompleted': row['onboarding_completed'] ?? false,
     'verificationStatus': row['verification_status'],
+    'backgroundCheckStatus': row['background_check_status'],
     'backgroundCheckCompletedAt': row['background_check_completed_at'],
+    'accountStatus': row['account_status'],
     'stripeAccountId': row['stripe_account_id'],
     'stripeChargesEnabled': row['stripe_charges_enabled'] ?? false,
     'stripeCustomerId': row['stripe_customer_id'],
@@ -376,7 +418,8 @@ class SupabaseRepository implements AppRepository {
     'foundingCoach': row['founding_coach'] ?? false,
     'providerType': row['provider_type'] ?? 'solo',
     'payoutSchedule': row['payout_schedule'] ?? 'Monthly',
-    'kycStatus': row['kyc_status'] ?? row['verification_status'] ?? 'unverified',
+    'kycStatus':
+        row['kyc_status'] ?? row['verification_status'] ?? 'unverified',
     'kycFailureReason': row['kyc_failure_reason'],
   };
 
@@ -385,7 +428,7 @@ class SupabaseRepository implements AppRepository {
     final rows = await _db
         .from('programs')
         .select(
-          '*, providers(owner_id, business_name, verification_status, background_check_status, background_check_completed_at, account_status)',
+          '*, providers(owner_id, business_name, status, verification_status, background_check_status, background_check_completed_at, account_status)',
         );
     return (rows as List).map((r) => _mapProgram(r as Map)).toList();
   }
@@ -507,7 +550,8 @@ class SupabaseRepository implements AppRepository {
       // An org IS a provider with a roster — flip the type on the first trainer.
       await _db
           .from('providers')
-          .update({'provider_type': 'organization'}).eq('id', providerId);
+          .update({'provider_type': 'organization'})
+          .eq('id', providerId);
       final row = Map<String, dynamic>.from(member)
         ..['organization_id'] = providerId
         ..remove('id')
@@ -589,14 +633,15 @@ class SupabaseRepository implements AppRepository {
 
   @override
   Future<Map<String, dynamic>?> findAffiliatableAccount(
-      String identifier) async {
+    String identifier,
+  ) async {
     try {
       final providerId = await _currentProviderId();
       if (providerId == null) return null;
-      final rows = await _db.rpc('find_affiliatable_account', params: {
-        'p_provider': providerId,
-        'p_identifier': identifier,
-      });
+      final rows = await _db.rpc(
+        'find_affiliatable_account',
+        params: {'p_provider': providerId, 'p_identifier': identifier},
+      );
       final list = (rows as List?)?.cast<Map<String, dynamic>>() ?? const [];
       return list.isEmpty ? null : list.first;
     } catch (e) {
@@ -613,11 +658,14 @@ class SupabaseRepository implements AppRepository {
     try {
       final providerId = await _currentProviderId();
       if (providerId == null) return null;
-      final id = await _db.rpc('invite_existing_account', params: {
-        'p_provider': providerId,
-        'p_profile_id': profileId,
-        'p_trainer_profile': trainerProfile ?? const {},
-      });
+      final id = await _db.rpc(
+        'invite_existing_account',
+        params: {
+          'p_provider': providerId,
+          'p_profile_id': profileId,
+          'p_trainer_profile': trainerProfile ?? const {},
+        },
+      );
       return id?.toString();
     } catch (e) {
       debugPrint('affiliateExistingAccount failed: $e');
@@ -713,6 +761,84 @@ class SupabaseRepository implements AppRepository {
   Future<List<dynamic>> getBookingsOrThrow() => _fetchBookings();
 
   @override
+  Future<Uri> createBookingCheckout({
+    required String bookingId,
+    required Uri successUrl,
+    required Uri cancelUrl,
+  }) async {
+    try {
+      final response = await _db.functions
+          .invoke(
+            'stripe-create-checkout',
+            body: {
+              'bookingId': bookingId,
+              'successUrl': successUrl.toString(),
+              'cancelUrl': cancelUrl.toString(),
+            },
+          )
+          .timeout(const Duration(seconds: 20));
+      final data = _actionMap(
+        response.data,
+        'Checkout returned an invalid response. Please try again.',
+      );
+      final uri = Uri.tryParse(data['checkoutUrl']?.toString() ?? '');
+      if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+        throw const RepositoryActionException(
+          'Checkout returned an invalid link. Please try again.',
+        );
+      }
+      return uri;
+    } on FunctionException catch (error) {
+      throw RepositoryActionException(
+        _functionActionMessage(error, 'Payment could not be started.'),
+      );
+    } on RepositoryActionException {
+      rethrow;
+    } on TimeoutException {
+      throw const RepositoryActionException(
+        'Checkout is taking too long. Please try again.',
+      );
+    } catch (error) {
+      debugPrint('createBookingCheckout failed: $error');
+      throw const RepositoryActionException(
+        'Payment could not be started. Please try again.',
+      );
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestBookingCancellation(
+    String bookingId, {
+    String? reason,
+  }) async {
+    try {
+      final response = await _db.functions.invoke(
+        'stripe-refund',
+        body: {
+          'bookingId': bookingId,
+          if (reason != null && reason.trim().isNotEmpty)
+            'reason': reason.trim(),
+        },
+      );
+      return _actionMap(
+        response.data,
+        'The refund service returned an invalid response.',
+      );
+    } on FunctionException catch (error) {
+      throw RepositoryActionException(
+        _functionActionMessage(error, 'The refund could not be processed.'),
+      );
+    } on RepositoryActionException {
+      rethrow;
+    } catch (error) {
+      debugPrint('requestBookingCancellation failed: $error');
+      throw const RepositoryActionException(
+        'The refund could not be processed. Please try again.',
+      );
+    }
+  }
+
+  @override
   Future<void> saveBookings(List<dynamic> bookings) async {
     // No wholesale replace against a shared table; individual creation goes
     // through addBooking; status changes go through updateBookingStatus.
@@ -727,32 +853,6 @@ class SupabaseRepository implements AppRepository {
       return true;
     } on PostgrestException catch (e) {
       debugPrint('updateBookingStatus failed: ${e.message}');
-      return false;
-    }
-  }
-
-  @override
-  Future<bool> processRefund(
-    String bookingId, {
-    required double amount,
-    String? reason,
-  }) async {
-    try {
-      final body = <String, dynamic>{
-        'bookingId': bookingId,
-        'amount': amount,
-      };
-      if (reason != null && reason.isNotEmpty) {
-        body['reason'] = reason;
-      }
-      final res = await _db.functions.invoke(
-        'stripe-refund',
-        body: body,
-      );
-      final data = (res.data as Map?) ?? {};
-      return data['success'] == true || data['error'] == null;
-    } catch (e) {
-      debugPrint('processRefund failed: $e');
       return false;
     }
   }
@@ -808,11 +908,8 @@ class SupabaseRepository implements AppRepository {
     // Pure attribution — it never affects original_price / final_price / the
     // Stripe charge (L-003). The FK guarantees it's a real roster member.
     final assignedMemberId = _extractId(booking['assignedMemberId']);
-    // Every key below is a real `bookings` column. searcher_id MUST equal
-    // auth.uid() (RLS). status MUST satisfy the CHECK
-    // (pending|confirmed|declined|completed) — payment lives in the separate
-    // payment_status column, which we let DEFAULT to 'unpaid'.
-    final athleteName = booking['athleteName']?.toString();
+    // Creation sends references only. Database defaults/triggers own lifecycle,
+    // payment, price, currency, timestamps, and denormalized display facts.
     final payload = <String, dynamic>{
       'searcher_id': uid,
       'session_id': sessionId,
@@ -820,13 +917,6 @@ class SupabaseRepository implements AppRepository {
       if (_isUuid(athleteId)) 'athlete_id': athleteId,
       if (_isUuid(assignedMemberId)) 'assigned_member_id': assignedMemberId,
       if (_isUuid(planProposalId)) 'plan_proposal_id': planProposalId,
-      if (athleteName != null && athleteName.isNotEmpty)
-        'athlete_first_name': athleteName.split(' ').first,
-      'selected_tier': booking['selectedTier'],
-      'original_price': booking['originalPrice'] ?? 0,
-      'final_price': booking['finalPrice'] ?? 0,
-      'currency': booking['currency'] ?? 'USD',
-      'status': 'pending',
     };
 
     try {
@@ -932,7 +1022,8 @@ class SupabaseRepository implements AppRepository {
       if (!_isUuid(id)) return false;
       await _db
           .from('program_waitlist')
-          .update({'status': 'cancelled'}).eq('id', id);
+          .update({'status': 'cancelled'})
+          .eq('id', id);
       return true;
     } on PostgrestException catch (e) {
       debugPrint('cancelWaitlistEntry failed: ${e.message}');
@@ -975,7 +1066,9 @@ class SupabaseRepository implements AppRepository {
   };
 
   @override
-  Future<List<Map<String, dynamic>>> getWaitlistOffers({String? providerId}) async {
+  Future<List<Map<String, dynamic>>> getWaitlistOffers({
+    String? providerId,
+  }) async {
     try {
       var q = _db.from('waitlist_offers').select();
       if (providerId != null && _isUuid(providerId)) {
@@ -992,9 +1085,10 @@ class SupabaseRepository implements AppRepository {
   @override
   Future<Map<String, dynamic>> draftWaitlistOffer(String offerId) async {
     try {
-      final res = await _db.functions.invoke('waitlist-offer-draft', body: {
-        'offer_id': offerId,
-      });
+      final res = await _db.functions.invoke(
+        'waitlist-offer-draft',
+        body: {'offer_id': offerId},
+      );
       return Map<String, dynamic>.from((res.data as Map?) ?? {});
     } on FunctionException catch (e) {
       debugPrint('draftWaitlistOffer FunctionException: ${e.status}');
@@ -1010,15 +1104,21 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
-  Future<String?> acceptWaitlistOffer(String offerId, {String? athleteId}) async {
+  Future<String?> acceptWaitlistOffer(
+    String offerId, {
+    String? athleteId,
+  }) async {
     if (!_isUuid(offerId)) return null;
     try {
       // Raises honestly (expired / already taken / not open) — the DEFINER
       // function reuses claim_group_seat, so no new booking path (L-015).
-      final id = await _db.rpc('accept_waitlist_offer', params: {
-        'p_offer_id': offerId,
-        'p_athlete': _isUuid(athleteId) ? athleteId : null,
-      });
+      final id = await _db.rpc(
+        'accept_waitlist_offer',
+        params: {
+          'p_offer_id': offerId,
+          'p_athlete': _isUuid(athleteId) ? athleteId : null,
+        },
+      );
       return id?.toString();
     } catch (e) {
       debugPrint('acceptWaitlistOffer failed (expired/taken/not open): $e');
@@ -1044,7 +1144,8 @@ class SupabaseRepository implements AppRepository {
       if (!_isUuid(id)) return false;
       await _db
           .from('program_waitlist')
-          .update({'status': status}).eq('id', id);
+          .update({'status': status})
+          .eq('id', id);
       return true;
     } on PostgrestException catch (e) {
       debugPrint('updateWaitlistStatus failed: ${e.message}');
@@ -1068,10 +1169,9 @@ class SupabaseRepository implements AppRepository {
         final ath = b['athleteId'];
         // Historical relationship key only. The current subscription-funded
         // model never selects a transaction fee from this value.
-        final family = (b['searcherId'] ??
-                (ath is Map ? ath['_id'] : null) ??
-                '')
-            .toString();
+        final family =
+            (b['searcherId'] ?? (ath is Map ? ath['_id'] : null) ?? '')
+                .toString();
         out.add({
           'id': (b['_id'] ?? '').toString(),
           'family': family,
@@ -1084,6 +1184,7 @@ class SupabaseRepository implements AppRepository {
           'sport': prog is Map ? (prog['sport'] ?? '') : '',
           'status': b['status'] ?? '',
           'paymentStatus': pay,
+          'selectedTier': b['selectedTier'],
           'gross': b['finalPrice'] ?? 0,
           'platformFee': b['platformFee'],
           'platformFeeBps': b['platformFeeBps'],
@@ -1100,16 +1201,18 @@ class SupabaseRepository implements AppRepository {
   }
 
   // ── Coach OS money page #1: REAL Stripe payout history (READ-ONLY) ──────────
-  // Best-effort call to the `stripe-provider-payouts` edge function (authored,
-  // not yet deployed). Returns [] on ANY failure or when there is no connected
-  // account, so the UI shows an honest empty state and never fabricates a payout
-  // (L-012: the function source exists in supabase/functions/). Moves no money.
+  // Read-only call to the `stripe-provider-payouts` Edge Function. Empty and
+  // failed are distinct: an empty payout list is data; a failed function throws
+  // so the money UI never disguises an outage as "nothing yet".
   @override
   Future<List<Map<String, dynamic>>> getProviderPayouts() async {
     try {
       final res = await _db.functions.invoke('stripe-provider-payouts');
-      final data = res.data;
-      final list = (data is Map ? data['payouts'] : null);
+      final data = _actionMap(
+        res.data,
+        'Payout history returned an invalid response.',
+      );
+      final list = data['payouts'];
       if (list is! List) return [];
       return list.map<Map<String, dynamic>>((p) {
         final m = p as Map;
@@ -1122,9 +1225,17 @@ class SupabaseRepository implements AppRepository {
           'bankLast4': m['bank_last4']?.toString(),
         };
       }).toList();
+    } on FunctionException catch (error) {
+      throw RepositoryActionException(
+        _functionActionMessage(error, 'Payout history could not be loaded.'),
+      );
+    } on RepositoryActionException {
+      rethrow;
     } catch (e) {
-      debugPrint('getProviderPayouts failed (honest empty): $e');
-      return [];
+      debugPrint('getProviderPayouts failed: $e');
+      throw const RepositoryActionException(
+        'Payout history could not be loaded. Please try again.',
+      );
     }
   }
 
@@ -1137,17 +1248,21 @@ class SupabaseRepository implements AppRepository {
     try {
       final rows = await _db
           .from('coach_contacts')
-          .select('id, display_name, email, phone, athlete_label, note, created_at')
+          .select(
+            'id, display_name, email, phone, athlete_label, note, created_at',
+          )
           .order('created_at', ascending: false);
       return (rows as List)
-          .map<Map<String, dynamic>>((r) => {
-                'id': r['id'],
-                'displayName': r['display_name'],
-                'email': r['email'],
-                'phone': r['phone'],
-                'athleteLabel': r['athlete_label'],
-                'note': r['note'],
-              })
+          .map<Map<String, dynamic>>(
+            (r) => {
+              'id': r['id'],
+              'displayName': r['display_name'],
+              'email': r['email'],
+              'phone': r['phone'],
+              'athleteLabel': r['athlete_label'],
+              'note': r['note'],
+            },
+          )
           .toList();
     } catch (e) {
       debugPrint('getCoachContacts failed: $e');
@@ -1185,29 +1300,31 @@ class SupabaseRepository implements AppRepository {
       final rows = await _db
           .from('coach_invoices')
           .select(
-              'id, contact_id, description, line_items, amount_cents, '
-              'application_fee_cents, currency, status, hosted_invoice_url, '
-              'due_date, created_at, paid_at, coach_contacts(display_name)')
+            'id, contact_id, description, line_items, amount_cents, '
+            'application_fee_cents, currency, status, hosted_invoice_url, '
+            'due_date, created_at, paid_at, coach_contacts(display_name)',
+          )
           .order('created_at', ascending: false);
       return (rows as List)
-          .map<Map<String, dynamic>>((r) => {
-                'id': r['id'],
-                'contactId': r['contact_id'],
-                'contactName':
-                    (r['coach_contacts'] is Map)
-                        ? r['coach_contacts']['display_name']
-                        : null,
-                'description': r['description'],
-                'lineItems': r['line_items'],
-                'amountCents': (r['amount_cents'] as num?)?.toInt() ?? 0,
-                'applicationFeeCents':
-                    (r['application_fee_cents'] as num?)?.toInt() ?? 0,
-                'currency': r['currency'] ?? 'USD',
-                'status': r['status'],
-                'hostedInvoiceUrl': r['hosted_invoice_url'],
-                'dueDate': r['due_date'],
-                'paidAt': r['paid_at'],
-              })
+          .map<Map<String, dynamic>>(
+            (r) => {
+              'id': r['id'],
+              'contactId': r['contact_id'],
+              'contactName': (r['coach_contacts'] is Map)
+                  ? r['coach_contacts']['display_name']
+                  : null,
+              'description': r['description'],
+              'lineItems': r['line_items'],
+              'amountCents': (r['amount_cents'] as num?)?.toInt() ?? 0,
+              'applicationFeeCents':
+                  (r['application_fee_cents'] as num?)?.toInt() ?? 0,
+              'currency': r['currency'] ?? 'USD',
+              'status': r['status'],
+              'hostedInvoiceUrl': r['hosted_invoice_url'],
+              'dueDate': r['due_date'],
+              'paidAt': r['paid_at'],
+            },
+          )
           .toList();
     } catch (e) {
       debugPrint('getCoachInvoices failed: $e');
@@ -1314,7 +1431,8 @@ class SupabaseRepository implements AppRepository {
     try {
       await _db
           .from('recurring_slots')
-          .update({'active': active}).eq('id', slotId);
+          .update({'active': active})
+          .eq('id', slotId);
       return true;
     } on PostgrestException catch (e) {
       debugPrint('setRecurringSlotActive failed: ${e.message}');
@@ -1352,9 +1470,7 @@ class SupabaseRepository implements AppRepository {
           .select('date')
           .eq('slot_id', slotId)
           .order('date');
-      return (rows as List)
-          .map((r) => (r as Map)['date'].toString())
-          .toList();
+      return (rows as List).map((r) => (r as Map)['date'].toString()).toList();
     } catch (e) {
       debugPrint('getSlotExceptions failed: $e');
       return [];
@@ -1366,19 +1482,19 @@ class SupabaseRepository implements AppRepository {
   // shared weekly AVAILABILITY carries times; bookable_slots() multiplies them.
 
   Map<String, dynamic> _mapService(Map row) => {
-        '_id': row['id'],
-        'providerId': row['provider_id'],
-        'serviceType': row['service_type'],
-        'title': row['title'],
-        'sport': row['sport'],
-        'durationMinutes': row['duration_minutes'],
-        'priceCents': row['price'], // services.price is integer CENTS
-        'capacity': row['capacity'] ?? row['max_athletes'] ?? 1,
-        'locationId': row['location_id'],
-        'assignable': row['assignable'] ?? false,
-        'active': row['is_active'] ?? true,
-        'createdAt': row['created_at'],
-      };
+    '_id': row['id'],
+    'providerId': row['provider_id'],
+    'serviceType': row['service_type'],
+    'title': row['title'],
+    'sport': row['sport'],
+    'durationMinutes': row['duration_minutes'],
+    'priceCents': row['price'], // services.price is integer CENTS
+    'capacity': row['capacity'] ?? row['max_athletes'] ?? 1,
+    'locationId': row['location_id'],
+    'assignable': row['assignable'] ?? false,
+    'active': row['is_active'] ?? true,
+    'createdAt': row['created_at'],
+  };
 
   @override
   Future<List<Map<String, dynamic>>> getMyServices() async {
@@ -1416,28 +1532,40 @@ class SupabaseRepository implements AppRepository {
       'capacity': service['capacity'] ?? 1,
       'max_athletes': service['capacity'] ?? 1,
       if (_isUuid(service['locationId'])) 'location_id': service['locationId'],
-      if (service['assignable'] != null) 'assignable': service['assignable'] == true,
+      if (service['assignable'] != null)
+        'assignable': service['assignable'] == true,
       'is_active': service['active'] ?? true,
       // Item #7 camp facets — the DB CHECK (services_camp_facets_only_on_camp)
       // rejects these on a non-camp, so only send them for a camp service.
       if (service['serviceType'] == 'camp') ...{
         if (service['startsOn'] != null) 'starts_on': service['startsOn'],
         if (service['endsOn'] != null) 'ends_on': service['endsOn'],
-        if (service['dailyStartTime'] != null) 'daily_start_time': service['dailyStartTime'],
-        if (service['dailyEndTime'] != null) 'daily_end_time': service['dailyEndTime'],
+        if (service['dailyStartTime'] != null)
+          'daily_start_time': service['dailyStartTime'],
+        if (service['dailyEndTime'] != null)
+          'daily_end_time': service['dailyEndTime'],
         if (service['ageBand'] != null) 'age_band': service['ageBand'],
-        if (service['earlyBirdPriceCents'] != null) 'early_bird_price_cents': service['earlyBirdPriceCents'],
-        if (service['earlyBirdCutoff'] != null) 'early_bird_cutoff': service['earlyBirdCutoff'],
-        if (service['depositCents'] != null) 'deposit_cents': service['depositCents'],
+        if (service['earlyBirdPriceCents'] != null)
+          'early_bird_price_cents': service['earlyBirdPriceCents'],
+        if (service['earlyBirdCutoff'] != null)
+          'early_bird_cutoff': service['earlyBirdCutoff'],
+        if (service['depositCents'] != null)
+          'deposit_cents': service['depositCents'],
       },
     };
     try {
-      final inserted =
-          await _db.from('services').insert(payload).select('id').single();
+      final inserted = await _db
+          .from('services')
+          .insert(payload)
+          .select('id')
+          .single();
       final id = (inserted as Map)['id']?.toString();
       // Item #6: org staffing — link the assignable trainers, if any.
       final ids = (service['assignableMemberIds'] as List?)?.cast<String>();
-      if (id != null && service['assignable'] == true && ids != null && ids.isNotEmpty) {
+      if (id != null &&
+          service['assignable'] == true &&
+          ids != null &&
+          ids.isNotEmpty) {
         await setServiceStaffing(id, assignable: true, memberIds: ids);
       }
       return id;
@@ -1455,9 +1583,15 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(serviceId)) return false;
     try {
-      await _db.from('services').update({'assignable': assignable}).eq('id', serviceId);
+      await _db
+          .from('services')
+          .update({'assignable': assignable})
+          .eq('id', serviceId);
       // Replace the staffing set: clear then insert the current members.
-      await _db.from('service_assignable_members').delete().eq('service_id', serviceId);
+      await _db
+          .from('service_assignable_members')
+          .delete()
+          .eq('service_id', serviceId);
       final rows = memberIds
           .where(_isUuid)
           .map((m) => {'service_id': serviceId, 'organization_member_id': m})
@@ -1507,7 +1641,10 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
-  Future<bool> updateService(String serviceId, Map<String, dynamic> patch) async {
+  Future<bool> updateService(
+    String serviceId,
+    Map<String, dynamic> patch,
+  ) async {
     if (!_isUuid(serviceId)) return false;
     final upd = <String, dynamic>{};
     if (patch.containsKey('title')) upd['title'] = patch['title'];
@@ -1525,7 +1662,9 @@ class SupabaseRepository implements AppRepository {
       upd['max_athletes'] = patch['capacity'];
     }
     if (patch.containsKey('locationId')) {
-      upd['location_id'] = _isUuid(patch['locationId']) ? patch['locationId'] : null;
+      upd['location_id'] = _isUuid(patch['locationId'])
+          ? patch['locationId']
+          : null;
     }
     if (patch.containsKey('assignable')) {
       upd['assignable'] = patch['assignable'] == true;
@@ -1545,7 +1684,10 @@ class SupabaseRepository implements AppRepository {
   Future<bool> setServiceActive(String serviceId, bool active) async {
     if (!_isUuid(serviceId)) return false;
     try {
-      await _db.from('services').update({'is_active': active}).eq('id', serviceId);
+      await _db
+          .from('services')
+          .update({'is_active': active})
+          .eq('id', serviceId);
       return true;
     } catch (e) {
       debugPrint('setServiceActive failed: $e');
@@ -1562,12 +1704,15 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(providerId) || !_isUuid(serviceId)) return [];
     try {
-      final rows = await _db.rpc('bookable_slots', params: {
-        'p_provider': providerId,
-        'p_service': serviceId,
-        'p_from': fromDate,
-        'p_to': toDate,
-      });
+      final rows = await _db.rpc(
+        'bookable_slots',
+        params: {
+          'p_provider': providerId,
+          'p_service': serviceId,
+          'p_from': fromDate,
+          'p_to': toDate,
+        },
+      );
       if (rows is! List) return [];
       return rows.map((r) {
         final m = r as Map;
@@ -1601,11 +1746,7 @@ class SupabaseRepository implements AppRepository {
     try {
       final res = await _db.functions.invoke(
         'setup-interview',
-        body: {
-          'sport': sport,
-          'transcript': transcript,
-          'template': template,
-        },
+        body: {'sport': sport, 'transcript': transcript, 'template': template},
       );
       final data = Map<String, dynamic>.from((res.data as Map?) ?? {});
       final bundle = data['bundle'];
@@ -1635,18 +1776,21 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(serviceId)) return null;
     try {
-      // Atomic no-oversell lives in the DB function; a FULL slot RAISES, which we
-      // surface as null (L-015 — the caller shows "slot full", never a fake win).
-      final id = await _db.rpc('claim_group_seat', params: {
-        'p_service': serviceId,
-        'p_slot_date': slotDate,
-        'p_slot_time': slotTime,
-        'p_athlete': _isUuid(athleteId) ? athleteId : null,
-      });
+      // Atomic no-oversell lives in the DB function. Raised server messages are
+      // deliberately preserved for the booking sheet to render verbatim.
+      final id = await _db.rpc(
+        'claim_group_seat',
+        params: {
+          'p_service': serviceId,
+          'p_slot_date': slotDate,
+          'p_slot_time': slotTime,
+          'p_athlete': _isUuid(athleteId) ? athleteId : null,
+        },
+      );
       return id?.toString();
     } catch (e) {
       debugPrint('claimGroupSeat failed (full/blocked): $e');
-      return null;
+      throw _databaseActionError(e, 'This slot could not be claimed.');
     }
   }
 
@@ -1658,11 +1802,14 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(serviceId)) return [];
     try {
-      final rows = await _db.rpc('group_slot_roster', params: {
-        'p_service': serviceId,
-        'p_slot_date': slotDate,
-        'p_slot_time': slotTime,
-      });
+      final rows = await _db.rpc(
+        'group_slot_roster',
+        params: {
+          'p_service': serviceId,
+          'p_slot_date': slotDate,
+          'p_slot_time': slotTime,
+        },
+      );
       if (rows is! List) return [];
       return rows.map((r) {
         final m = r as Map;
@@ -1714,7 +1861,7 @@ class SupabaseRepository implements AppRepository {
       return (inserted as Map)['id']?.toString();
     } catch (e) {
       debugPrint('createRecurringClaim failed: $e');
-      return null;
+      throw _databaseActionError(e, 'The recurring request could not be sent.');
     }
   }
 
@@ -1774,10 +1921,10 @@ class SupabaseRepository implements AppRepository {
     if (!_isUuid(serviceId)) return null;
     try {
       // camp_price_due returns a set (0 or 1 row); Supabase gives a List.
-      final rows = await _db.rpc('camp_price_due', params: {
-        'p_service': serviceId,
-        'p_as_of': asOf,
-      });
+      final rows = await _db.rpc(
+        'camp_price_due',
+        params: {'p_service': serviceId, 'p_as_of': asOf},
+      );
       final row = (rows is List && rows.isNotEmpty) ? rows.first as Map : null;
       if (row == null) return null; // not visible (unverified / not a camp)
       return <String, dynamic>{
@@ -1808,10 +1955,10 @@ class SupabaseRepository implements AppRepository {
     try {
       // Atomic no-oversell lives in claim_group_seat (wrapped by
       // register_camp_athlete); a FULL camp RAISES -> we surface null (L-015).
-      final id = await _db.rpc('register_camp_athlete', params: {
-        'p_service': serviceId,
-        'p_athlete': athleteId,
-      });
+      final id = await _db.rpc(
+        'register_camp_athlete',
+        params: {'p_service': serviceId, 'p_athlete': athleteId},
+      );
       return id?.toString();
     } catch (e) {
       debugPrint('registerCampAthlete failed (full/blocked): $e');
@@ -1828,10 +1975,10 @@ class SupabaseRepository implements AppRepository {
     if (!_isUuid(serviceId)) return [];
     try {
       // A non-staff caller gets 0 rows from the DB (RLS + internal gate, L-005).
-      final rows = await _db.rpc('camp_roster_view', params: {
-        'p_service': serviceId,
-        'p_day': day,
-      });
+      final rows = await _db.rpc(
+        'camp_roster_view',
+        params: {'p_service': serviceId, 'p_day': day},
+      );
       if (rows is! List) return [];
       return rows.map((r) {
         final m = r as Map;
@@ -1858,10 +2005,10 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(rosterId)) return null;
     try {
-      final at = await _db.rpc('camp_check_in', params: {
-        'p_roster': rosterId,
-        'p_day': day,
-      });
+      final at = await _db.rpc(
+        'camp_check_in',
+        params: {'p_roster': rosterId, 'p_day': day},
+      );
       if (at == null) return null;
       return DateTime.tryParse(at.toString());
     } catch (e) {
@@ -1879,13 +2026,16 @@ class SupabaseRepository implements AppRepository {
     String? note,
   }) async {
     try {
-      final res = await _db.functions.invoke('camp-recap', body: {
-        'serviceId': serviceId,
-        'day': day,
-        if (skills.isNotEmpty) 'skills': skills,
-        'effort': ?effort,
-        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
-      });
+      final res = await _db.functions.invoke(
+        'camp-recap',
+        body: {
+          'serviceId': serviceId,
+          'day': day,
+          if (skills.isNotEmpty) 'skills': skills,
+          'effort': ?effort,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        },
+      );
       return Map<String, dynamic>.from((res.data as Map?) ?? {});
     } on FunctionException catch (e) {
       debugPrint('campRecapDraft FunctionException: ${e.status}');
@@ -1906,10 +2056,10 @@ class SupabaseRepository implements AppRepository {
     required String message,
   }) async {
     try {
-      final res = await _db.functions.invoke('camp-broadcast', body: {
-        'serviceId': serviceId,
-        'message': message,
-      });
+      final res = await _db.functions.invoke(
+        'camp-broadcast',
+        body: {'serviceId': serviceId, 'message': message},
+      );
       return Map<String, dynamic>.from((res.data as Map?) ?? {});
     } on FunctionException catch (e) {
       debugPrint('campBroadcast FunctionException: ${e.status}');
@@ -1941,15 +2091,19 @@ class SupabaseRepository implements AppRepository {
     try {
       // created_by is pinned to the caller by enforce_team_block_service; RLS
       // requires created_by = auth.uid(); the trigger validates service ownership.
-      final row = await _db.from('team_blocks').insert({
-        'service_id': serviceId,
-        'team_name': teamName,
-        'session_count': sessionCount,
-        'unit_price_cents': unitPriceCents,
-        'payment_mode': paymentMode,
-        if (onePayerProfileId != null && _isUuid(onePayerProfileId))
-          'one_payer_profile_id': onePayerProfileId,
-      }).select('id').single();
+      final row = await _db
+          .from('team_blocks')
+          .insert({
+            'service_id': serviceId,
+            'team_name': teamName,
+            'session_count': sessionCount,
+            'unit_price_cents': unitPriceCents,
+            'payment_mode': paymentMode,
+            if (onePayerProfileId != null && _isUuid(onePayerProfileId))
+              'one_payer_profile_id': onePayerProfileId,
+          })
+          .select('id')
+          .single();
       return row['id']?.toString();
     } catch (e) {
       debugPrint('createTeamBlock failed: $e');
@@ -1966,12 +2120,16 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(teamBlockId)) return null;
     try {
-      final row = await _db.from('team_block_members').insert({
-        'team_block_id': teamBlockId,
-        'invited_email': invitedEmail,
-        'invited_phone': invitedPhone,
-        'member_label': memberLabel,
-      }).select('id').single();
+      final row = await _db
+          .from('team_block_members')
+          .insert({
+            'team_block_id': teamBlockId,
+            'invited_email': invitedEmail,
+            'invited_phone': invitedPhone,
+            'member_label': memberLabel,
+          })
+          .select('id')
+          .single();
       return row['id']?.toString();
     } catch (e) {
       debugPrint('addTeamBlockMember failed: $e');
@@ -1983,9 +2141,10 @@ class SupabaseRepository implements AppRepository {
   Future<int?> createSplitPayLinks({required String teamBlockId}) async {
     if (!_isUuid(teamBlockId)) return null;
     try {
-      final n = await _db.rpc('create_split_pay_links', params: {
-        'p_block': teamBlockId,
-      });
+      final n = await _db.rpc(
+        'create_split_pay_links',
+        params: {'p_block': teamBlockId},
+      );
       return (n as num?)?.toInt();
     } catch (e) {
       debugPrint('createSplitPayLinks failed: $e');
@@ -2004,12 +2163,15 @@ class SupabaseRepository implements AppRepository {
     try {
       // Server captures consent + provisions the child + generates the N bookings;
       // a missing-consent / used-token redeem RAISES -> null (honest failure, L-015).
-      final n = await _db.rpc('redeem_split_share', params: {
-        'p_token': token,
-        'p_athlete_first': athleteFirstName,
-        'p_athlete_dob': athleteDob,
-        'p_consent_version': consentVersion,
-      });
+      final n = await _db.rpc(
+        'redeem_split_share',
+        params: {
+          'p_token': token,
+          'p_athlete_first': athleteFirstName,
+          'p_athlete_dob': athleteDob,
+          'p_consent_version': consentVersion,
+        },
+      );
       return (n as num?)?.toInt();
     } catch (e) {
       debugPrint('redeemSplitShare failed (used/invalid/no consent): $e');
@@ -2023,9 +2185,10 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(teamBlockId)) return [];
     try {
-      final rows = await _db.rpc('team_block_split_status', params: {
-        'p_block': teamBlockId,
-      });
+      final rows = await _db.rpc(
+        'team_block_split_status',
+        params: {'p_block': teamBlockId},
+      );
       if (rows is! List) return [];
       return rows.map((r) {
         final m = r as Map;
@@ -2074,12 +2237,13 @@ class SupabaseRepository implements AppRepository {
       if (_isUuid(athleteId)) 'athlete_id': athleteId,
       'athlete_first_name': ?athleteFirstName,
       'athlete_age_band': ?athleteAgeBand,
-      'status': 'pending',
-      'payment_status': 'unpaid',
     };
     try {
-      final inserted =
-          await _db.from('bookings').insert(payload).select('id').single();
+      final inserted = await _db
+          .from('bookings')
+          .insert(payload)
+          .select('id')
+          .single();
       return (inserted as Map)['id']?.toString();
     } catch (e) {
       debugPrint('bookAssignableService failed (conflict/assignment/full): $e');
@@ -2095,11 +2259,10 @@ class SupabaseRepository implements AppRepository {
     try {
       final providerId = await _currentProviderId();
       if (providerId == null) return [];
-      final rows = await _db.rpc('org_schedule_grid', params: {
-        'p_org': providerId,
-        'p_from': fromDate,
-        'p_to': toDate,
-      });
+      final rows = await _db.rpc(
+        'org_schedule_grid',
+        params: {'p_org': providerId, 'p_from': fromDate, 'p_to': toDate},
+      );
       if (rows is! List) return [];
       return rows.map((r) {
         final m = r as Map;
@@ -2162,11 +2325,14 @@ class SupabaseRepository implements AppRepository {
   }) async {
     if (!_isUuid(conversationId)) return false;
     try {
-      await _db.rpc('route_conversation', params: {
-        'p_conversation': conversationId,
-        'p_service': _isUuid(serviceId) ? serviceId : null,
-        'p_member': _isUuid(memberId) ? memberId : null,
-      });
+      await _db.rpc(
+        'route_conversation',
+        params: {
+          'p_conversation': conversationId,
+          'p_service': _isUuid(serviceId) ? serviceId : null,
+          'p_member': _isUuid(memberId) ? memberId : null,
+        },
+      );
       return true;
     } catch (e) {
       debugPrint('routeConversation failed: $e');
@@ -2218,13 +2384,15 @@ class SupabaseRepository implements AppRepository {
       if (blocks.isNotEmpty) {
         final payload = blocks
             .where((b) => b['dayOfWeek'] != null)
-            .map((b) => {
-                  'provider_id': providerId,
-                  'day_of_week': b['dayOfWeek'],
-                  'start_time': b['startTime'],
-                  'end_time': b['endTime'],
-                  'is_blocked': false,
-                })
+            .map(
+              (b) => {
+                'provider_id': providerId,
+                'day_of_week': b['dayOfWeek'],
+                'start_time': b['startTime'],
+                'end_time': b['endTime'],
+                'is_blocked': false,
+              },
+            )
             .toList();
         if (payload.isNotEmpty) {
           await _db.from('availability').insert(payload);
@@ -2261,8 +2429,10 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
-  Future<bool> setAvailabilitySettings(
-      {int? bufferMinutes, String? vacationUntil}) async {
+  Future<bool> setAvailabilitySettings({
+    int? bufferMinutes,
+    String? vacationUntil,
+  }) async {
     final providerId = await _currentProviderId();
     if (providerId == null) return false;
     final upd = <String, dynamic>{};
@@ -2332,18 +2502,18 @@ class SupabaseRepository implements AppRepository {
 
   // ── Saved locations (venues) ────────────────────────────────────────────────
   Map<String, dynamic> _mapLocation(Map row) => {
-        '_id': row['id'],
-        'name': row['name'],
-        'addressLine1': row['address_line1'],
-        'addressLine2': row['address_line2'],
-        'city': row['city'],
-        'state': row['state'],
-        'zip': row['zip'],
-        'country': row['country'],
-        'lat': row['lat'],
-        'lng': row['lng'],
-        'active': row['is_active'] ?? true,
-      };
+    '_id': row['id'],
+    'name': row['name'],
+    'addressLine1': row['address_line1'],
+    'addressLine2': row['address_line2'],
+    'city': row['city'],
+    'state': row['state'],
+    'zip': row['zip'],
+    'country': row['country'],
+    'lat': row['lat'],
+    'lng': row['lng'],
+    'active': row['is_active'] ?? true,
+  };
 
   @override
   Future<List<Map<String, dynamic>>> getMyLocations() async {
@@ -2373,8 +2543,10 @@ class SupabaseRepository implements AppRepository {
     final payload = <String, dynamic>{
       'provider_id': providerId,
       'name': location['name'],
-      if (location['addressLine1'] != null) 'address_line1': location['addressLine1'],
-      if (location['addressLine2'] != null) 'address_line2': location['addressLine2'],
+      if (location['addressLine1'] != null)
+        'address_line1': location['addressLine1'],
+      if (location['addressLine2'] != null)
+        'address_line2': location['addressLine2'],
       if (location['city'] != null) 'city': location['city'],
       if (location['state'] != null) 'state': location['state'],
       if (location['zip'] != null) 'zip': location['zip'],
@@ -2383,8 +2555,11 @@ class SupabaseRepository implements AppRepository {
       if (location['lng'] != null) 'lng': location['lng'],
     };
     try {
-      final inserted =
-          await _db.from('locations').insert(payload).select('id').single();
+      final inserted = await _db
+          .from('locations')
+          .insert(payload)
+          .select('id')
+          .single();
       return (inserted as Map)['id']?.toString();
     } catch (e) {
       debugPrint('createLocation failed: $e');
@@ -2393,7 +2568,10 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
-  Future<bool> updateLocation(String locationId, Map<String, dynamic> patch) async {
+  Future<bool> updateLocation(
+    String locationId,
+    Map<String, dynamic> patch,
+  ) async {
     if (!_isUuid(locationId)) return false;
     const keyMap = {
       'name': 'name',
@@ -2494,9 +2672,7 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> draftRecap(
-    Map<String, dynamic> payload,
-  ) async {
+  Future<Map<String, dynamic>> draftRecap(Map<String, dynamic> payload) async {
     try {
       final res = await _db.functions.invoke('draft-recap', body: payload);
       return Map<String, dynamic>.from((res.data as Map?) ?? {});
@@ -2709,8 +2885,10 @@ class SupabaseRepository implements AppRepository {
     final data = await getProgramsOrThrow();
     // Gate inputs are GROUNDED from real columns in _mapProgram — never fabricated
     // here (fabricating them made G4/G5/G7 run on invented data).
-    final services =
-        data.whereType<Map>().map((p) => Map<String, dynamic>.from(p)).toList();
+    final services = data
+        .whereType<Map>()
+        .map((p) => Map<String, dynamic>.from(p))
+        .toList();
     // No hardcoded origin: without a KNOWN client location the distance gate
     // must not fire (otherwise a default radius wrongly excludes every listing
     // that isn't near an assumed city). Distance is only computed/gated when a
@@ -3003,7 +3181,9 @@ class SupabaseRepository implements AppRepository {
           ? {
               '_id': prov['id'],
               'businessName': prov['business_name'],
+              'status': prov['status'],
               'verificationStatus': prov['verification_status'],
+              'backgroundCheckStatus': prov['background_check_status'],
               'sports': _toList(prov['sports']),
               'backgroundCheckCompletedAt':
                   prov['background_check_completed_at'],
@@ -3196,8 +3376,20 @@ class SupabaseRepository implements AppRepository {
   // Connectives/stopwords that must never dangle at the end of a headline once
   // the ~5-word/~40-char cap has clipped mid-phrase (e.g. "…Make Fun And").
   static const List<String> _trailingStopwords = [
-    'and', 'or', 'to', 'the', 'a', 'an', 'for',
-    'with', 'of', 'in', 'on', 'at', 'by', '&',
+    'and',
+    'or',
+    'to',
+    'the',
+    'a',
+    'an',
+    'for',
+    'with',
+    'of',
+    'in',
+    'on',
+    'at',
+    'by',
+    '&',
   ];
 
   // Trim any trailing connective/stopword left dangling after the cap, repeated
@@ -3205,8 +3397,9 @@ class SupabaseRepository implements AppRepository {
   static String _stripTrailingStopwords(String s) {
     final words = s.split(' ').where((w) => w.isNotEmpty).toList();
     while (words.length > 1) {
-      final last =
-          words.last.replaceAll(RegExp(r'[.,;:!?]+$'), '').toLowerCase();
+      final last = words.last
+          .replaceAll(RegExp(r'[.,;:!?]+$'), '')
+          .toLowerCase();
       if (!_trailingStopwords.contains(last)) break;
       words.removeLast();
     }
@@ -3281,8 +3474,8 @@ class SupabaseRepository implements AppRepository {
       final rows = await _db
           .from('plan_proposals')
           .select(
-            '*, programs(*, providers(business_name, verification_status, background_check_completed_at)), '
-            'providers(id, business_name, verification_status, sports, background_check_completed_at)',
+            '*, programs(*, providers(business_name, status, verification_status, background_check_status, background_check_completed_at, account_status)), '
+            'providers(id, business_name, status, verification_status, background_check_status, sports, background_check_completed_at, account_status)',
           )
           .eq('plan_id', planId)
           .eq('status', status)
@@ -3477,6 +3670,70 @@ class SupabaseRepository implements AppRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> createProviderConnectSession({
+    required Uri returnUrl,
+  }) async {
+    try {
+      final response = await _db.functions.invoke(
+        'stripe-connect-onboarding',
+        body: {'returnUrl': returnUrl.toString()},
+      );
+      return _actionMap(
+        response.data,
+        'Payout setup returned an invalid response.',
+      );
+    } on FunctionException catch (error) {
+      throw RepositoryActionException(
+        _functionActionMessage(error, 'Payout setup could not be started.'),
+      );
+    } on RepositoryActionException {
+      rethrow;
+    } catch (error) {
+      debugPrint('createProviderConnectSession failed: $error');
+      throw const RepositoryActionException(
+        'Payout setup could not be started. Please try again.',
+      );
+    }
+  }
+
+  @override
+  Future<void> refreshProviderEmbeddings() async {
+    try {
+      await _db.functions.invoke('backfill-embeddings');
+    } catch (error) {
+      debugPrint('refreshProviderEmbeddings failed: $error');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> generateProviderOnboardDraft(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = await _db.functions.invoke(
+        'provider-onboard-draft',
+        body: payload,
+      );
+      return _actionMap(
+        response.data,
+        'The draft service returned an invalid response.',
+      );
+    } on FunctionException catch (error) {
+      throw RepositoryActionException(
+        _functionActionMessage(error, 'Could not generate a provider draft.'),
+      );
+    } on RepositoryActionException {
+      rethrow;
+    } catch (error) {
+      debugPrint('generateProviderOnboardDraft failed: $error');
+      throw const RepositoryActionException(
+        'Could not generate a provider draft. You can fill it in manually.',
+      );
+    }
+  }
+
+  @override
   Future<void> saveProviderProfile(Map<String, dynamic> profile) async {
     try {
       final uid = _uid;
@@ -3529,7 +3786,8 @@ class SupabaseRepository implements AppRepository {
       final row = await _db
           .from('providers')
           .select(
-              'cancellation_policy, what_to_bring, travel_radius, session_notes, faq')
+            'cancellation_policy, what_to_bring, travel_radius, session_notes, faq',
+          )
           .eq('owner_id', uid)
           .maybeSingle();
       if (row == null) return {};

@@ -5,7 +5,7 @@
     <!-- Android 13+ runtime notification permission (FCM push) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
-        android:label="flutter_structure"
+        android:label="Sporve"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

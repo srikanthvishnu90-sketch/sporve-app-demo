@@ -1,4 +1,4 @@
-package com.example.flutter_structure
+package com.sporve.app
 
 import io.flutter.embedding.android.FlutterActivity
 

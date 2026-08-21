@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/utils/earnings_csv.dart';
+import 'package:sporve_app/core/utils/earnings_csv.dart';
 
 void main() {
   test('unknown historical fees stay blank', () {

@@ -1,46 +1,52 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
+Set<String> _extract(RegExp pattern) {
+  final names = <String>{};
+  for (final entity in Directory('lib').listSync(recursive: true)) {
+    if (entity is! File || !entity.path.endsWith('.dart')) continue;
+    final source = entity.readAsStringSync();
+    names.addAll(pattern.allMatches(source).map((match) => match.group(1)!));
+  }
+  return names;
+}
+
 void main() {
-  test('CI check: every client-invoked Edge Function string exists in the deployed registry (zero misses)', () {
-    // The authoritative deployed Edge Functions catalog:
-    const deployedEdgeFunctions = <String>{
-      'search-parse',
-      'search-execute',
-      'ai-match',
-      'session-note-summarize',
-      'message-draft',
-      'lifecycle-approve',
-      'lifecycle-generate',
-      'backfill-embeddings',
-      'generate-proposals',
-      'onboard-draft',
-      'stripe-checkout',
-      'stripe-connect',
-    };
+  test('every literal Edge Function invocation has a manifest contract', () {
+    final manifest =
+        jsonDecode(File('contracts/backend_functions.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final registered = (manifest['functions'] as Map).keys
+        .map((name) => name.toString())
+        .toSet();
+    final invoked = _extract(
+      RegExp(r'''\.functions\s*\.invoke\s*\(\s*['"]([^'"]+)['"]'''),
+    );
 
-    // Client-invoked function names extracted from SupabaseRepository & controllers:
-    const clientInvokedFunctions = <String>[
-      'search-parse',
-      'search-execute',
-      'ai-match',
-      'session-note-summarize',
-      'message-draft',
-      'lifecycle-approve',
-      'lifecycle-generate',
-      'backfill-embeddings',
-      'generate-proposals',
-      'onboard-draft',
-      'stripe-checkout',
-      'stripe-connect',
-    ];
+    expect(invoked, isNotEmpty);
+    expect(
+      invoked.difference(registered),
+      isEmpty,
+      reason: 'Add every new literal functions.invoke name to the contract.',
+    );
+  });
 
-    for (final fn in clientInvokedFunctions) {
-      expect(
-        deployedEdgeFunctions.contains(fn),
-        isTrue,
-        reason:
-            'Client invokes Edge Function "$fn", but it is missing from the deployed Edge Functions registry!',
-      );
-    }
+  test('every literal RPC invocation has a manifest contract', () {
+    final manifest =
+        jsonDecode(File('contracts/backend_rpcs.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final registered = (manifest['rpcs'] as List)
+        .map((name) => name.toString())
+        .toSet();
+    final invoked = _extract(RegExp(r'''\.rpc\s*\(\s*['"]([^'"]+)['"]'''));
+
+    expect(invoked, isNotEmpty);
+    expect(
+      invoked.difference(registered),
+      isEmpty,
+      reason: 'Add every new literal rpc name to the contract.',
+    );
   });
 }

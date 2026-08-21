@@ -1,82 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Sporve type system — **Inter** (headers/titles ≥18px) / **Hanken Grotesk**
-/// (UI + body) / **JetBrains Mono** (all data/numbers), loaded via google_fonts.
-/// Header sizes are intentionally restrained (reduced from the earlier scale —
-/// smaller, tighter titles). All styles funnel through here (CLAUDE.md).
+/// Sporve's locked type system: Oswald display, Hanken Grotesk body/UI, and
+/// JetBrains Mono for money, times, counts, and other data.
 class AppTypography {
-  /// Default app font family (Hanken Grotesk) for the MaterialApp theme.
   static String get fontFamily =>
-      GoogleFonts.inter().fontFamily ?? 'HankenGrotesk';
+      GoogleFonts.hankenGrotesk().fontFamily ?? 'Hanken Grotesk';
 
-  // ── Display / headers / titles → Inter ────────────────────────────────────
   static TextStyle _headerFont({
     required double size,
     required FontWeight weight,
     required double tracking,
-    double height = 1.3,
+    double height = 1.2,
     Color? color,
-  }) =>
-      GoogleFonts.inter(
-        fontSize: size,
-        fontWeight: weight,
-        letterSpacing: tracking,
-        height: height,
-        color: color,
-      );
+  }) => GoogleFonts.oswald(
+    fontSize: size,
+    fontWeight: weight,
+    letterSpacing: tracking < 0 ? 0 : tracking,
+    height: height,
+    color: color,
+  );
 
-  // ── Body / UI → Hanken Grotesk ────────────────────────────────────────────
   static TextStyle _bodyFont({
     required double size,
     required FontWeight weight,
     required double tracking,
     double height = 1.3,
     Color? color,
-  }) =>
-      GoogleFonts.inter(
-        fontSize: size,
-        fontWeight: weight,
-        letterSpacing: tracking,
-        height: height,
-        color: color,
-      );
+  }) => GoogleFonts.hankenGrotesk(
+    fontSize: size,
+    fontWeight: weight,
+    letterSpacing: tracking,
+    height: height,
+    color: color,
+  );
 
-  // ── Display & headlines (Inter) — sizes reduced/restrained ────────────────
   static TextStyle get displayLarge => _headerFont(
-      size: 26, weight: FontWeight.w700, tracking: -0.6, height: 1.05);
-
-  static TextStyle get display =>
-      _headerFont(size: 23, weight: FontWeight.w700, tracking: -0.5, height: 1.12);
-
-  static TextStyle get h1 =>
-      _headerFont(size: 19, weight: FontWeight.w600, tracking: -0.4, height: 1.15);
+    size: 26,
+    weight: FontWeight.w700,
+    tracking: 0.2,
+    height: 1.05,
+  );
+  static TextStyle get display => _headerFont(
+    size: 23,
+    weight: FontWeight.w700,
+    tracking: 0.15,
+    height: 1.12,
+  );
+  static TextStyle get h1 => _headerFont(
+    size: 19,
+    weight: FontWeight.w700,
+    tracking: 0.1,
+    height: 1.15,
+  );
   static TextStyle get heading => h1;
-
   static TextStyle get h2 =>
-      _headerFont(size: 16, weight: FontWeight.w600, tracking: -0.3, height: 1.2);
+      _bodyFont(size: 16, weight: FontWeight.w700, tracking: -0.1, height: 1.2);
 
-  // ── Body — sizes unchanged ────────────────────────────────────────────────
   static TextStyle get titleMedium =>
-      _bodyFont(size: 15, weight: FontWeight.w500, tracking: -0.1, height: 1.3);
+      _bodyFont(size: 15, weight: FontWeight.w500, tracking: -0.1);
   static TextStyle get bodyLarge =>
       _bodyFont(size: 15, weight: FontWeight.w400, tracking: 0, height: 1.5);
   static TextStyle get bodyMedium =>
       _bodyFont(size: 13.5, weight: FontWeight.w400, tracking: 0, height: 1.5);
   static TextStyle get bodySmall =>
       _bodyFont(size: 12.5, weight: FontWeight.w400, tracking: 0, height: 1.45);
-
-  // ── Labels & captions — sizes unchanged ───────────────────────────────────
   static TextStyle get label =>
-      _bodyFont(size: 11, weight: FontWeight.w500, tracking: 0.4, height: 1.3);
+      _bodyFont(size: 11, weight: FontWeight.w500, tracking: 0.4);
   static TextStyle get caption =>
       _bodyFont(size: 11, weight: FontWeight.w400, tracking: 0.1, height: 1.4);
   static TextStyle get valueBold =>
-      _bodyFont(size: 16, weight: FontWeight.w700, tracking: -0.3, height: 1.2);
+      _bodyFont(size: 16, weight: FontWeight.w700, tracking: -0.2, height: 1.2);
 
-  /// Inline call sites. Headers (≥18px) render in Oswald; body/labels in Hanken
-  /// Grotesk. The sizing/weight/tracking rules are preserved from before — only
-  /// the faces changed.
+  /// Inline compatibility API. Text at 18px and above uses Oswald; smaller UI
+  /// copy uses Hanken Grotesk. Declared weights pass through unchanged.
   static TextStyle font({
     double? fontSize,
     FontWeight? fontWeight,
@@ -92,21 +89,14 @@ class AppTypography {
     TextBaseline? textBaseline,
     List<Shadow>? shadows,
   }) {
-    final w = fontWeight ?? FontWeight.w400;
-    double? size = fontSize;
-    if (size != null && size > 24) size = 24; // restrained header ceiling
-    double? ls;
-    if (size != null &&
-        size >= 20 &&
-        (letterSpacing == null || letterSpacing >= 0)) {
-      ls = -0.4;
-    } else {
-      ls = _track(letterSpacing);
-    }
-    return GoogleFonts.inter(
-      fontSize: size,
-      fontWeight: w,
-      letterSpacing: ls,
+    final isHeader = (fontSize ?? 0) >= 18;
+    final tracking = isHeader
+        ? ((letterSpacing ?? 0.1) < 0 ? 0.0 : (letterSpacing ?? 0.1))
+        : letterSpacing;
+    final arguments = TextStyle(
+      fontSize: fontSize,
+      fontWeight: fontWeight ?? FontWeight.w400,
+      letterSpacing: tracking,
       height: height,
       color: color,
       fontStyle: fontStyle,
@@ -118,23 +108,20 @@ class AppTypography {
       textBaseline: textBaseline,
       shadows: shadows,
     );
+    return (isHeader ? GoogleFonts.oswald() : GoogleFonts.hankenGrotesk())
+        .merge(arguments);
   }
 
-  /// Tracking diet: collapse airy caps spacing to a whisper.
-  static double? _track(double? ls) => (ls != null && ls > 0.6) ? 0.4 : ls;
-
-  /// Data / numbers → JetBrains Mono. Sizes unchanged.
   static TextStyle mono({
     double size = 13,
     FontWeight weight = FontWeight.w500,
     Color? color,
     double height = 1.2,
-  }) =>
-      GoogleFonts.jetBrainsMono(
-        fontSize: size,
-        fontWeight: weight,
-        color: color,
-        height: height,
-        letterSpacing: 0,
-      );
+  }) => GoogleFonts.jetBrainsMono(
+    fontSize: size,
+    fontWeight: weight,
+    color: color,
+    height: height,
+    letterSpacing: 0,
+  );
 }

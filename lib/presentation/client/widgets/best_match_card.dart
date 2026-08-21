@@ -6,6 +6,7 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/sport_colors.dart';
 import '../../../core/routes/app_routes.dart';
+import '../../../core/utils/provider_trust.dart';
 import '../../widgets/common_widgets.dart';
 import '../controllers/home_controller.dart';
 import '../../authentication/controllers/auth_provider.dart';
@@ -28,8 +29,9 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
   int _index = 0;
 
   void _pass() {
-    if (widget.matches.length < 2) return;
-    setState(() => _index = (_index + 1) % widget.matches.length);
+    final count = widget.matches.where(providerTrusted).length;
+    if (count < 2) return;
+    setState(() => _index = (_index + 1) % count);
   }
 
   void _view(Map<String, dynamic> m) =>
@@ -44,8 +46,12 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
 
   // A grounded, honest rationale — assembled only from fields the row actually
   // carries. Never claims a specialty or result the data doesn't support.
-  String _why(Map<String, dynamic> m, String? sport, bool hasRating,
-      String rating) {
+  String _why(
+    Map<String, dynamic> m,
+    String? sport,
+    bool hasRating,
+    String rating,
+  ) {
     final parts = <String>[];
     if (sport != null && sport.isNotEmpty) parts.add('$sport coaching');
     final title = m['title']?.toString();
@@ -56,9 +62,11 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.matches.isEmpty) return const SizedBox.shrink();
+    final trustedMatches = widget.matches.where(providerTrusted).toList();
+    if (trustedMatches.isEmpty) return const SizedBox.shrink();
     final home = context.watch<HomeProvider>();
-    final m = widget.matches[_index];
+    if (_index >= trustedMatches.length) _index = 0;
+    final m = trustedMatches[_index];
     final sport = _sportOf(m);
     final coach = _coachOf(m);
     final price = m['price'];
@@ -88,7 +96,7 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
             ),
             const Spacer(),
             Text(
-              '${_index + 1} of ${widget.matches.length}',
+              '${_index + 1} of ${trustedMatches.length}',
               style: AppTypography.font(
                 color: AppColors.textTertiary,
                 fontSize: 12,
@@ -183,8 +191,11 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
                       Row(
                         children: [
                           if (hasRating) ...[
-                            const Icon(Icons.star,
-                                color: AppColors.textPrimary, size: 14),
+                            const Icon(
+                              Icons.star,
+                              color: AppColors.textPrimary,
+                              size: 14,
+                            ),
                             const SizedBox(width: 3),
                           ],
                           Text(
@@ -274,7 +285,7 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
         Center(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(widget.matches.length, (i) {
+            children: List.generate(trustedMatches.length, (i) {
               final active = i == _index;
               return Container(
                 width: active ? 18 : 6,
@@ -293,47 +304,46 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
   }
 
   Widget _pill(String text, Color accent) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppColors.ink.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(AppRadii.chip),
-          border: Border.all(color: accent.withValues(alpha: 0.5)),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: AppColors.ink.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(AppRadii.chip),
+      border: Border.all(color: accent.withValues(alpha: 0.5)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.auto_awesome, size: 11, color: AppColors.onSlate),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: AppTypography.font(
+            color: AppColors.onSlate,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.4,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.auto_awesome, size: 11, color: AppColors.onSlate),
-            const SizedBox(width: 5),
-            Text(
-              text,
-              style: AppTypography.font(
-                color: AppColors.onSlate,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.4,
-              ),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 
   Widget _circleAction({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
     required Color color,
-  }) =>
-      InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(30),
-        child: Container(
-          width: 54,
-          height: 54,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.hairlineStrong),
-          ),
-          child: Icon(icon, color: color, size: 22),
-        ),
-      );
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(AppRadii.pill),
+    child: Container(
+      width: 54,
+      height: 54,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.hairlineStrong),
+      ),
+      child: Icon(icon, color: color, size: 22),
+    ),
+  );
 }

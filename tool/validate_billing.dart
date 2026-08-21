@@ -1,8 +1,8 @@
-import 'package:flutter_structure/core/models/subscription.dart';
-import 'package:flutter_structure/core/utils/commission.dart';
-import 'package:flutter_structure/core/utils/earnings_csv.dart';
-import 'package:flutter_structure/core/utils/platform_fee.dart';
-import 'package:flutter_structure/core/utils/team_split.dart';
+import 'package:sporve_app/core/models/subscription.dart';
+import 'package:sporve_app/core/utils/commission.dart';
+import 'package:sporve_app/core/utils/earnings_csv.dart';
+import 'package:sporve_app/core/utils/platform_fee.dart';
+import 'package:sporve_app/core/utils/team_split.dart';
 
 void check(bool condition, String message) {
   if (!condition) throw StateError(message);

@@ -1,0 +1,42 @@
+Sporve third-party notices
+Updated: 2026-08-20
+
+Font Awesome 5 Free 5.13.0
+- Files: public/fonts/fa-*
+- Copyright: Fonticons, Inc. and contributors.
+- Web/desktop font files are under SIL Open Font License 1.1. SVG icon assets
+  are under Creative Commons Attribution 4.0; non-font code is under MIT.
+- Official terms: https://fontawesome.com/license/free
+- Brand icons represent their respective owners and do not imply endorsement.
+
+Manrope
+- Files: assets/font/Manrope-*.ttf
+- Copyright 2019 The Manrope Project Authors.
+- License: SIL Open Font License 1.1.
+- Upstream record: https://github.com/google/fonts/tree/main/ofl/manrope
+
+Geist
+- File: assets/fonts/Geist.ttf
+- Copyright (c) 2023 Vercel, in collaboration with basement.studio.
+- License: SIL Open Font License 1.1.
+- Upstream license: https://github.com/vercel/geist-font/blob/main/LICENSE.txt
+
+Passkeys web adapter
+- File: web/bundle.js
+- Derived from the passkeys 2.20.0 example web bundle by Corbado GmbH, with a
+  compatibility change mapping a user abort to the plugin's cancelled state.
+- License: BSD 3-Clause; see third_party/licenses/PASSKEYS-BSD-3-CLAUSE.txt.
+- The bundle retains the embedded Microsoft TypeScript helper ISC notice.
+- This is an intentional runtime dependency loaded by web/index.html, not a
+  Flutter build output.
+
+Product assets
+- assets/images/SporveLogo.png is represented as a Sporve-owned product mark.
+- The acquisition/source records for assets/images/ambient_noise.png,
+  assets/images/marketeq_goal.png, assets/icons/apple.svg, assets/icons/google.svg,
+  and the native launcher assets were not present in this repository when this
+  notice was prepared. Redistribution approval remains an owner release blocker
+  until the source or ownership record for each file is placed in company files.
+
+The SIL Open Font License text shared by the font families above is included at
+third_party/licenses/OFL-1.1.txt.

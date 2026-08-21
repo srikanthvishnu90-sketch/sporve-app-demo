@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'sentry_service.dart';
 
 /// Central Analytics Service for Sporve Funnel & Usage Instrumentation
 class AnalyticsService {
@@ -11,7 +12,12 @@ class AnalyticsService {
   SupabaseClient? get _supabase {
     try {
       return Supabase.instance.client;
-    } catch (_) {
+    } catch (error) {
+      SentryService().addBreadcrumb(
+        'Analytics client is not initialized.',
+        category: 'analytics',
+        data: {'error': error.toString()},
+      );
       return null;
     }
   }
@@ -44,7 +50,12 @@ class AnalyticsService {
         });
       }
     } catch (e) {
-      // Analytics should never crash the app
+      // Analytics is non-fatal, but the failed signal remains observable.
+      SentryService().addBreadcrumb(
+        'Analytics event could not be persisted.',
+        category: 'analytics',
+        data: {'event': eventName, 'error': e.toString()},
+      );
       if (kDebugMode) {
         developer.log('⚠️ [Analytics] Failed to persist event: $e');
       }
@@ -54,46 +65,48 @@ class AnalyticsService {
   // --- Client Funnel Shortcuts ---
 
   void logSearch({required String query, String? sport, String? location}) {
-    logEvent('funnel_client_search', properties: {
-      'query': query,
-      'sport': sport,
-      'location': location,
-    });
+    logEvent(
+      'funnel_client_search',
+      properties: {'query': query, 'sport': sport, 'location': location},
+    );
   }
 
   void logProfileView({required String coachId, required String coachName}) {
-    logEvent('funnel_client_profile_view', properties: {
-      'coach_id': coachId,
-      'coach_name': coachName,
-    });
+    logEvent(
+      'funnel_client_profile_view',
+      properties: {'coach_id': coachId, 'coach_name': coachName},
+    );
   }
 
   void logBookingStart({required String coachId, required String sport}) {
-    logEvent('funnel_client_booking_start', properties: {
-      'coach_id': coachId,
-      'sport': sport,
-    });
+    logEvent(
+      'funnel_client_booking_start',
+      properties: {'coach_id': coachId, 'sport': sport},
+    );
   }
 
   void logAuthCompleted({required String userId, required String role}) {
-    logEvent('funnel_auth_completed', properties: {
-      'user_id': userId,
-      'role': role,
-    });
+    logEvent(
+      'funnel_auth_completed',
+      properties: {'user_id': userId, 'role': role},
+    );
   }
 
   void logPaymentStart({required String bookingId, required int amountCents}) {
-    logEvent('funnel_client_payment_start', properties: {
-      'booking_id': bookingId,
-      'amount_cents': amountCents,
-    });
+    logEvent(
+      'funnel_client_payment_start',
+      properties: {'booking_id': bookingId, 'amount_cents': amountCents},
+    );
   }
 
-  void logBookingConfirmed({required String bookingId, required String coachId}) {
-    logEvent('funnel_client_booking_confirmed', properties: {
-      'booking_id': bookingId,
-      'coach_id': coachId,
-    });
+  void logBookingConfirmed({
+    required String bookingId,
+    required String coachId,
+  }) {
+    logEvent(
+      'funnel_client_booking_confirmed',
+      properties: {'booking_id': bookingId, 'coach_id': coachId},
+    );
   }
 
   // --- Coach Funnel Shortcuts ---
@@ -110,17 +123,23 @@ class AnalyticsService {
     logEvent('funnel_coach_stripe_connect', properties: {'coach_id': coachId});
   }
 
-  void logFirstListingCreated({required String coachId, required String sport}) {
-    logEvent('funnel_coach_first_listing', properties: {
-      'coach_id': coachId,
-      'sport': sport,
-    });
+  void logFirstListingCreated({
+    required String coachId,
+    required String sport,
+  }) {
+    logEvent(
+      'funnel_coach_first_listing',
+      properties: {'coach_id': coachId, 'sport': sport},
+    );
   }
 
-  void logFirstBookingReceived({required String coachId, required String bookingId}) {
-    logEvent('funnel_coach_first_booking', properties: {
-      'coach_id': coachId,
-      'booking_id': bookingId,
-    });
+  void logFirstBookingReceived({
+    required String coachId,
+    required String bookingId,
+  }) {
+    logEvent(
+      'funnel_coach_first_booking',
+      properties: {'coach_id': coachId, 'booking_id': bookingId},
+    );
   }
 }

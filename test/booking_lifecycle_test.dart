@@ -4,8 +4,8 @@
 // failure must NOT change local state.
 //   flutter test test/booking_lifecycle_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/provider/controllers/provider_controller.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/provider/controllers/provider_controller.dart';
 
 class _FakeRepo implements AppRepository {
   final List<(String, String)> statusCalls = [];

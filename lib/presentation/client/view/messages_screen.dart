@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../../core/routes/app_routes.dart';
@@ -273,9 +273,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
             : '';
         final lastMessage = conv['lastMessage'];
         final String lastMsg =
-            (lastMessage is Map ? lastMessage['text'] : null) ?? 'No messages yet';
+            (lastMessage is Map ? lastMessage['text'] : null) ??
+            'No messages yet';
         final String time = _formatDateTime(
-            lastMessage is Map ? lastMessage['createdAt'] : null);
+          lastMessage is Map ? lastMessage['createdAt'] : null,
+        );
         final String conversationId = conv['_id'] ?? '';
         final int unreadCount = conv['unreadCount'] is int
             ? conv['unreadCount'] as int
@@ -335,9 +337,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
         final String avatar = program != null ? (program['image'] ?? '') : '';
         final lastMessage = conv['lastMessage'];
         final String lastMsg =
-            (lastMessage is Map ? lastMessage['text'] : null) ?? 'No messages yet';
+            (lastMessage is Map ? lastMessage['text'] : null) ??
+            'No messages yet';
         final String time = _formatDateTime(
-            lastMessage is Map ? lastMessage['createdAt'] : null);
+          lastMessage is Map ? lastMessage['createdAt'] : null,
+        );
         final String conversationId = conv['_id'] ?? '';
         final int unreadCount = conv['unreadCount'] is int
             ? conv['unreadCount'] as int
@@ -496,16 +500,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
         if (b is! Map) continue;
         final program = b['programId'];
         final provider = program is Map ? program['providerId'] : null;
-        final biz =
-            provider is Map ? provider['businessName']?.toString() : null;
+        final biz = provider is Map
+            ? provider['businessName']?.toString()
+            : null;
         if (biz != null &&
             biz.toLowerCase().trim() == contactName.toLowerCase().trim()) {
           final session = b['sessionId'] is Map ? b['sessionId'] : null;
           final start = parseSessionStart(session);
-          if (!start.isBefore(DateTime.now())) {
-            athleteName =
-                (b['athleteName'] ?? b['athleteFirstName'] ?? '').toString();
-            nextSession = '${start.month}/${start.day} · ${formatTime12h(start)}';
+          if (start != null && !start.isBefore(DateTime.now())) {
+            athleteName = (b['athleteName'] ?? b['athleteFirstName'] ?? '')
+                .toString();
+            nextSession =
+                '${start.month}/${start.day} · ${formatTime12h(start)}';
             break;
           }
         }
@@ -595,35 +601,35 @@ class _MessagesScreenState extends State<MessagesScreen> {
               )
             else
               Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.only(bottom: 12),
-                itemCount: entries.length,
-                separatorBuilder: (_, _) => const Hairline(),
-                itemBuilder: (_, i) {
-                  final biz = entries[i].key;
-                  final ownerId = entries[i].value.ownerId;
-                  final sport = entries[i].value.sport;
-                  return ListTile(
-                    leading: SportIconTile(sport, size: 42),
-                    title: Text(
-                      biz,
-                      style: AppTypography.font(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: entries.length,
+                  separatorBuilder: (_, _) => const Hairline(),
+                  itemBuilder: (_, i) {
+                    final biz = entries[i].key;
+                    final ownerId = entries[i].value.ownerId;
+                    final sport = entries[i].value.sport;
+                    return ListTile(
+                      leading: SportIconTile(sport, size: 42),
+                      title: Text(
+                        biz,
+                        style: AppTypography.font(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    trailing: const Icon(
-                      Icons.chevron_right,
-                      color: AppColors.textTertiary,
-                      size: 20,
-                    ),
-                    onTap: () => _startChatWith(ctx, ownerId, biz),
-                  );
-                },
+                      trailing: const Icon(
+                        Icons.chevron_right,
+                        color: AppColors.textTertiary,
+                        size: 20,
+                      ),
+                      onTap: () => _startChatWith(ctx, ownerId, biz),
+                    );
+                  },
+                ),
               ),
-            ),
           ],
         ),
       ),

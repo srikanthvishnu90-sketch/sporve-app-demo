@@ -4,7 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_structure/presentation/widgets/common_widgets.dart';
+import 'package:sporve_app/presentation/widgets/common_widgets.dart';
 
 void main() {
   testWidgets('GradientScaffold renders its body', (WidgetTester tester) async {

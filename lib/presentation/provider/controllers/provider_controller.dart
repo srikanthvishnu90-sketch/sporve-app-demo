@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/data/app_repository.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/earnings_csv.dart';
 import '../../../core/utils/platform_fee.dart';
+import '../../../core/utils/provider_trust.dart';
+import '../../../core/utils/booking_tier.dart';
 
 /// One paid-booking row for the money page: gross → recorded Sporve fee →
 /// provider amount before processing. Missing webhook facts remain unknown.
@@ -22,6 +23,7 @@ class ProviderTxn {
   final bool feeKnown;
   final bool isRecorded;
   final String currency;
+  final String? tierLabel;
   const ProviderTxn({
     required this.date,
     required this.athlete,
@@ -37,6 +39,7 @@ class ProviderTxn {
     required this.feeKnown,
     required this.isRecorded,
     required this.currency,
+    this.tierLabel,
   });
 }
 
@@ -242,7 +245,7 @@ class ProviderListing {
 
     if (prov is Map) {
       providerName = prov['businessName']?.toString() ?? providerName;
-      providerVerified = prov['verificationStatus'] == 'verified';
+      providerVerified = providerTrusted(data);
     }
 
     final rawGallery = data['gallery'];
@@ -346,7 +349,11 @@ class ProviderController with ChangeNotifier {
   Future<bool> createTrainer(Map<String, dynamic> member) async {
     final id = await _repo.createOrgMember(member);
     if (id == null) return false;
-    _trainers.insert(0, {...member, 'id': id, 'background_check_status': 'none'});
+    _trainers.insert(0, {
+      ...member,
+      'id': id,
+      'background_check_status': 'none',
+    });
     notifyListeners();
     return true;
   }
@@ -364,7 +371,10 @@ class ProviderController with ChangeNotifier {
   /// Remove a trainer from the org. If [cancelFutureBookings] is true, in-flight
   /// future bookings assigned to this trainer are cancelled & refunded.
   /// Otherwise (default Honor & Settle), existing bookings remain intact to complete.
-  Future<bool> deleteTrainer(String id, {bool cancelFutureBookings = false}) async {
+  Future<bool> deleteTrainer(
+    String id, {
+    bool cancelFutureBookings = false,
+  }) async {
     if (cancelFutureBookings) {
       final now = DateTime.now();
       final futureSessions = _sessions.where(
@@ -397,7 +407,11 @@ class ProviderController with ChangeNotifier {
     required String type,
     required num value,
   }) async {
-    final ok = await _repo.addCommissionRate(memberId, type: type, value: value);
+    final ok = await _repo.addCommissionRate(
+      memberId,
+      type: type,
+      value: value,
+    );
     if (ok) {
       final i = _trainers.indexWhere((m) => m['id'] == memberId);
       if (i >= 0) {
@@ -423,8 +437,10 @@ class ProviderController with ChangeNotifier {
     String profileId, {
     Map<String, dynamic>? trainerProfile,
   }) async {
-    final id = await _repo.affiliateExistingAccount(profileId,
-        trainerProfile: trainerProfile);
+    final id = await _repo.affiliateExistingAccount(
+      profileId,
+      trainerProfile: trainerProfile,
+    );
     if (id == null) return false;
     await loadTrainers();
     return true;
@@ -444,11 +460,16 @@ class ProviderController with ChangeNotifier {
   String get payoutSchedule =>
       (_providerProfile['payoutSchedule'] ?? 'Monthly').toString();
   String get kycStatus =>
-      (_providerProfile['kycStatus'] ?? _providerProfile['verificationStatus'] ?? 'unverified').toString();
+      (_providerProfile['kycStatus'] ??
+              _providerProfile['verificationStatus'] ??
+              'unverified')
+          .toString();
   String? get kycFailureReason =>
       _providerProfile['kycFailureReason'] as String?;
   bool get isPayoutsEnabled =>
-      stripeChargesEnabled && kycStatus.toLowerCase() != 'rejected' && kycStatus.toLowerCase() != 'failed';
+      stripeChargesEnabled &&
+      kycStatus.toLowerCase() != 'rejected' &&
+      kycStatus.toLowerCase() != 'failed';
 
   /// Update the payout schedule setting (Daily, Weekly, Monthly) and persist to provider profile.
   Future<bool> updatePayoutSchedule(String schedule) async {
@@ -520,7 +541,7 @@ class ProviderController with ChangeNotifier {
       // and idempotent: backfill-embeddings skips rows whose source hash is
       // unchanged, so an unchanged save does not re-embed. Never blocks the save.
       try {
-        await Supabase.instance.client.functions.invoke('backfill-embeddings');
+        await _repo.refreshProviderEmbeddings();
       } catch (e) {
         debugPrint('embedding refresh skipped: $e');
       }
@@ -551,7 +572,9 @@ class ProviderController with ChangeNotifier {
         try {
           _providerProfile = await _repo.getProviderProfile();
         } catch (e) {
-          debugPrint('fetchMyPrograms: provider profile scope lookup failed: $e');
+          debugPrint(
+            'fetchMyPrograms: provider profile scope lookup failed: $e',
+          );
         }
       }
       final myBiz = (_providerProfile['businessName'] ?? '').toString().trim();
@@ -561,7 +584,8 @@ class ProviderController with ChangeNotifier {
           final loc = item['location']?['coordinates'];
           final addr = item['address'] ?? {};
           final prov = item['providerId'];
-          final biz = (prov is Map ? prov['businessName']?.toString() : '') ?? '';
+          final biz =
+              (prov is Map ? prov['businessName']?.toString() : '') ?? '';
           if (myBiz.isNotEmpty && biz != myBiz) continue;
           _listings.add(
             ProviderListing(
@@ -597,8 +621,7 @@ class ProviderController with ChangeNotifier {
               providerName: (prov is Map)
                   ? (prov['businessName']?.toString() ?? '')
                   : '',
-              providerVerified:
-                  (prov is Map) && prov['verificationStatus'] == 'verified',
+              providerVerified: providerTrusted(item),
             ),
           );
         } catch (e) {
@@ -831,6 +854,7 @@ class ProviderController with ChangeNotifier {
     notifyListeners();
     return _rosterAthletes.length;
   }
+
   int get bookingCount => _sessions.where((s) => !s.isDeclined).length;
   int get listingCount => _listings.length;
   int get sessionsToday {
@@ -864,14 +888,19 @@ class ProviderController with ChangeNotifier {
             final price = (booking['finalPrice'] as num?)?.toDouble() ?? 0;
             _revenue += price;
             // Calculate org commission for this month's bookings
-            final orgCut = (booking['orgCommissionCents'] as num?)?.toDouble() ??
+            final orgCut =
+                (booking['orgCommissionCents'] as num?)?.toDouble() ??
                 (booking['org_commission_cents'] as num?)?.toDouble();
-            final dateStr = (booking['createdAt'] ?? booking['date'] ?? '').toString();
+            final dateStr = (booking['createdAt'] ?? booking['date'] ?? '')
+                .toString();
             final dt = DateTime.tryParse(dateStr);
-            if (dt != null && dt.year == nowMonth.year && dt.month == nowMonth.month) {
+            if (dt != null &&
+                dt.year == nowMonth.year &&
+                dt.month == nowMonth.month) {
               if (orgCut != null) {
                 _monthlyTrainerRevenue += orgCut / 100.0;
-              } else if (booking['trainerId'] != null || booking['trainer_id'] != null) {
+              } else if (booking['trainerId'] != null ||
+                  booking['trainer_id'] != null) {
                 _monthlyTrainerRevenue += price * 0.15; // default 15% org cut
               }
             }
@@ -956,22 +985,25 @@ class ProviderController with ChangeNotifier {
     for (var i = 0; i < rows.length; i++) {
       final r = rows[i];
       final it = items[i];
-      out.add(ProviderTxn(
-        date: (r['date']?.toString() ?? '').split('T').first,
-        athlete: r['athlete']?.toString() ?? '',
-        program: r['program']?.toString() ?? '',
-        sport: r['sport']?.toString() ?? '',
-        paymentStatus: r['paymentStatus']?.toString() ?? '',
-        gross: it.gross,
-        fee: it.fee,
-        net: it.net,
-        feeBps: it.feeBps,
-        ratePct: it.ratePct,
-        isFirst: it.isFirst,
-        feeKnown: it.feeKnown,
-        isRecorded: it.isRecorded,
-        currency: it.currency,
-      ));
+      out.add(
+        ProviderTxn(
+          date: (r['date']?.toString() ?? '').split('T').first,
+          athlete: r['athlete']?.toString() ?? '',
+          program: r['program']?.toString() ?? '',
+          sport: r['sport']?.toString() ?? '',
+          paymentStatus: r['paymentStatus']?.toString() ?? '',
+          gross: it.gross,
+          fee: it.fee,
+          net: it.net,
+          feeBps: it.feeBps,
+          ratePct: it.ratePct,
+          isFirst: it.isFirst,
+          feeKnown: it.feeKnown,
+          isRecorded: it.isRecorded,
+          currency: it.currency,
+          tierLabel: historicalBookingTierLabel(r),
+        ),
+      );
     }
     return out;
   }
@@ -983,24 +1015,26 @@ class ProviderController with ChangeNotifier {
     for (var i = 0; i < rows.length; i++) {
       final r = rows[i];
       final gross = (r['gross'] as num?)?.toDouble() ?? 0;
-      inputs.add(FeeInput(
-        bookingId: (r['id']?.toString().isNotEmpty ?? false)
-            ? r['id'].toString()
-            : 'row_$i',
-        familyKey: (r['family']?.toString().isNotEmpty ?? false)
-            ? r['family'].toString()
-            : 'family_$i',
-        sortKey: (r['createdAt'] ?? r['date'] ?? '').toString(),
-        grossCents: (gross * 100).round(),
-        recordedFeeCents: r['platformFee'] is num
-            ? ((r['platformFee'] as num).toDouble() * 100).round()
-            : null,
-        recordedFeeBps: (r['platformFeeBps'] as num?)?.toInt(),
-        recordedNetCents: r['providerPayout'] is num
-            ? ((r['providerPayout'] as num).toDouble() * 100).round()
-            : null,
-        currency: r['currency']?.toString() ?? 'USD',
-      ));
+      inputs.add(
+        FeeInput(
+          bookingId: (r['id']?.toString().isNotEmpty ?? false)
+              ? r['id'].toString()
+              : 'row_$i',
+          familyKey: (r['family']?.toString().isNotEmpty ?? false)
+              ? r['family'].toString()
+              : 'family_$i',
+          sortKey: (r['createdAt'] ?? r['date'] ?? '').toString(),
+          grossCents: (gross * 100).round(),
+          recordedFeeCents: r['platformFee'] is num
+              ? ((r['platformFee'] as num).toDouble() * 100).round()
+              : null,
+          recordedFeeBps: (r['platformFeeBps'] as num?)?.toInt(),
+          recordedNetCents: r['providerPayout'] is num
+              ? ((r['providerPayout'] as num).toDouble() * 100).round()
+              : null,
+          currency: r['currency']?.toString() ?? 'USD',
+        ),
+      );
     }
     return itemizeCoachEarnings(inputs);
   }
@@ -1036,19 +1070,21 @@ class ProviderController with ChangeNotifier {
     for (var i = 0; i < rows.length; i++) {
       final r = rows[i];
       if (year != null && _yearOf(r['date']) != year) continue;
-      earnings.add(EarningsRow(
-        date: (r['date']?.toString() ?? '').split('T').first,
-        athlete: r['athlete']?.toString() ?? '',
-        program: r['program']?.toString() ?? '',
-        sport: r['sport']?.toString() ?? '',
-        status: r['status']?.toString() ?? '',
-        paymentStatus: r['paymentStatus']?.toString() ?? '',
-        gross: (r['gross'] as num?)?.toDouble() ?? 0,
-        // Only emit an exact fee when the booking webhook recorded one. The CSV
-        // leaves missing historical fee/net cells blank.
-        fee: items[i].feeKnown ? items[i].fee : null,
-        currency: r['currency']?.toString() ?? 'USD',
-      ));
+      earnings.add(
+        EarningsRow(
+          date: (r['date']?.toString() ?? '').split('T').first,
+          athlete: r['athlete']?.toString() ?? '',
+          program: r['program']?.toString() ?? '',
+          sport: r['sport']?.toString() ?? '',
+          status: r['status']?.toString() ?? '',
+          paymentStatus: r['paymentStatus']?.toString() ?? '',
+          gross: (r['gross'] as num?)?.toDouble() ?? 0,
+          // Only emit an exact fee when the booking webhook recorded one. The CSV
+          // leaves missing historical fee/net cells blank.
+          fee: items[i].feeKnown ? items[i].fee : null,
+          currency: r['currency']?.toString() ?? 'USD',
+        ),
+      );
     }
     if (earnings.isEmpty) return null;
     final name = _providerProfile['businessName']?.toString();
@@ -1059,8 +1095,10 @@ class ProviderController with ChangeNotifier {
   // ── Coach OS money page #1: real payout history + pending-payout figure ─────
   final List<Map<String, dynamic>> _payouts = [];
   bool _payoutsLoaded = false;
+  String? _payoutsError;
   List<Map<String, dynamic>> get payouts => List.unmodifiable(_payouts);
   bool get payoutsLoaded => _payoutsLoaded;
+  String? get payoutsError => _payoutsError;
 
   /// Gross paid-booking amount before Stripe processing. Kept under the legacy
   /// getter name to avoid widening this change through unrelated screens.
@@ -1068,6 +1106,9 @@ class ProviderController with ChangeNotifier {
   double get pendingPayoutNet => _pendingPayoutNet;
 
   Future<void> fetchPayouts() async {
+    _payoutsLoaded = false;
+    _payoutsError = null;
+    notifyListeners();
     try {
       final rows = await _repo.getProviderEarnings();
       final items = _itemize(rows);
@@ -1076,8 +1117,11 @@ class ProviderController with ChangeNotifier {
       _payouts
         ..clear()
         ..addAll(real);
+    } on RepositoryActionException catch (e) {
+      _payoutsError = e.message;
     } catch (e) {
       debugPrint('fetchPayouts failed: $e');
+      _payoutsError = 'Payout history could not be loaded. Please try again.';
     }
     _payoutsLoaded = true;
     notifyListeners();

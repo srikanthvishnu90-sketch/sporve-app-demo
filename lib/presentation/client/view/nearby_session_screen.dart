@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/sport_colors.dart';
 import '../../../core/routes/app_routes.dart';
+import '../../../core/utils/provider_trust.dart';
 import '../controllers/home_controller.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
@@ -54,20 +55,25 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
   int _selectedIndex = 0;
 
   List<_NearbyField> _fieldsFrom(List programs) {
-    return programs.asMap().entries.map((e) {
+    final trustedPrograms = programs
+        .where((program) => program is Map && providerTrusted(program))
+        .toList();
+    return trustedPrograms.asMap().entries.map((e) {
       final i = e.key;
       final p = e.value as Map;
       final addr = p['address'];
       final addressStr = (addr is Map)
           ? [addr['line1'], addr['city'], addr['state'], addr['zip']]
-              .where((s) => s != null && s.toString().trim().isNotEmpty)
-              .join(', ')
+                .where((s) => s != null && s.toString().trim().isNotEmpty)
+                .join(', ')
           : '';
       final coach = (p['providerId'] is Map)
           ? (p['providerId']['businessName']?.toString() ?? 'Academy')
           : 'Academy';
       final gallery = p['gallery'];
-      final image = (gallery is List && gallery.isNotEmpty) ? gallery[0].toString() : '';
+      final image = (gallery is List && gallery.isNotEmpty)
+          ? gallery[0].toString()
+          : '';
       return _NearbyField(
         index: i,
         name: p['title']?.toString() ?? 'Program',
@@ -86,8 +92,7 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
               : 'New', // grounded — real rating or honest "New", no fake 0.0
           image: image,
           spotsLeft: 'AVAILABLE',
-          isVerified: (p['providerId'] is Map) &&
-              p['providerId']['verificationStatus'] == 'verified',
+          isVerified: providerTrusted(p),
           bookingTrend: 'Near you',
           top: 0,
           team: coach,
@@ -102,7 +107,8 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
 
   Future<void> _openInMaps(String address) async {
     final uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}');
+      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}',
+    );
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
@@ -124,11 +130,18 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  SporveIconButton(Icons.arrow_back, onTap: () => Get.back(), iconSize: 20),
+                  SporveIconButton(
+                    Icons.arrow_back,
+                    onTap: () => Get.back(),
+                    iconSize: 20,
+                  ),
                   Text(
                     'Near you',
                     style: AppTypography.font(
-                        color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(width: 38),
                 ],
@@ -144,18 +157,27 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.location_off_outlined, color: AppColors.textGrey, size: 48),
+                    const Icon(
+                      Icons.location_off_outlined,
+                      color: AppColors.textGrey,
+                      size: 48,
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       'No nearby sessions yet.',
-                      style: AppTypography.font(color: AppColors.textSecondary, fontSize: 14),
+                      style: AppTypography.font(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                      ),
                     ),
                   ],
                 ),
               ),
             )
           else
-            _buildBottomSheet(fields[_selectedIndex.clamp(0, fields.length - 1)]),
+            _buildBottomSheet(
+              fields[_selectedIndex.clamp(0, fields.length - 1)],
+            ),
         ],
       ),
     );
@@ -169,9 +191,17 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
         width: double.infinity,
         decoration: const BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.card)),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadii.card),
+          ),
           border: Border(top: BorderSide(color: AppColors.hairline)),
-          boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 30, offset: Offset(0, -10))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black54,
+              blurRadius: 30,
+              offset: Offset(0, -10),
+            ),
+          ],
         ),
         padding: const EdgeInsets.fromLTRB(28, 14, 28, 36),
         child: Column(
@@ -183,7 +213,9 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
                 width: 38,
                 height: 5,
                 decoration: BoxDecoration(
-                    color: AppColors.hairline, borderRadius: BorderRadius.circular(2.5)),
+                  color: AppColors.hairline,
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -195,19 +227,26 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(field.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.font(
-                              color: AppColors.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold)),
+                      Text(
+                        field.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.font(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(field.coach,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.font(
-                              color: AppColors.textSecondary, fontSize: 12)),
+                      Text(
+                        field.coach,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.font(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -217,12 +256,21 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.location_on_outlined, color: AppColors.slateText, size: 18),
+                const Icon(
+                  Icons.location_on_outlined,
+                  color: AppColors.slateText,
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(field.address,
-                      style: AppTypography.font(
-                          color: AppColors.textPrimary, fontSize: 13, height: 1.4)),
+                  child: Text(
+                    field.address,
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -247,8 +295,10 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
                   flex: 10,
                   child: SporveButton(
                     'View details',
-                    onPressed: () =>
-                        Get.toNamed(AppRoutes.sessionDetails, arguments: field.opp),
+                    onPressed: () => Get.toNamed(
+                      AppRoutes.sessionDetails,
+                      arguments: field.opp,
+                    ),
                     variant: SporveButtonVariant.dark,
                     color: sportColor,
                   ),
@@ -272,7 +322,11 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
             child: Opacity(
               opacity: 0.03,
               child: GridPaper(
-                  color: Colors.white, divisions: 1, subdivisions: 1, interval: 80),
+                color: Colors.white,
+                divisions: 1,
+                subdivisions: 1,
+                interval: 80,
+              ),
             ),
           ),
           ...fields.map((field) {
@@ -291,17 +345,23 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
                       opacity: isSelected ? 1.0 : 0.0,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.surface,
                           borderRadius: BorderRadius.circular(AppRadii.chip),
                           border: Border.all(color: AppColors.hairline),
                         ),
-                        child: Text(field.name,
-                            style: AppTypography.font(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold)),
+                        child: Text(
+                          field.name,
+                          style: AppTypography.font(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                     AnimatedScale(
@@ -310,16 +370,24 @@ class _NearbySessionScreenState extends State<NearbySessionScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: isSelected ? AppColors.slateText : AppColors.surface2,
+                          color: isSelected
+                              ? AppColors.slateText
+                              : AppColors.surface2,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isSelected ? AppColors.slateText : AppColors.hairline,
+                            color: isSelected
+                                ? AppColors.slateText
+                                : AppColors.hairline,
                             width: isSelected ? 1.5 : 1,
                           ),
                         ),
-                        child: Icon(Icons.location_on,
-                            color: isSelected ? AppColors.onSlate : AppColors.textSecondary,
-                            size: isSelected ? 20 : 16),
+                        child: Icon(
+                          Icons.location_on,
+                          color: isSelected
+                              ? AppColors.onSlate
+                              : AppColors.textSecondary,
+                          size: isSelected ? 20 : 16,
+                        ),
                       ),
                     ),
                   ],

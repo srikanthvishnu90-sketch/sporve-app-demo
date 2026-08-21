@@ -16,6 +16,8 @@ class MultiBookingController extends ChangeNotifier {
   bool get loading => _loading;
   bool _error = false;
   bool get error => _error;
+  String? _actionError;
+  String? get actionError => _actionError;
 
   // The candidate slots for the service (from the shared availability ×
   // service multiplication). Read-only display data.
@@ -88,6 +90,7 @@ class MultiBookingController extends ChangeNotifier {
     String? athleteFirstName,
     String? athleteAgeBand,
   }) async {
+    _actionError = null;
     try {
       final id = await _repo.claimGroupSeat(
         serviceId: serviceId,
@@ -107,9 +110,15 @@ class MultiBookingController extends ChangeNotifier {
         );
         notifyListeners();
       }
+      if (id == null) _actionError = 'That slot is no longer available.';
       return id;
+    } on RepositoryActionException catch (e) {
+      _actionError = e.message;
+      debugPrint('MultiBookingController.claimGroupSeat blocked: ${e.message}');
+      return null;
     } catch (e) {
       debugPrint('MultiBookingController.claimGroupSeat failed: $e');
+      _actionError = 'That slot could not be claimed. Please try again.';
       return null;
     }
   }
@@ -117,10 +126,21 @@ class MultiBookingController extends ChangeNotifier {
   /// Start a recurring weekly claim (the coach approves the generated
   /// occurrences later). Returns the new claim id, or null on failure.
   Future<String?> createRecurringClaim(Map<String, dynamic> claim) async {
+    _actionError = null;
     try {
-      return await _repo.createRecurringClaim(claim);
+      final id = await _repo.createRecurringClaim(claim);
+      if (id == null) _actionError = 'The recurring request is unavailable.';
+      return id;
+    } on RepositoryActionException catch (e) {
+      _actionError = e.message;
+      debugPrint(
+        'MultiBookingController.createRecurringClaim blocked: ${e.message}',
+      );
+      return null;
     } catch (e) {
       debugPrint('MultiBookingController.createRecurringClaim failed: $e');
+      _actionError =
+          'The recurring request could not be sent. Please try again.';
       return null;
     }
   }
@@ -135,6 +155,7 @@ class MultiBookingController extends ChangeNotifier {
     String? athleteFirstName,
     String? athleteAgeBand,
   }) async {
+    _actionError = null;
     try {
       final id = await _repo.redeemPackCredit(
         serviceId: serviceId,
@@ -153,9 +174,19 @@ class MultiBookingController extends ChangeNotifier {
         );
         notifyListeners();
       }
+      if (id == null) {
+        _actionError = 'No credit is available, or that slot just filled.';
+      }
       return id;
+    } on RepositoryActionException catch (e) {
+      _actionError = e.message;
+      debugPrint(
+        'MultiBookingController.redeemPackCredit blocked: ${e.message}',
+      );
+      return null;
     } catch (e) {
       debugPrint('MultiBookingController.redeemPackCredit failed: $e');
+      _actionError = 'The credit could not be redeemed. Please try again.';
       return null;
     }
   }

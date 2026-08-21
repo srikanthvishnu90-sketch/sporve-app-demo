@@ -7,9 +7,9 @@
 //      while the money movement stays design-only (bookings land UNPAID — L-003).
 //   flutter test test/team_split_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
-import 'package:flutter_structure/core/utils/platform_fee.dart';
-import 'package:flutter_structure/core/utils/team_split.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
+import 'package:sporve_app/core/utils/platform_fee.dart';
+import 'package:sporve_app/core/utils/team_split.dart';
 
 void main() {
   const repo = MockRepository();

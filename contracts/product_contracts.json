@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-20",
+  "decisions": {
+    "D1": "subscription-funded-zero-booking-fee",
+    "D2": "approved-and-background-verified-with-completion-date",
+    "D4": "drop-new-booking-tiers-preserve-history",
+    "D5": "dedicated-backend-repository",
+    "D6": "mobile-app-with-framed-web-demo"
+  },
+  "backendOwnership": {
+    "thisRepositoryOwnsBackend": false,
+    "ownerRepository": "pending-research-owner-confirmation",
+    "sourceRecoveryRequired": true,
+    "productionMutationAllowedFromThisRepository": false
+  },
+  "fees": {
+    "sporveBookingFeeBps": 0,
+    "sporveOffPlatformInvoiceFeeBps": 0,
+    "stripeProcessingFeesIncluded": false,
+    "historicalRecordedValuesOverridePolicy": true
+  },
+  "plans": {
+    "free": {
+      "monthlyPriceUsd": 0,
+      "aiMonthlyQuota": 3,
+      "seatLimit": 1,
+      "purchasable": true
+    },
+    "pro": {
+      "monthlyPriceUsd": 34.99,
+      "aiMonthlyQuota": null,
+      "seatLimit": 3,
+      "purchasable": true
+    },
+    "enterprise": {
+      "monthlyPriceUsd": 149,
+      "aiMonthlyQuota": null,
+      "seatLimit": null,
+      "purchasable": false
+    }
+  },
+  "providerTrust": {
+    "allOf": {
+      "status": "approved",
+      "backgroundCheckStatus": "verified",
+      "backgroundCheckCompletedAt": "non-null-valid-timestamp"
+    }
+  },
+  "bookingStatuses": [
+    "pending",
+    "confirmed",
+    "declined",
+    "completed",
+    "no_show",
+    "cancelled"
+  ],
+  "paymentStatuses": [
+    "unpaid",
+    "processing",
+    "paid",
+    "partially_refunded",
+    "refunded",
+    "failed"
+  ],
+  "subscriptionStatuses": [
+    "none",
+    "trialing",
+    "active",
+    "past_due",
+    "canceled",
+    "incomplete"
+  ]
+}

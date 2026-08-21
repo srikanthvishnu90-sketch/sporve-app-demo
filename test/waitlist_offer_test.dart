@@ -8,8 +8,8 @@
 //     honest-failure (L-015): not-yet-sent / expired offers accept to null.
 // flutter test test/waitlist_offer_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
-import 'package:flutter_structure/presentation/shared/controllers/waitlist_controller.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
+import 'package:sporve_app/presentation/shared/controllers/waitlist_controller.dart';
 
 void main() {
   const repo = MockRepository();

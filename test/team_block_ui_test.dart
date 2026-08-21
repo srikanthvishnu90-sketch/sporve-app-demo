@@ -22,10 +22,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
-import 'package:flutter_structure/core/utils/team_split.dart';
-import 'package:flutter_structure/presentation/provider/view/provider_team_block_screen.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
+import 'package:sporve_app/core/utils/team_split.dart';
+import 'package:sporve_app/presentation/provider/view/provider_team_block_screen.dart';
 
 void main() {
   group('team_split.splitShares — penny-exact, sums to the total', () {

@@ -71,7 +71,9 @@ class _MultiBookingSheetState extends State<_MultiBookingSheet> {
       builder: (context, scrollController) => Container(
         decoration: const BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.card)),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadii.card),
+          ),
         ),
         child: Column(
           children: [
@@ -194,7 +196,10 @@ class _AthletePicker extends StatelessWidget {
         ),
         child: Text(
           'Add a child from Profile to book for them.',
-          style: AppTypography.font(color: AppColors.textSecondary, fontSize: 13),
+          style: AppTypography.font(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+          ),
         ),
       );
     }
@@ -238,17 +243,24 @@ class _AthletePicker extends StatelessWidget {
 }
 
 String _fmtSlotDate(String iso) {
-  try {
-    final d = DateTime.parse(iso);
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    const dows = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return '${dows[d.weekday % 7]}, ${months[d.month - 1]} ${d.day}';
-  } catch (_) {
-    return iso;
-  }
+  final d = DateTime.tryParse(iso);
+  if (d == null) return 'Date unavailable';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  const dows = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return '${dows[d.weekday % 7]}, ${months[d.month - 1]} ${d.day}';
 }
 
 void _snack(BuildContext context, String message, {bool isError = false}) {
@@ -355,8 +367,8 @@ class _GroupTabState extends State<_GroupTab> {
                       full
                           ? 'Full'
                           : seatsLeft == 1
-                              ? '1 seat left'
-                              : '$seatsLeft of $capacity seats left',
+                          ? '1 seat left'
+                          : '$seatsLeft of $capacity seats left',
                       style: AppTypography.font(
                         color: full ? AppColors.negative : AppColors.slateText,
                         fontSize: 12,
@@ -378,11 +390,17 @@ class _GroupTabState extends State<_GroupTab> {
                       ? null
                       : () async {
                           setState(() => _claimingKey = key);
-                          final athletes = context.read<HomeProvider>().athletes;
-                          final athlete = athletes.firstWhere(
-                            (a) => (a as Map)['_id']?.toString() == _athleteId,
-                            orElse: () => const {},
-                          ) as Map;
+                          final athletes = context
+                              .read<HomeProvider>()
+                              .athletes;
+                          final athlete =
+                              athletes.firstWhere(
+                                    (a) =>
+                                        (a as Map)['_id']?.toString() ==
+                                        _athleteId,
+                                    orElse: () => const {},
+                                  )
+                                  as Map;
                           final id = await widget.controller.claimGroupSeat(
                             serviceId: widget.serviceId,
                             slotDate: date,
@@ -400,11 +418,15 @@ class _GroupTabState extends State<_GroupTab> {
                             // most likely the slot filled while viewing.
                             _snack(
                               context,
-                              'That slot just filled up — pick another time.',
+                              widget.controller.actionError ??
+                                  'That slot just filled up — pick another time.',
                               isError: true,
                             );
                           } else {
-                            _snack(context, 'Seat claimed for $time, ${_fmtSlotDate(date)}.');
+                            _snack(
+                              context,
+                              'Seat claimed for $time, ${_fmtSlotDate(date)}.',
+                            );
                           }
                         },
                 ),
@@ -586,9 +608,17 @@ class _RecurringTabState extends State<_RecurringTab> {
   }
 
   static const _times = [
-    '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
-    '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM',
-    '05:00 PM', '06:00 PM', '07:00 PM',
+    '08:00 AM',
+    '09:00 AM',
+    '10:00 AM',
+    '11:00 AM',
+    '01:00 PM',
+    '02:00 PM',
+    '03:00 PM',
+    '04:00 PM',
+    '05:00 PM',
+    '06:00 PM',
+    '07:00 PM',
   ];
 
   Widget _label(String text) => Text(
@@ -627,10 +657,12 @@ class _RecurringTabState extends State<_RecurringTab> {
     setState(() => _submitting = true);
     final controller = context.read<MultiBookingController>();
     final athletes = context.read<HomeProvider>().athletes;
-    final athlete = athletes.firstWhere(
-      (a) => (a as Map)['_id']?.toString() == _athleteId,
-      orElse: () => const {},
-    ) as Map;
+    final athlete =
+        athletes.firstWhere(
+              (a) => (a as Map)['_id']?.toString() == _athleteId,
+              orElse: () => const {},
+            )
+            as Map;
     final today = DateTime.now();
     String iso(DateTime d) =>
         '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -651,7 +683,12 @@ class _RecurringTabState extends State<_RecurringTab> {
     setState(() => _submitting = false);
     if (id == null) {
       // Honest failure (L-015): show the real error, do not pretend it sent.
-      _snack(context, "Couldn't send the request. Please try again.", isError: true);
+      _snack(
+        context,
+        controller.actionError ??
+            "Couldn't send the request. Please try again.",
+        isError: true,
+      );
       return;
     }
     setState(() => _sent = true);
@@ -696,16 +733,19 @@ class _PackTabState extends State<_PackTab> {
           ),
           child: Row(
             children: [
-              Icon(Icons.confirmation_number_outlined,
-                  size: 20, color: AppColors.slateText),
+              Icon(
+                Icons.confirmation_number_outlined,
+                size: 20,
+                color: AppColors.slateText,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   balance <= 0
                       ? 'No prepaid credits for this service yet.'
                       : balance == 1
-                          ? '1 credit available'
-                          : '$balance credits available',
+                      ? '1 credit available'
+                      : '$balance credits available',
                   style: AppTypography.font(
                     color: AppColors.textPrimary,
                     fontSize: 14,
@@ -798,8 +838,9 @@ class _PackTabState extends State<_PackTab> {
   Widget _redeemRow(BuildContext context, Map<String, dynamic> slot) {
     final date = slot['date']?.toString() ?? '';
     final time = slot['startTime']?.toString() ?? '';
-    final capacity =
-        (slot['capacity'] is num) ? (slot['capacity'] as num).toInt() : 1;
+    final capacity = (slot['capacity'] is num)
+        ? (slot['capacity'] as num).toInt()
+        : 1;
     final booked = widget.controller.bookedCount(date, time);
     final full = booked >= capacity;
     final key = '$date|$time';
@@ -831,7 +872,9 @@ class _PackTabState extends State<_PackTab> {
                   Text(
                     full ? 'Full' : time,
                     style: AppTypography.font(
-                      color: full ? AppColors.negative : AppColors.textSecondary,
+                      color: full
+                          ? AppColors.negative
+                          : AppColors.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -850,10 +893,14 @@ class _PackTabState extends State<_PackTab> {
                     : () async {
                         setState(() => _redeemingKey = key);
                         final athletes = context.read<HomeProvider>().athletes;
-                        final athlete = athletes.firstWhere(
-                          (a) => (a as Map)['_id']?.toString() == _athleteId,
-                          orElse: () => const {},
-                        ) as Map;
+                        final athlete =
+                            athletes.firstWhere(
+                                  (a) =>
+                                      (a as Map)['_id']?.toString() ==
+                                      _athleteId,
+                                  orElse: () => const {},
+                                )
+                                as Map;
                         final id = await widget.controller.redeemPackCredit(
                           serviceId: widget.serviceId,
                           slotDate: date,
@@ -869,12 +916,16 @@ class _PackTabState extends State<_PackTab> {
                         if (id == null) {
                           _snack(
                             context,
-                            "Couldn't redeem — you may be out of credits, or "
-                            "the slot just filled.",
+                            widget.controller.actionError ??
+                                "Couldn't redeem — you may be out of credits, or "
+                                    "the slot just filled.",
                             isError: true,
                           );
                         } else {
-                          _snack(context, 'Credit redeemed for $time, ${_fmtSlotDate(date)}.');
+                          _snack(
+                            context,
+                            'Credit redeemed for $time, ${_fmtSlotDate(date)}.',
+                          );
                         }
                       },
               ),

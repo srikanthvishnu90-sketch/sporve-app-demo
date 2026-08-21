@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:provider/provider.dart';
 import 'package:get/get.dart';
 import '../controllers/home_controller.dart';
@@ -15,6 +15,7 @@ import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
 import '../widgets/best_match_card.dart';
 import '../../../core/utils/session_time.dart';
+import '../../../core/utils/provider_trust.dart';
 import 'search_screen.dart'; // To access Opportunity model
 import 'support_modal.dart';
 
@@ -110,7 +111,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       () {
                         final p = homeProvider.userProfile;
-                        final first = (p?['firstName'] as String?)?.trim() ?? '';
+                        final first =
+                            (p?['firstName'] as String?)?.trim() ?? '';
                         final last = (p?['lastName'] as String?)?.trim() ?? '';
                         final full = '$first $last'.trim();
                         if (full.isNotEmpty) return full;
@@ -175,10 +177,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       builder: (_) {
                         final personalized = plan.hasGoal
                             ? plan.proposals
-                                .map((p) => p['program'])
-                                .whereType<Map>()
-                                .map((p) => Map<String, dynamic>.from(p))
-                                .toList()
+                                  .map((p) => p['program'])
+                                  .whereType<Map>()
+                                  .map((p) => Map<String, dynamic>.from(p))
+                                  .toList()
                             : <Map<String, dynamic>>[];
                         if (personalized.isNotEmpty) {
                           return Padding(
@@ -275,14 +277,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       final rawImage = (coverImg != null && coverImg.isNotEmpty)
                           ? coverImg
                           : (progImg != null && progImg.isNotEmpty)
-                              ? progImg
-                              : (gallery is List &&
-                                      gallery.isNotEmpty &&
-                                      gallery[0].toString().isNotEmpty)
-                                  ? gallery[0].toString()
-                                  : (provImg != null && provImg.isNotEmpty)
-                                      ? provImg
-                                      : '';
+                          ? progImg
+                          : (gallery is List &&
+                                gallery.isNotEmpty &&
+                                gallery[0].toString().isNotEmpty)
+                          ? gallery[0].toString()
+                          : (provImg != null && provImg.isNotEmpty)
+                          ? provImg
+                          : '';
                       final image = rawImage.isNotEmpty
                           ? rawImage
                           : SportColors.fallbackImageOf(sportType);
@@ -303,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         rating: rating,
                         image: image,
                         spotsLeft: 'AVAILABLE',
-                        isVerified: true,
+                        isVerified: providerTrusted(program),
                         bookingTrend: 'Trending now',
                         top: 0,
                         team:
@@ -388,20 +390,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     else
                       ...homeProvider.programs.map((program) {
                         final gallery = program['gallery'];
-                        final coverImg = program['coverImage']?.toString().trim();
+                        final coverImg = program['coverImage']
+                            ?.toString()
+                            .trim();
                         final progImg = program['image']?.toString().trim();
                         final provider = program['providerId'];
-                        final provImg = provider is Map ? provider['profileImage']?.toString().trim() : null;
+                        final provImg = provider is Map
+                            ? provider['profileImage']?.toString().trim()
+                            : null;
                         final sportType = program['sportType']?.toString();
-                        final rawImage = (coverImg != null && coverImg.isNotEmpty)
+                        final rawImage =
+                            (coverImg != null && coverImg.isNotEmpty)
                             ? coverImg
                             : (progImg != null && progImg.isNotEmpty)
-                                ? progImg
-                                : (gallery is List && gallery.isNotEmpty && gallery[0].toString().isNotEmpty)
-                                    ? gallery[0].toString()
-                                    : (provImg != null && provImg.isNotEmpty)
-                                        ? provImg
-                                        : '';
+                            ? progImg
+                            : (gallery is List &&
+                                  gallery.isNotEmpty &&
+                                  gallery[0].toString().isNotEmpty)
+                            ? gallery[0].toString()
+                            : (provImg != null && provImg.isNotEmpty)
+                            ? provImg
+                            : '';
                         final image = rawImage.isNotEmpty
                             ? rawImage
                             : SportColors.fallbackImageOf(sportType);
@@ -417,13 +426,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           programId: program['_id']?.toString(),
                           title: program['title'] ?? 'Program',
                           coach:
-                              (provider is Map ? provider['businessName'] : null) ??
+                              (provider is Map
+                                  ? provider['businessName']
+                                  : null) ??
                               'Academy',
                           price: '\$${program['price'] ?? 0}',
                           rating: rating,
                           image: image,
                           spotsLeft: 'AVAILABLE',
-                          isVerified: true,
+                          isVerified: providerTrusted(program),
                           bookingTrend: 'Trending now',
                           top: 0,
                           team:
@@ -480,8 +491,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(AppRadii.tile),
               ),
-              child: const Icon(Icons.flag_outlined,
-                  color: AppColors.slateText, size: 20),
+              child: const Icon(
+                Icons.flag_outlined,
+                color: AppColors.slateText,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -508,8 +522,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward,
-                color: AppColors.slateText, size: 18),
+            const Icon(
+              Icons.arrow_forward,
+              color: AppColors.slateText,
+              size: 18,
+            ),
           ],
         ),
       ),
@@ -607,6 +624,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (b is! Map) continue;
       final session = b['sessionId'] is Map ? b['sessionId'] : null;
       final start = parseSessionStart(session);
+      if (start == null) continue;
       final startDay = DateTime(start.year, start.month, start.day);
       if (startDay.isBefore(today)) continue; // skip past sessions
       if (bestStart == null || start.isBefore(bestStart)) {
@@ -709,7 +727,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           Text(
-                            '${_relativeDay(startTime)}, ${formatTime12h(startTime)}',
+                            startTime == null
+                                ? 'Time unavailable'
+                                : '${_relativeDay(startTime)}, ${formatTime12h(startTime)}',
                             style: AppTypography.font(
                               color: AppColors.textSecondary,
                               fontSize: 11,
@@ -828,7 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : 'New',
       image: image,
       spotsLeft: 'AVAILABLE',
-      isVerified: true,
+      isVerified: providerTrusted(program),
       bookingTrend: 'Book again',
       top: 0,
       team: coach,

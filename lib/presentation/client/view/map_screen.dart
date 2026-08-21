@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -10,6 +11,8 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/sport_colors.dart';
 import '../../../core/routes/app_routes.dart';
+import '../../../core/utils/provider_trust.dart';
+import '../../../core/utils/map_geography.dart';
 import '../../widgets/common_widgets.dart';
 import '../controllers/home_controller.dart';
 import '../controllers/search_provider.dart';
@@ -31,8 +34,9 @@ class _MapScreenState extends State<MapScreen> {
   final MapController _map = MapController();
   Map<String, dynamic>? _selected;
   LatLng? _userLatLng;
+  _LocationState _locationState = _LocationState.loading;
 
-  static const LatLng _miami = LatLng(25.7617, -80.1918);
+  static const LatLng _chicago = LatLng(kChicagoLatitude, kChicagoLongitude);
 
   @override
   void initState() {
@@ -42,12 +46,19 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _locate() async {
     try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (mounted) {
+          setState(() => _locationState = _LocationState.unavailable);
+        }
+        return;
+      }
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
+        if (mounted) setState(() => _locationState = _LocationState.denied);
         return;
       }
       final pos = await Geolocator.getCurrentPosition(
@@ -56,9 +67,19 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ).timeout(const Duration(seconds: 8));
       if (!mounted) return;
-      setState(() => _userLatLng = LatLng(pos.latitude, pos.longitude));
-    } catch (_) {
-      // No location available — the map simply stays centered on the listings.
+      setState(() {
+        _userLatLng = LatLng(pos.latitude, pos.longitude);
+        _locationState = _LocationState.available;
+      });
+    } on TimeoutException catch (error) {
+      debugPrint('Location lookup timed out: $error');
+      if (mounted) setState(() => _locationState = _LocationState.unavailable);
+    } on LocationServiceDisabledException catch (error) {
+      debugPrint('Location service is disabled: $error');
+      if (mounted) setState(() => _locationState = _LocationState.unavailable);
+    } catch (error, stackTrace) {
+      debugPrint('Location lookup failed: $error\n$stackTrace');
+      if (mounted) setState(() => _locationState = _LocationState.unavailable);
     }
   }
 
@@ -72,6 +93,7 @@ class _MapScreenState extends State<MapScreen> {
     final pins = <_Pin>[];
     for (final p in programs) {
       if (p is! Map) continue;
+      if (!providerTrusted(p)) continue;
       if (sport != null &&
           !(p['sportType']?.toString().toLowerCase().contains(
                 sport.toLowerCase(),
@@ -94,7 +116,8 @@ class _MapScreenState extends State<MapScreen> {
     const r = 6371.0;
     final dLat = _rad(b.latitude - a.latitude);
     final dLon = _rad(b.longitude - a.longitude);
-    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final h =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_rad(a.latitude)) *
             math.cos(_rad(b.latitude)) *
             math.sin(dLon / 2) *
@@ -110,10 +133,29 @@ class _MapScreenState extends State<MapScreen> {
     _map.move(pin.pos, math.max(_map.camera.zoom, 13));
   }
 
-  void _recenter(List<_Pin> pins) {
-    final target = _userLatLng ?? (pins.isNotEmpty ? pins.first.pos : _miami);
-    _map.move(target, _userLatLng != null ? 13 : 11.5);
+  void _recenter() {
+    final target = _userLatLng;
+    if (target == null) return;
+    _map.move(target, 13);
   }
+
+  LatLng _listingCenter(List<_Pin> pins) {
+    if (pins.isEmpty) return _chicago;
+    final center = listingBoundsCenter(
+      pins.map(
+        (pin) => (latitude: pin.pos.latitude, longitude: pin.pos.longitude),
+      ),
+    );
+    return LatLng(center.latitude, center.longitude);
+  }
+
+  String? get _locationReason => switch (_locationState) {
+    _LocationState.denied =>
+      'Location permission denied. Showing coach locations.',
+    _LocationState.unavailable =>
+      'Your location is unavailable. Showing coach locations.',
+    _ => null,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +163,7 @@ class _MapScreenState extends State<MapScreen> {
     final search = context.watch<SearchProvider>();
     final sport = _sportFilter(search);
     final pins = _pins(programs, sport);
-    final center = pins.isNotEmpty ? pins.first.pos : _miami;
+    final center = _listingCenter(pins);
 
     return GradientScaffold(
       body: Stack(
@@ -165,7 +207,8 @@ class _MapScreenState extends State<MapScreen> {
                         child: _PricePin(
                           sport: pin.data['sportType']?.toString(),
                           price: pin.data['price'],
-                          selected: _selected != null &&
+                          selected:
+                              _selected != null &&
                               (_selected!['_id'] != null &&
                                   _selected!['_id'] == pin.data['_id']),
                         ),
@@ -281,9 +324,42 @@ class _MapScreenState extends State<MapScreen> {
               icon: _userLatLng != null
                   ? Icons.my_location
                   : Icons.center_focus_strong,
-              onTap: () => _recenter(pins),
+              semanticLabel: _userLatLng == null
+                  ? 'Your location is unavailable'
+                  : 'Center on my location',
+              onTap: _userLatLng == null ? null : _recenter,
             ),
           ),
+
+          if (_locationReason case final reason?)
+            Positioned(
+              left: 16,
+              right: 76,
+              bottom: _selected != null
+                  ? MediaQuery.of(context).padding.bottom + 154
+                  : MediaQuery.of(context).padding.bottom + 36,
+              child: Semantics(
+                liveRegion: true,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(AppRadii.tile),
+                    border: Border.all(color: AppColors.hairline),
+                  ),
+                  child: Text(
+                    reason,
+                    style: AppTypography.font(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           if (_selected != null)
             Positioned(
@@ -304,7 +380,9 @@ class _MapScreenState extends State<MapScreen> {
 
   num? _distanceTo(Map<String, dynamic> program) {
     final coords = program['location']?['coordinates'];
-    if (_userLatLng == null || coords is! List || coords.length < 2) return null;
+    if (_userLatLng == null || coords is! List || coords.length < 2) {
+      return null;
+    }
     final lng = (coords[0] as num?)?.toDouble();
     final lat = (coords[1] as num?)?.toDouble();
     if (lat == null || lng == null) return null;
@@ -315,9 +393,9 @@ class _MapScreenState extends State<MapScreen> {
     // Sort by distance to the user when known.
     final ordered = [...pins];
     if (_userLatLng != null) {
-      ordered.sort((a, b) => _km(_userLatLng!, a.pos).compareTo(
-            _km(_userLatLng!, b.pos),
-          ));
+      ordered.sort(
+        (a, b) => _km(_userLatLng!, a.pos).compareTo(_km(_userLatLng!, b.pos)),
+      );
     }
     showModalBottomSheet(
       context: context,
@@ -366,8 +444,9 @@ class _MapScreenState extends State<MapScreen> {
                   final pin = ordered[i];
                   return _ListRow(
                     program: pin.data,
-                    distanceKm:
-                        _userLatLng == null ? null : _km(_userLatLng!, pin.pos),
+                    distanceKm: _userLatLng == null
+                        ? null
+                        : _km(_userLatLng!, pin.pos),
                     onTap: () {
                       Navigator.of(ctx).pop();
                       _select(pin); // list → map sync
@@ -388,6 +467,8 @@ class _Pin {
   final Map<String, dynamic> data;
   _Pin(this.pos, this.data);
 }
+
+enum _LocationState { loading, available, denied, unavailable }
 
 /// Airbnb-style price pin — sport-colored, price shown, fills when selected.
 class _PricePin extends StatelessWidget {
@@ -419,7 +500,9 @@ class _PricePin extends StatelessWidget {
         child: Text(
           label,
           style: AppTypography.font(
-            color: selected ? SportColors.onColorOf(sport) : AppColors.textPrimary,
+            color: selected
+                ? SportColors.onColorOf(sport)
+                : AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.bold,
           ),
@@ -442,7 +525,10 @@ class _UserDot extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 2.5),
           boxShadow: [
-            BoxShadow(color: AppColors.slate.withValues(alpha: 0.6), blurRadius: 10),
+            BoxShadow(
+              color: AppColors.slate.withValues(alpha: 0.6),
+              blurRadius: 10,
+            ),
           ],
         ),
       ),
@@ -452,23 +538,37 @@ class _UserDot extends StatelessWidget {
 
 class _RoundButton extends StatelessWidget {
   final IconData icon;
-  final VoidCallback onTap;
-  const _RoundButton({required this.icon, required this.onTap});
+  final String semanticLabel;
+  final VoidCallback? onTap;
+  const _RoundButton({
+    required this.icon,
+    required this.semanticLabel,
+    required this.onTap,
+  });
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 46,
-        height: 46,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.hairline),
-          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10)],
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: semanticLabel,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 46,
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.hairline),
+            boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10)],
+          ),
+          child: Icon(
+            icon,
+            color: onTap == null ? AppColors.textTertiary : AppColors.slateFg,
+            size: 22,
+          ),
         ),
-        child: Icon(icon, color: AppColors.slateText, size: 22),
       ),
     );
   }
@@ -488,15 +588,17 @@ class _ListRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final sport = program['sportType']?.toString();
     final title = program['title']?.toString() ?? 'Program';
-    final coach = (program['providerId'] is Map
-            ? program['providerId']['businessName']
-            : null)
-        ?.toString() ??
+    final coach =
+        (program['providerId'] is Map
+                ? program['providerId']['businessName']
+                : null)
+            ?.toString() ??
         'Academy';
     final price = program['price'];
     // Grounded: a real rating (with ★) or an honest "New" — never a fake 0.0★.
     final hasRating =
-        program['averageRating'] is num && (program['averageRating'] as num) > 0;
+        program['averageRating'] is num &&
+        (program['averageRating'] as num) > 0;
     final rating = hasRating ? '${program['averageRating']}★' : 'New';
     return ListTile(
       onTap: onTap,
@@ -540,15 +642,17 @@ class _ListingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sport = program['sportType']?.toString();
     final title = program['title']?.toString() ?? 'Program';
-    final coach = (program['providerId'] is Map
-            ? program['providerId']['businessName']
-            : null)
-        ?.toString() ??
+    final coach =
+        (program['providerId'] is Map
+                ? program['providerId']['businessName']
+                : null)
+            ?.toString() ??
         'Academy';
     final price = program['price'];
     // Grounded: a real rating or an honest "New" — never a fabricated 0.0★.
     final hasRating =
-        program['averageRating'] is num && (program['averageRating'] as num) > 0;
+        program['averageRating'] is num &&
+        (program['averageRating'] as num) > 0;
     final rating = hasRating ? program['averageRating'].toString() : 'New';
 
     return GestureDetector(
@@ -615,7 +719,11 @@ class _ListingCard extends StatelessWidget {
                   Row(
                     children: [
                       if (hasRating) ...[
-                        const Icon(Icons.star, color: AppColors.textPrimary, size: 12),
+                        const Icon(
+                          Icons.star,
+                          color: AppColors.textPrimary,
+                          size: 12,
+                        ),
                         const SizedBox(width: 3),
                       ],
                       Text(
@@ -639,7 +747,11 @@ class _ListingCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textTertiary, size: 20),
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.textTertiary,
+              size: 20,
+            ),
           ],
         ),
       ),
@@ -650,7 +762,8 @@ class _ListingCard extends StatelessWidget {
     id: 0,
     programId: p['_id']?.toString(),
     title: p['title']?.toString() ?? 'Program',
-    coach: (p['providerId'] is Map ? p['providerId']['businessName'] : null)
+    coach:
+        (p['providerId'] is Map ? p['providerId']['businessName'] : null)
             ?.toString() ??
         'Academy',
     price:
@@ -660,7 +773,7 @@ class _ListingCard extends StatelessWidget {
         : 'New', // grounded — real rating or honest "New", no fake 0.0
     image: '',
     spotsLeft: '',
-    isVerified: false,
+    isVerified: providerTrusted(p),
     bookingTrend: '',
     top: 0,
     team: '',

@@ -15,6 +15,17 @@ import '../models/query_intent.dart';
 import '../models/subscription.dart';
 import '../matching/provider_matcher.dart';
 
+/// A server-backed action failed with a message safe to show to the user.
+/// Repository implementations preserve the backend's explicit message when it
+/// exists and use a truthful fallback only when the response has none.
+class RepositoryActionException implements Exception {
+  final String message;
+  const RepositoryActionException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 /// Provider-workspace subscriptions. Prices and entitlements are always read
 /// from Supabase; Stripe Checkout only receives a plan identifier.
 abstract class BillingRepository {
@@ -118,18 +129,27 @@ abstract class BookingRepository {
   /// Persists a booking and returns its new id (null if it couldn't be created).
   Future<String?> addBooking(Map<String, dynamic> booking);
 
+  /// Starts Stripe-hosted checkout for an already-created unpaid booking. The
+  /// client sends identifiers and return URLs only; amount, fees, eligibility,
+  /// and payment state are server-owned.
+  Future<Uri> createBookingCheckout({
+    required String bookingId,
+    required Uri successUrl,
+    required Uri cancelUrl,
+  });
+
+  /// Requests cancellation/refund evaluation. The client never supplies a
+  /// refund amount; the server evaluates the booking's immutable policy
+  /// snapshot and returns the resulting payment state and recorded amount.
+  Future<Map<String, dynamic>> requestBookingCancellation(
+    String bookingId, {
+    String? reason,
+  });
+
   /// Requests a permitted booking transition (declined/completed/no_show/cancelled).
   /// Provider-of-the-session only (RLS pins provider edits to `status`); the DB
   /// lifecycle trigger reacts to the transition. Returns true on success.
   Future<bool> updateBookingStatus(String bookingId, String status);
-
-  /// Process a full or partial refund for a booking. Updates status, refundStatus,
-  /// and refundedAmount. Returns true on success.
-  Future<bool> processRefund(
-    String bookingId, {
-    required double amount,
-    String? reason,
-  });
 }
 
 /// User + provider profiles.
@@ -138,6 +158,22 @@ abstract class ProfileRepository {
   Future<void> saveUserProfile(Map<String, dynamic> profile);
   Future<Map<String, dynamic>> getProviderProfile();
   Future<void> saveProviderProfile(Map<String, dynamic> profile);
+
+  /// Starts or refreshes Stripe Connect onboarding for the signed-in provider.
+  /// Returns client-observed `{onboardingUrl?, chargesEnabled, error?}`.
+  Future<Map<String, dynamic>> createProviderConnectSession({
+    required Uri returnUrl,
+  });
+
+  /// Best-effort, idempotent refresh after provider profile changes. Failures
+  /// are logged by the controller and never roll back the confirmed profile.
+  Future<void> refreshProviderEmbeddings();
+
+  /// Generates a review-only provider onboarding draft. It never saves or
+  /// publishes profile state.
+  Future<Map<String, dynamic>> generateProviderOnboardDraft(
+    Map<String, dynamic> payload,
+  );
 
   /// Coach POLICY bundle — the ONLY source of truth the AI front-office reply
   /// robot (doc #5) is allowed to cite. Read/save the owner-editable policy
@@ -538,9 +574,10 @@ abstract class FinanceRepository {
 
   /// REAL Stripe Connect payout history for the signed-in coach (money page #1):
   /// bank transfers Stripe made to their connected account. READ-ONLY; derives
-  /// from Stripe via the `stripe-provider-payouts` edge function. Returns [] when
-  /// there is no connected account, nothing to show, or the call fails — the UI
-  /// then shows an honest empty state and NEVER fabricates a payout. Each map:
+  /// from Stripe via the `stripe-provider-payouts` edge function. Returns [] only
+  /// when there is genuinely nothing to show; function/network failures throw a
+  /// user-safe [RepositoryActionException] so the UI can distinguish error from
+  /// empty. Each map:
   /// `id, amountCents, currency, status, arrivalDate (unix s), bankLast4`.
   Future<List<Map<String, dynamic>>> getProviderPayouts();
 
@@ -744,12 +781,14 @@ abstract class LocationRepository {
 /// claim (the family's standing commitment), and prepaid PACK credits (redeem one
 /// per booking). Backed by 20260729_0002xx. RLS/triggers guard every path; the
 /// purchase CHARGE is Stripe and stays design-only (docs/PACKS-CHARGE-DESIGN.md —
-/// L-003). Honest failure everywhere (L-015): a full slot / no credit / failure
-/// returns null-or-false, never a fake success.
+/// L-003). Honest failure everywhere (L-015): expected unavailability returns
+/// null-or-false; server failures throw [RepositoryActionException] so the UI
+/// can render the backend's actionable message, never a fake success.
 abstract class MultiBookingRepository {
   /// Group seats — claim ONE seat of a group service's shared slot. Atomic
   /// no-oversell: returns the new (or existing, idempotent for the same athlete)
-  /// booking id, or NULL when the slot is FULL or on failure. `slotDate` is
+  /// booking id, or NULL when the slot is unavailable. Server failures throw
+  /// [RepositoryActionException]. `slotDate` is
   /// `yyyy-MM-dd` (a calendar day — never toLocal); `slotTime` is the 12h display
   /// string ("05:00 PM").
   Future<String?> claimGroupSeat({
@@ -775,7 +814,8 @@ abstract class MultiBookingRepository {
   /// ("05:00 PM"), `startDate` (`yyyy-MM-dd`), `cadence` (weekly|biweekly),
   /// `occurrenceCount` OR `endDate`, optional `athleteId`/`athleteFirstName`/
   /// `athleteAgeBand`/`billingModel`/`packageSize`. provider_id is server-derived
-  /// from the service. Returns the new id, or null on failure. The occurrences are
+  /// from the service. Returns the new id, or null when unavailable; server
+  /// failures throw [RepositoryActionException]. The occurrences are
   /// generated server-side (service-role) after the coach approves — not here.
   Future<String?> createRecurringClaim(Map<String, dynamic> claim);
 
@@ -786,7 +826,8 @@ abstract class MultiBookingRepository {
   /// Family: redeem one pack credit by booking a slot of the service. Creates the
   /// booking (rides the same seat-claim rails); the actual credit DECREMENT is
   /// settled server-side (service-role) — the client never decrements. Returns the
-  /// booking id, or NULL when there is no credit to redeem / on failure.
+  /// booking id, or NULL when there is no credit to redeem. Server failures
+  /// throw [RepositoryActionException].
   Future<String?> redeemPackCredit({
     required String serviceId,
     required String slotDate,

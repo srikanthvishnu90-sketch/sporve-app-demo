@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
+import '../../../core/utils/provider_trust.dart';
 import '../../authentication/controllers/auth_provider.dart';
 import '../../widgets/common_widgets.dart';
 import '../controllers/provider_controller.dart';
@@ -23,6 +24,7 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
   bool _isLoading = true;
   String _displayName = 'Loading...';
   String _verificationStatus = 'pending';
+  String _verificationLabel = 'Background check pending';
   String _city = '';
   String _state = '';
   String _logoUrl = '';
@@ -52,12 +54,14 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
 
       if (providerData.isNotEmpty) {
         setState(() {
-          // The badge reflects the real trust signal (verification_status),
-          // which is admin/service-role only — NEVER `status`. A freshly
-          // onboarded provider is honestly 'unverified' until an admin verifies
-          // them, rather than showing 'approved' as if it were a trust badge.
-          _verificationStatus =
-              providerData['verificationStatus'] ?? 'unverified';
+          // The badge uses the same three-factor predicate as discovery and
+          // checkout. Identity verification alone never grants trust.
+          _verificationLabel = providerTrustStatus(providerData);
+          _verificationStatus = providerTrusted(providerData)
+              ? 'verified'
+              : _verificationLabel.toLowerCase().contains('attention')
+              ? 'rejected'
+              : 'pending';
           _logoUrl = providerData['logo'] ?? userData['profileImage'] ?? '';
 
           final address = providerData['address'];
@@ -77,9 +81,7 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     } catch (e) {
       debugPrint('Error fetching profiles: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -116,8 +118,7 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     if ((p['bio'] ?? '').toString().trim().isNotEmpty) score++;
     if ((p['sports'] is List) && (p['sports'] as List).isNotEmpty) score++;
     if ((p['location'] ?? '').toString().trim().isNotEmpty) score++;
-    if (p['verificationStatus'] == 'verified' ||
-        p['stripeChargesEnabled'] == true) {
+    if (providerTrusted(p)) {
       score++;
     }
     return score / 5;
@@ -203,7 +204,7 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
                                             ),
                                             const SizedBox(width: 4),
                                             Text(
-                                              _verificationStatus.toUpperCase(),
+                                              _verificationLabel.toUpperCase(),
                                               style: AppTypography.font(
                                                 color: _getVerificationColor(
                                                   _verificationStatus,
@@ -662,7 +663,7 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
               Skeleton(
                 width: 72,
                 height: 72,
-                radius: BorderRadius.circular(36),
+                radius: BorderRadius.circular(AppRadii.pill),
               ),
             ],
           ),

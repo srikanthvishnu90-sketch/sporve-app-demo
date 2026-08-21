@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/models/query_intent.dart';
-import 'package:flutter_structure/core/models/query_intent_parser.dart';
+import 'package:sporve_app/core/models/query_intent.dart';
+import 'package:sporve_app/core/models/query_intent_parser.dart';
 
 void main() {
   group('QueryIntentParser — golden queries (exact, no hallucination)', () {

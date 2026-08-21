@@ -21,12 +21,27 @@ class _SplashScreenState extends State<SplashScreen> {
   // replay the brand splash (that reads as "the app reset"); we show a quiet
   // "signing you in" state and hand off to home the moment the session lands.
   bool _oauthReturn = false;
+  bool _paymentReturn = false;
+  Map<String, String> _paymentReturnParameters = const {};
 
   @override
   void initState() {
     super.initState();
     _oauthReturn = _isOAuthCallbackPending;
+    _paymentReturnParameters = _readPaymentReturnParameters();
+    _paymentReturn = _paymentReturnParameters.isNotEmpty;
     _navigateToNext();
+  }
+
+  Map<String, String> _readPaymentReturnParameters() {
+    if (!kIsWeb) return const {};
+    final route = Uri.tryParse(Uri.base.fragment);
+    if (route?.path != AppRoutes.bookingFlow ||
+        !route!.queryParameters.containsKey('b') ||
+        !route.queryParameters.containsKey('status')) {
+      return const {};
+    }
+    return Map<String, String>.unmodifiable(route.queryParameters);
   }
 
   /// True when this cold boot is the RETURN LEG of a web OAuth redirect —
@@ -53,7 +68,7 @@ class _SplashScreenState extends State<SplashScreen> {
     // Brief hold so a normal cold-start session check resolves — but on an OAuth
     // return we skip the artificial hold entirely and hand off the instant the
     // session lands, so the return feels continuous instead of a fresh boot.
-    if (!oauthPending) {
+    if (!oauthPending && !_paymentReturn) {
       await Future.delayed(const Duration(milliseconds: 1600));
     }
     if (!mounted) return;
@@ -76,14 +91,22 @@ class _SplashScreenState extends State<SplashScreen> {
     // in guest browse instead of their home.
     if (!authProvider.isVerified) {
       const pollInterval = Duration(milliseconds: 200);
-      final maxPolls = oauthPending ? 75 : 17; // ~15s vs ~3.4s
+      final maxPolls = oauthPending || _paymentReturn ? 75 : 17;
       for (var i = 0; i < maxPolls && !authProvider.isVerified; i++) {
         await Future.delayed(pollInterval);
         if (!mounted) return;
       }
     }
 
-    if (authProvider.isVerified) {
+    if (_paymentReturn) {
+      // Stripe returns to a full-page hash URL. GetMaterialApp intentionally
+      // starts at splash, so cold returns must be handed to the booking route
+      // here after the persisted auth session has had time to rehydrate.
+      Get.offAllNamed(
+        AppRoutes.bookingFlow,
+        arguments: {'paymentReturn': _paymentReturnParameters},
+      );
+    } else if (authProvider.isVerified) {
       final nextRoute = await authProvider.determineNextRoute();
       if (!mounted) return;
       Get.offAllNamed(nextRoute);
@@ -104,25 +127,30 @@ class _SplashScreenState extends State<SplashScreen> {
     // that reads as "the app reset." Show a quiet, near-invisible "signing you
     // in" state on the app canvas and hand off to home the moment the session
     // resolves.
-    if (_oauthReturn) {
-      return const Scaffold(
+    if (_oauthReturn || _paymentReturn) {
+      return Scaffold(
         backgroundColor: AppColors.ink,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
+              const SizedBox(
                 width: 24,
                 height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.slateText),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    AppColors.slateText,
+                  ),
                 ),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
-                'Signing you in…',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                _paymentReturn ? 'Checking your payment…' : 'Signing you in…',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
               ),
             ],
           ),

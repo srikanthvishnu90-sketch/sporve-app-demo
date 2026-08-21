@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import '../../../core/constants/app_assets.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_colors.dart';
@@ -40,29 +40,29 @@ class _GoalIntakeScreenState extends State<GoalIntakeScreen> {
   // Chat-surface identity via design tokens (slate/obsidian). The drifting
   // aurora keeps the sanctioned AI-surface treatment as slate-alpha washes.
   static const _bg = AppColors.ink;
-  static const _aurora1 = Color(0x807692AE); // slate wash
-  static const _aurora2 = Color(0x61475569); // deep-slate wash
+  static const _aurora1 = AppColors.blueTint;
+  static const _aurora2 = AppColors.slateTint;
   static const _greeting = AppColors.textPrimary;
   static const _betaLabel = AppColors.textSecondary;
   static const _topIcon = AppColors.textTertiary;
   static const _logoText = AppColors.slateText;
-  static const _logoBg = Color(0x387692AE);
-  static const _logoBorder = Color(0x8C7692AE);
-  static const _logoGlow = Color(0x597692AE);
+  static const _logoBg = AppColors.blueTint;
+  static const _logoBorder = AppColors.blueText;
+  static const _logoGlow = AppColors.blueTint;
   static const _pillBg = AppColors.surface;
   static const _inputText = AppColors.textPrimary;
   static const _placeholder = AppColors.textTertiary;
-  static const _userBubble = Color(0x2E7692AE);
-  static const _chipFill = Color(0x147692AE);
-  static const _chipOn = Color(0x557692AE);
+  static const _userBubble = AppColors.blueTint;
+  static const _chipFill = AppColors.hairlineSoft;
+  static const _chipOn = AppColors.slateTint;
   static const _accent = AppColors.slate;
 
   // Concierge chatbox accents — a faint spectrum over the slate glow ("very
   // little" orange/blue/green). Blue is the AI cue (apt for the concierge),
   // green/orange add life; all low-alpha so the canvas stays black.
-  static const _glowBlue = Color(0x552E7BFF);
-  static const _glowGreen = Color(0x3334C759);
-  static const _glowOrange = Color(0x33E8A33A);
+  static const _glowBlue = AppColors.blueTint;
+  static const _glowGreen = AppColors.successTint;
+  static const _glowOrange = AppColors.warningTint;
 
   @override
   void initState() {
@@ -295,7 +295,7 @@ class _GoalIntakeScreenState extends State<GoalIntakeScreen> {
             bottomLeft: Radius.circular(16),
             bottomRight: Radius.circular(4),
           ),
-          border: Border.all(color: const Color(0x557692AE)),
+          border: Border.all(color: AppColors.blueTint),
         ),
         child: Text(
           text,
@@ -451,7 +451,7 @@ class _GoalIntakeScreenState extends State<GoalIntakeScreen> {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
           color: on || solid
-              ? const Color(0x8C7692AE)
+              ? AppColors.blueText
               : Colors.white.withValues(alpha: 0.10),
         ),
       ),
@@ -501,10 +501,10 @@ class _GoalIntakeScreenState extends State<GoalIntakeScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0x662E7BFF),
-            Color(0x407692AE),
-            Color(0x3334C759),
-            Color(0x33E8A33A),
+            AppColors.blueTint,
+            AppColors.slateTint,
+            AppColors.successTint,
+            AppColors.warningTint,
           ],
           stops: [0.0, 0.4, 0.72, 1.0],
         ),
@@ -595,7 +595,7 @@ class _GoalIntakeScreenState extends State<GoalIntakeScreen> {
         decoration: BoxDecoration(
           color: AppColors.surface2,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0x557692AE)),
+          border: Border.all(color: AppColors.blueTint),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

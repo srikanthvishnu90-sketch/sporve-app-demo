@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../core/utils/image_validation.dart';
@@ -269,7 +269,9 @@ class _ProviderEditProfileScreenState extends State<ProviderEditProfileScreen> {
                                             )
                                           : ClipRRect(
                                               borderRadius:
-                                                  BorderRadius.circular(50),
+                                                  BorderRadius.circular(
+                                                    AppRadii.pill,
+                                                  ),
                                               child: Image.file(
                                                 File(_avatarPath!),
                                                 width: 100,

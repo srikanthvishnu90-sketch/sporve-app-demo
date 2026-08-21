@@ -6,9 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/provider/controllers/lifecycle_controller.dart';
-import 'package:flutter_structure/presentation/provider/view/automated_messages_screen.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/provider/controllers/lifecycle_controller.dart';
+import 'package:sporve_app/presentation/provider/view/automated_messages_screen.dart';
 
 class _FakeRepo implements AppRepository {
   final Map<String, String> prefs = {};

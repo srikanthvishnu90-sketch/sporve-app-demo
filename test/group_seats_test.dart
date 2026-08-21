@@ -8,7 +8,7 @@
 //     first name + age band only).
 //   flutter test test/group_seats_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/mock_repository.dart';
+import 'package:sporve_app/core/data/mock_repository.dart';
 
 void main() {
   // Static demo state is process-shared (const MockRepository is a stateless

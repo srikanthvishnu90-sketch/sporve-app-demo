@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../models/query_intent.dart';
+import '../utils/provider_trust.dart';
 
 /// One eligible provider row returned by retrieval. Carries exactly the fields
 /// the chat answer + provider cards need (spec §1). `raw` is the underlying
@@ -121,26 +122,13 @@ class ProviderMatcher {
     const r = 6371.0;
     final dLat = _rad(lat2 - lat1);
     final dLon = _rad(lon2 - lon1);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_rad(lat1)) *
             math.cos(_rad(lat2)) *
             math.sin(dLon / 2) *
             math.sin(dLon / 2);
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-  }
-
-  static bool _isVerified(Map<String, dynamic> s) {
-    // G5 (non-negotiable): a VERIFIED BACKGROUND CHECK is mandatory — identity
-    // verification alone is NOT a substitute (mirrors the server match_eligible).
-    // Previously this OR'd in verificationStatus, letting an identity-verified-
-    // but-not-background-checked coach through. Read the background field from
-    // either the top-level or nested provider map, and require 'verified'.
-    final prov = s['providerId'];
-    final bg = (s['background_check_status'] ??
-            (prov is Map ? prov['background_check_status'] : null) ??
-            (prov is Map ? prov['backgroundCheckStatus'] : null))
-        ?.toString();
-    return bg == 'verified';
   }
 
   static List<String> _sessionTypes(Map<String, dynamic> s) {
@@ -178,7 +166,7 @@ class ProviderMatcher {
       // ── HARD GATES ──────────────────────────────────────────────────────
       // Active account + verified background check (safety — never relaxed).
       if ((s['account_status'] ?? 'active').toString() != 'active') continue;
-      if (!_isVerified(s)) continue;
+      if (!providerTrusted(s)) continue;
 
       // Sport.
       final sport = (s['sportType'] ?? s['sport'] ?? '').toString();
@@ -197,11 +185,14 @@ class ProviderMatcher {
         // level), failing CLOSED only on genuinely unknown intensity (treat as
         // 4 = highest), mirroring the server (coalesce(intensity_tier,4) <=
         // max_tier) and the React matcher.
-        if (_intensityTier(s) > _ceilingForAge(intent.age!, sport: sport)) continue;
+        if (_intensityTier(s) > _ceilingForAge(intent.age!, sport: sport)) {
+          continue;
+        }
       }
 
       // Budget.
-      final priceCents = (((s['price'] as num?)?.toDouble() ?? 0) * 100).round();
+      final priceCents = (((s['price'] as num?)?.toDouble() ?? 0) * 100)
+          .round();
       if (intent.priceMaxCents != null && priceCents > intent.priceMaxCents!) {
         continue;
       }
@@ -245,14 +236,14 @@ class ProviderMatcher {
       }
 
       final prov = s['providerId'];
-      final name = (s['providerName'] ??
-              (prov is Map ? prov['businessName'] : null) ??
-              'Coach')
-          .toString();
+      final name =
+          (s['providerName'] ??
+                  (prov is Map ? prov['businessName'] : null) ??
+                  'Coach')
+              .toString();
       out.add(
         ProviderMatch(
-          providerId:
-              (s['provider_id'] ?? s['_id'] ?? name).toString(),
+          providerId: (s['provider_id'] ?? s['_id'] ?? name).toString(),
           name: name,
           serviceTitle: (s['title'] ?? 'Program').toString(),
           priceCents: priceCents,
@@ -273,8 +264,7 @@ class ProviderMatcher {
     // One result per business (matches the React matcher + product contract):
     // a single organization can't crowd out local alternatives.
     final seen = <String>{};
-    final unique =
-        ranked.where((m) => seen.add(m.name.toLowerCase())).toList();
+    final unique = ranked.where((m) => seen.add(m.name.toLowerCase())).toList();
     return unique.take(10).toList();
   }
 
@@ -290,8 +280,9 @@ class ProviderMatcher {
         copy.sort((a, b) => a.priceCents.compareTo(b.priceCents));
       case SortPreference.closest:
         copy.sort(
-          (a, b) => (a.distanceKm ?? double.infinity)
-              .compareTo(b.distanceKm ?? double.infinity),
+          (a, b) => (a.distanceKm ?? double.infinity).compareTo(
+            b.distanceKm ?? double.infinity,
+          ),
         );
       case SortPreference.topRated:
         copy.sort((a, b) {

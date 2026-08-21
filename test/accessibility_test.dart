@@ -4,8 +4,8 @@
 //   flutter test test/accessibility_test.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/presentation/widgets/common_widgets.dart';
-import 'package:flutter_structure/presentation/widgets/sporve_image.dart';
+import 'package:sporve_app/presentation/widgets/common_widgets.dart';
+import 'package:sporve_app/presentation/widgets/sporve_image.dart';
 
 void main() {
   testWidgets('SporveIconButton exposes a labelled button to a11y', (

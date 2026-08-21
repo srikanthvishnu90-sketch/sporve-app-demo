@@ -3,8 +3,8 @@
 // captured; chip edits + reExecute re-rank without re-parsing.
 //   flutter test test/search_provider_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/client/controllers/search_provider.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/client/controllers/search_provider.dart';
 
 class _FakeRepo implements AppRepository {
   Map<String, dynamic> parseResult = {

@@ -13,9 +13,11 @@
 /// one policy: Sporve deducts nothing because revenue comes from subscriptions.
 library;
 
+import '../generated/contracts.dart';
+
 /// The only current Sporve transaction-fee setting. Stripe processing is
 /// separate and is intentionally not estimated by the client.
-const int kSporveBookingFeeBps = 0;
+const int kSporveBookingFeeBps = kContractSporveBookingFeeBps;
 
 /// Fee to charge on a gross amount (minor units / cents) at a bps rate. Mirrors
 /// the server EXACTLY: `Math.round((amount * bps) / 10000)`
@@ -79,29 +81,6 @@ class FeeItemization {
       isRecorded: false,
       isFirst: false,
       isOffPlatform: isOffPlatform,
-      currency: currency,
-    );
-  }
-
-  /// Compatibility constructor for stored relationship metadata. New code must
-  /// use [FeeItemization.subscriptionFunded]; [isFirst] never changes money.
-  @Deprecated('Use FeeItemization.subscriptionFunded')
-  factory FeeItemization.marketplace({
-    required String bookingId,
-    required int grossCents,
-    required bool isFirst,
-    String currency = 'USD',
-  }) {
-    final fee = feeCentsFor(grossCents, kSporveBookingFeeBps);
-    return FeeItemization(
-      bookingId: bookingId,
-      grossCents: grossCents,
-      feeBps: kSporveBookingFeeBps,
-      feeCents: fee,
-      netCents: grossCents - fee,
-      feeKnown: true,
-      isRecorded: false,
-      isFirst: isFirst,
       currency: currency,
     );
   }

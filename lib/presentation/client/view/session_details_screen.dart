@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../controllers/home_controller.dart';
@@ -16,6 +16,7 @@ import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
 import '../../../core/utils/trust_safety_sop.dart';
+import '../../../core/utils/provider_trust.dart';
 
 class SessionDetailsScreen extends StatefulWidget {
   const SessionDetailsScreen({super.key});
@@ -27,7 +28,6 @@ class SessionDetailsScreen extends StatefulWidget {
 class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   String _selectedTab =
       'OVERVIEW'; // 'OVERVIEW', 'WHAT YOU\'LL LEARN', 'REVIEWS'
-  String _selectedTier = 'STANDARD'; // 'STANDARD', 'PRO', 'ELITE'
   bool _navigating = false; // debounce double-taps into the booking flow
 
   Map<String, dynamic>? _stringMap(dynamic value) {
@@ -172,27 +172,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
     );
   }
 
-  // Grounded (§15): the ONLY price is the provider's real base price from the DB
-  // row. Tier labels are descriptive only — they must NEVER fabricate a price or
-  // change what Stripe charges. (The React app has no tiers; this matches it and
-  // the server, where a program has exactly one price.)
-  String get _tierPrice => '\$${_basePrice.toStringAsFixed(0)}';
+  // D4: providers publish one session price. The app offers no multiplier tier;
+  // historical tier labels remain read-only on old booking rows.
+  String get _sessionPriceLabel => '\$${_basePrice.toStringAsFixed(0)}';
 
-  // Charged amount = the real base price, always. No fabricated tier multiplier
-  // ever reaches checkout.
-  double get _tierPriceValue => _basePrice;
-
-  String get _tierDescription {
-    switch (_selectedTier) {
-      case 'PRO':
-        return 'Advanced pro-level coaching session with specialized drills.';
-      case 'ELITE':
-        return 'Private 1-on-1 intensive masterclass tailored directly for you.';
-      case 'STANDARD':
-      default:
-        return 'Baseline training with associate coaching.';
-    }
-  }
+  double get _sessionPriceValue => _basePrice;
 
   @override
   Widget build(BuildContext context) {
@@ -225,7 +209,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
             : 'New',
         image: image,
         spotsLeft: 'AVAILABLE',
-        isVerified: true,
+        isVerified: providerTrusted(programData),
         bookingTrend: 'Trending',
         top: 0,
         team: providerName,
@@ -381,8 +365,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                                     final id = opportunity?.programId;
                                     final auth = context.read<AuthProvider>();
                                     if (auth.allowSave(
-                                      isCurrentlySaved: homeProvider.isFavorite(id),
-                                      onAuthed: () => homeProvider.toggleFavorite(id),
+                                      isCurrentlySaved: homeProvider.isFavorite(
+                                        id,
+                                      ),
+                                      onAuthed: () =>
+                                          homeProvider.toggleFavorite(id),
                                     )) {
                                       homeProvider.toggleFavorite(id);
                                     }
@@ -391,7 +378,9 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                                     height: 44,
                                     width: 44,
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.45),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.45,
+                                      ),
                                       shape: BoxShape.circle,
                                       border: Border.all(color: Colors.white24),
                                     ),
@@ -598,22 +587,6 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Tier selector pills
-                  Builder(
-                    builder: (context) {
-                      const tiers = ['STANDARD', 'PRO', 'ELITE'];
-                      return SporveSegmented(
-                        segments: tiers,
-                        selected: tiers.indexOf(_selectedTier),
-                        onChanged: (i) =>
-                            setState(() => _selectedTier = tiers[i]),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Selected Tier Info
                   Text(
                     'SESSION PRICE',
                     style: AppTypography.font(
@@ -625,7 +598,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _tierPrice,
+                    _sessionPriceLabel,
                     style: AppTypography.mono(
                       color: AppColors.textPrimary,
                       size: 36,
@@ -634,7 +607,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _tierDescription,
+                    'Provider-set price for this session. Sporve does not add a booking commission.',
                     style: AppTypography.font(
                       color: AppColors.textSecondary,
                       fontSize: 13,
@@ -655,13 +628,14 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
   }
 
   /// Persistent bottom action bar — Message (secondary) + Book (sport-context
-  /// CTA carrying the live tier price).
+  /// CTA carrying the provider-set session price).
   Widget _bookingBar(
     String sport,
     String title,
     String coach,
     Map<String, dynamic>? programData,
   ) {
+    final trusted = programData != null && providerTrusted(programData);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: const BoxDecoration(
@@ -686,23 +660,27 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
               // Coach OS (P0 #3): a FULL program shows "Join waitlist" instead of
               // Book — full-slot demand is captured, not bounced. Open/unbounded
               // programs (no declared capacity) always show Book.
-              child: programIsFull(programData)
+              child: !trusted
+                  ? SporveButton(
+                      'Verification pending',
+                      onPressed: null,
+                      icon: Icons.shield_outlined,
+                      variant: SporveButtonVariant.secondary,
+                    )
+                  : programIsFull(programData)
                   ? SporveButton(
                       'Join waitlist',
                       icon: Icons.people_alt_outlined,
                       onPressed: () {
                         context.read<AuthProvider>().requireAuth(() {
-                          showJoinWaitlistSheet(
-                            context,
-                            program: programData ?? const {},
-                          );
+                          showJoinWaitlistSheet(context, program: programData);
                         });
                       },
                       variant: SporveButtonVariant.primary,
                       color: AppColors.slate,
                     )
                   : SporveButton(
-                      'Book · $_tierPrice',
+                      'Book · $_sessionPriceLabel',
                       onPressed: () {
                         // Auth-on-action (spec §3.2): a guest is sent to verify
                         // first; a verified user proceeds into the booking flow.
@@ -715,8 +693,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                               'program': programData,
                               'title': title,
                               'coach': coach,
-                              'tier': _selectedTier,
-                              'price': _tierPriceValue,
+                              'price': _sessionPriceValue,
                             },
                           )?.then((_) => _navigating = false);
                         });

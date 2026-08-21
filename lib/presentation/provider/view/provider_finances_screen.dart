@@ -685,7 +685,7 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
     final c = context.watch<ProviderController>();
     final connected = c.stripeChargesEnabled;
     final pending = c.pendingPayoutNet;
-    final payouts = c.payouts; // REAL Stripe payouts (empty until fn deployed)
+    final payouts = c.payouts;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -742,7 +742,16 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
             ),
           ),
           const SizedBox(height: 12),
-          if (payouts.isEmpty)
+          if (!c.payoutsLoaded)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 28),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else if (c.payoutsError != null)
+            ErrorRetry(message: c.payoutsError!, onRetry: c.fetchPayouts)
+          else if (payouts.isEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
@@ -1035,7 +1044,11 @@ class _ProviderFinancesScreenState extends State<ProviderFinancesScreen>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    [if (t.athlete.isNotEmpty) t.athlete, t.date].join(' • '),
+                    [
+                      if (t.athlete.isNotEmpty) t.athlete,
+                      t.date,
+                      ?t.tierLabel,
+                    ].join(' • '),
                     style: AppTypography.font(
                       color: AppColors.textTertiary,
                       fontSize: 11,

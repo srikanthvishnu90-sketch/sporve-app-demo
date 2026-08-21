@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../../core/utils/session_time.dart';
+import '../../../core/utils/provider_trust.dart';
 import '../controllers/home_controller.dart';
 import '../controllers/search_provider.dart';
 import '../../authentication/controllers/auth_provider.dart';
@@ -98,13 +99,16 @@ class _SearchScreenState extends State<SearchScreen> {
   double? _distanceKm(Opportunity o) {
     final lat = o.latitude, lng = o.longitude;
     if (lat == null || lng == null) return null;
-    
+
     // Resolve dynamic reference lat/lng based on active search constraints or default
     double refLat = 41.8781;
     double refLng = -87.6298;
     try {
       final search = context.read<SearchProvider>();
-      final metroKey = search.constraints['metro']?.toString().toLowerCase().trim();
+      final metroKey = search.constraints['metro']
+          ?.toString()
+          .toLowerCase()
+          .trim();
       if (metroKey != null && _metroAnchors.containsKey(metroKey)) {
         refLat = _metroAnchors[metroKey]![0];
         refLng = _metroAnchors[metroKey]![1];
@@ -235,6 +239,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
     // 1. Map dynamic programs to Opportunity objects for the map view
     final List<Opportunity> dynamicOpportunities = homeProvider.programs
+        .where((program) => program is Map && providerTrusted(program))
+        .toList()
         .asMap()
         .entries
         .map((entry) {
@@ -249,12 +255,12 @@ class _SearchScreenState extends State<SearchScreen> {
           final rawImage = (coverImg != null && coverImg.isNotEmpty)
               ? coverImg
               : (progImg != null && progImg.isNotEmpty)
-                  ? progImg
-                  : (gallery.isNotEmpty && gallery.first.toString().isNotEmpty)
-                      ? gallery.first.toString()
-                      : (provImg != null && provImg.isNotEmpty)
-                          ? provImg
-                          : '';
+              ? progImg
+              : (gallery.isNotEmpty && gallery.first.toString().isNotEmpty)
+              ? gallery.first.toString()
+              : (provImg != null && provImg.isNotEmpty)
+              ? provImg
+              : '';
           final image = rawImage.isNotEmpty
               ? rawImage
               : SportColors.fallbackImageOf(sportType);
@@ -283,13 +289,14 @@ class _SearchScreenState extends State<SearchScreen> {
             title: program['title']?.toString() ?? 'Program',
             coach: coach,
             price: '\$${program['price'] ?? 0}',
-            rating: (program['averageRating'] is num &&
+            rating:
+                (program['averageRating'] is num &&
                     (program['averageRating'] as num) > 0)
                 ? '${program['averageRating']} (${program['totalReviews'] ?? 0})'
                 : 'New', // grounded — real rating (real count) or honest "New", no fake 5.0
             image: image,
             spotsLeft: 'AVAILABLE',
-            isVerified: provider?['verificationStatus'] == 'verified',
+            isVerified: providerTrusted(program),
             bookingTrend: 'Trending now',
             top: 200.0 + (index * 100), // map pin layout positions
             left: index % 2 == 0 ? 100.0 : null,

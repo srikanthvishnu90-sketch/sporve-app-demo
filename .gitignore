@@ -1,5 +1,6 @@
 # Real config (PUBLIC keys only, but keep it out of git — commit env.example.json)
 env.json
+GetStorage*
 
 # Flutter / Dart build output
 .dart_tool/

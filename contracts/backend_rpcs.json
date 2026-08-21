@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-20",
+  "schemaStatus": "The production baseline is intentionally not stored here under D5. RPC names are client-observed and must be reconciled in the dedicated backend repository.",
+  "rpcs": [
+    "accept_waitlist_offer",
+    "bookable_slots",
+    "camp_check_in",
+    "camp_price_due",
+    "camp_roster_view",
+    "claim_group_seat",
+    "create_split_pay_links",
+    "decline_waitlist_offer",
+    "ensure_provider_conversation",
+    "find_affiliatable_account",
+    "group_slot_roster",
+    "invite_existing_account",
+    "org_inbox",
+    "org_schedule_grid",
+    "redeem_split_share",
+    "register_camp_athlete",
+    "resolve_draft",
+    "route_conversation",
+    "team_block_split_status"
+  ]
+}

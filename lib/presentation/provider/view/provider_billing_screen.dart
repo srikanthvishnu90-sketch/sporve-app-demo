@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/subscription.dart';
+import '../../../core/services/sentry_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_sizes.dart';
@@ -46,7 +47,12 @@ class _ProviderBillingScreenState extends State<ProviderBillingScreen> {
     try {
       final launched = await launchUrl(uri, webOnlyWindowName: '_self');
       if (!launched && mounted) _showLaunchError();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      await SentryService().captureException(
+        error,
+        stackTrace: stackTrace,
+        hint: 'Stripe subscription checkout URL launch failed',
+      );
       if (mounted) _showLaunchError();
     }
   }
@@ -58,7 +64,12 @@ class _ProviderBillingScreenState extends State<ProviderBillingScreen> {
     try {
       final launched = await launchUrl(uri, webOnlyWindowName: '_self');
       if (!launched && mounted) _showLaunchError();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      await SentryService().captureException(
+        error,
+        stackTrace: stackTrace,
+        hint: 'Stripe billing portal URL launch failed',
+      );
       if (mounted) _showLaunchError();
     }
   }

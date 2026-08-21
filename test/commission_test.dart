@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/utils/commission.dart';
-import 'package:flutter_structure/core/utils/platform_fee.dart';
+import 'package:sporve_app/core/utils/commission.dart';
+import 'package:sporve_app/core/utils/platform_fee.dart';
 
 // Provider-Model-Rebuild #5 — the ORG↔TRAINER commission engine.
 // These pin the two guarantees the spec + ledger require:

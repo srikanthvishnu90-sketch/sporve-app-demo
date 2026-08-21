@@ -1,11 +1,12 @@
-// Verifies payment fixes (refund processing, idempotency fields, status sync)
+// Verifies server-authoritative cancellation/refund status synchronization.
 // Run: flutter test test/payment_fix_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/client/controllers/home_controller.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/client/controllers/home_controller.dart';
 
 class _FakeBookingRepo implements AppRepository {
   final List<Map<String, dynamic>> bookings = [];
+  double nextRefundAmount = 30;
 
   @override
   Future<List<dynamic>> getBookings() async => bookings;
@@ -14,16 +15,20 @@ class _FakeBookingRepo implements AppRepository {
   Future<List<dynamic>> getBookingsOrThrow() async => bookings;
 
   @override
-  Future<bool> processRefund(
+  Future<Map<String, dynamic>> requestBookingCancellation(
     String bookingId, {
-    required double amount,
     String? reason,
   }) async {
     final i = bookings.indexWhere((b) => b['_id'] == bookingId);
-    if (i == -1) return false;
+    if (i == -1) {
+      return {'success': false, 'error': 'Booking not found.'};
+    }
     final booking = Map<String, dynamic>.from(bookings[i]);
     final originalPrice =
         (booking['finalPrice'] ?? booking['originalPrice'] ?? 75.0) as num;
+    // This fake stands in for the server: the caller supplies no amount and
+    // only reads the recorded decision returned by the function.
+    final amount = nextRefundAmount;
     final isFull = amount >= originalPrice.toDouble();
     booking['refundStatus'] = isFull ? 'full' : 'partial';
     booking['refundedAmount'] = amount;
@@ -36,7 +41,12 @@ class _FakeBookingRepo implements AppRepository {
       booking['paymentStatus'] = 'refunded';
     }
     bookings[i] = booking;
-    return true;
+    return {
+      'success': true,
+      'refundStatus': booking['refundStatus'],
+      'refundedAmount': amount,
+      'paymentStatus': booking['paymentStatus'],
+    };
   }
 
   @override
@@ -58,15 +68,16 @@ void main() {
     });
   });
 
-  group('Refund Path Logic Tests', () {
-    test('Partial refund updates refundStatus and refundedAmount without canceling', () async {
-      final ok = await fakeRepo.processRefund(
+  group('Server-authoritative refund path', () {
+    test('partial result is rendered from the server response', () async {
+      fakeRepo.nextRefundAmount = 30;
+      final result = await fakeRepo.requestBookingCancellation(
         'pay_test_b1',
-        amount: 30.0,
         reason: 'Partial session cancellation',
       );
 
-      expect(ok, isTrue);
+      expect(result['success'], isTrue);
+      expect(result['refundedAmount'], 30.0);
       final bookings = await fakeRepo.getBookings();
       final updated = bookings.firstWhere((b) => b['_id'] == 'pay_test_b1');
 
@@ -77,14 +88,14 @@ void main() {
       expect(updated['paymentStatus'], equals('paid'));
     });
 
-    test('Full refund updates status and paymentStatus to refunded', () async {
-      final ok = await fakeRepo.processRefund(
+    test('full result updates status only after the server decision', () async {
+      fakeRepo.nextRefundAmount = 100;
+      final result = await fakeRepo.requestBookingCancellation(
         'pay_test_b1',
-        amount: 100.0,
         reason: 'Full refund request',
       );
 
-      expect(ok, isTrue);
+      expect(result['success'], isTrue);
       final bookings = await fakeRepo.getBookings();
       final updated = bookings.firstWhere((b) => b['_id'] == 'pay_test_b1');
 
@@ -95,18 +106,18 @@ void main() {
     });
   });
 
-  group('HomeController Refund Integration Tests', () {
-    test('processRefund via HomeController re-fetches and updates state', () async {
+  group('HomeController cancellation integration', () {
+    test('successful server decision triggers a booking refetch', () async {
       final controller = HomeProvider(fakeRepo);
       await controller.fetchBookings();
 
-      final success = await controller.processRefund(
+      fakeRepo.nextRefundAmount = 50;
+      final result = await controller.requestBookingCancellation(
         'pay_test_b1',
-        amount: 50.0,
         reason: 'Half refund',
       );
 
-      expect(success, isTrue);
+      expect(result['success'], isTrue);
       final b = controller.bookingById('pay_test_b1');
       expect(b, isNotNull);
       expect(b!['refundStatus'], equals('partial'));

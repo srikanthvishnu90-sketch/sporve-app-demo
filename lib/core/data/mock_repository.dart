@@ -3,6 +3,8 @@ import '../models/query_intent.dart';
 import '../models/query_intent_parser.dart';
 import '../models/subscription.dart';
 import '../matching/provider_matcher.dart';
+import '../generated/contracts.dart';
+import '../utils/provider_trust.dart';
 import '../utils/platform_fee.dart';
 import '../utils/team_split.dart';
 import 'policies.dart';
@@ -23,19 +25,19 @@ class MockRepository implements AppRepository {
   Future<List<SubscriptionPlan>> getSubscriptionPlans() async => const [
     SubscriptionPlan(
       tier: SubscriptionTier.free,
-      aiMonthlyQuota: 3,
-      seatLimit: 1,
+      aiMonthlyQuota: kContractFreeAiMonthlyQuota,
+      seatLimit: kContractFreeSeatLimit,
       workspaceEnabled: false,
       purchasable: true,
-      monthlyPriceUsd: 0,
+      monthlyPriceUsd: kContractFreeMonthlyPriceUsd,
     ),
     SubscriptionPlan(
       tier: SubscriptionTier.pro,
       aiMonthlyQuota: null,
-      seatLimit: 3,
+      seatLimit: kContractProSeatLimit,
       workspaceEnabled: false,
       purchasable: true,
-      monthlyPriceUsd: 34.99,
+      monthlyPriceUsd: kContractProMonthlyPriceUsd,
     ),
     SubscriptionPlan(
       tier: SubscriptionTier.enterprise,
@@ -43,7 +45,7 @@ class MockRepository implements AppRepository {
       seatLimit: null,
       workspaceEnabled: false,
       purchasable: false,
-      monthlyPriceUsd: 149,
+      monthlyPriceUsd: kContractEnterpriseMonthlyPriceUsd,
     ),
   ];
 
@@ -114,7 +116,7 @@ class MockRepository implements AppRepository {
                 (m['organization_id']?.toString() ?? organizationId) ==
                     organizationId &&
                 (m['is_active'] ?? true) == true &&
-                (m['background_check_status'] ?? 'verified') == 'verified',
+                m['background_check_status'] == 'verified',
           )
           .map((m) => Map<String, dynamic>.from(m))
           .toList();
@@ -232,9 +234,98 @@ class MockRepository implements AppRepository {
       MockData.bookings = bookings;
   @override
   Future<String?> addBooking(Map<String, dynamic> booking) async {
-    MockData.addBooking(booking);
-    return booking['_id']?.toString();
+    String? idOf(Object? value) {
+      if (value is Map) return (value['_id'] ?? value['id'])?.toString();
+      final id = value?.toString();
+      return id == null || id.isEmpty ? null : id;
+    }
+
+    Map<String, dynamic>? rowWithId(List<dynamic> rows, String? id) {
+      if (id == null) return null;
+      for (final row in rows) {
+        if (row is Map && idOf(row) == id) {
+          return Map<String, dynamic>.from(row);
+        }
+      }
+      return null;
+    }
+
+    final id = 'book_${DateTime.now().microsecondsSinceEpoch}';
+    final programId = idOf(booking['programId']);
+    final sessionId = idOf(booking['sessionId']);
+    final athleteId = idOf(booking['athleteId']);
+    final program = booking['programId'] is Map
+        ? Map<String, dynamic>.from(booking['programId'] as Map)
+        : rowWithId(MockData.programs, programId);
+    final session = booking['sessionId'] is Map
+        ? Map<String, dynamic>.from(booking['sessionId'] as Map)
+        : rowWithId(MockData.sessions, sessionId);
+    final athlete = rowWithId(MockData.athletes, athleteId);
+    final assignedMemberId = idOf(booking['assignedMemberId']);
+    Map<String, dynamic>? assignedMember;
+    for (final member in _orgMembers) {
+      if (idOf(member) == assignedMemberId) {
+        assignedMember = member;
+        break;
+      }
+    }
+    final trainerProfile = assignedMember?['trainer_profile'];
+    final trainerName = trainerProfile is Map
+        ? trainerProfile['display_name']?.toString()
+        : null;
+    final athleteName = athlete == null
+        ? null
+        : (athlete['fullName'] ??
+                  [
+                    athlete['firstName'],
+                    athlete['lastName'],
+                  ].where((part) => part != null).join(' '))
+              .toString();
+    final price = (program?['price'] as num?)?.toDouble() ?? 0;
+
+    // Preview repository plays the role of the server: derive every
+    // authoritative booking fact instead of accepting it from presentation.
+    MockData.addBooking({
+      '_id': id,
+      'searcherId': MockData.userProfile['_id'],
+      'programId': program ?? programId,
+      'sessionId': session ?? sessionId,
+      'athleteId': athlete ?? athleteId,
+      if (athleteName != null && athleteName.trim().isNotEmpty)
+        'athleteName': athleteName,
+      'assignedMemberId': ?assignedMemberId,
+      if (trainerName != null && trainerName.trim().isNotEmpty)
+        'assignedTrainerName': trainerName,
+      'planProposalId': ?idOf(booking['planProposalId']),
+      'originalPrice': price,
+      'finalPrice': price,
+      'currency': 'USD',
+      'status': 'pending',
+      'paymentStatus': 'unpaid',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    return id;
   }
+
+  @override
+  Future<Uri> createBookingCheckout({
+    required String bookingId,
+    required Uri successUrl,
+    required Uri cancelUrl,
+  }) async {
+    throw const RepositoryActionException(
+      'Payments are unavailable in preview mode. No charge was created.',
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestBookingCancellation(
+    String bookingId, {
+    String? reason,
+  }) async => const {
+    'success': false,
+    'error': 'Refunds are unavailable in preview mode. No payment was changed.',
+  };
 
   @override
   Future<bool> updateBookingStatus(String bookingId, String status) async {
@@ -244,34 +335,6 @@ class MockRepository implements AppRepository {
       list[i]['status'] = status;
       MockData.bookings = list;
     }
-    return true;
-  }
-
-  @override
-  Future<bool> processRefund(
-    String bookingId, {
-    required double amount,
-    String? reason,
-  }) async {
-    final list = List<dynamic>.from(MockData.bookings);
-    final i = list.indexWhere((b) => (b['_id'] ?? b['id']) == bookingId);
-    if (i == -1) return false;
-    final booking = Map<String, dynamic>.from(list[i] as Map);
-    final originalPrice =
-        (booking['finalPrice'] ?? booking['originalPrice'] ?? 75.0) as num;
-    final isFull = amount >= originalPrice.toDouble();
-    booking['refundStatus'] = isFull ? 'full' : 'partial';
-    booking['refundedAmount'] = amount;
-    booking['refundedAt'] = DateTime.now().toIso8601String();
-    if (reason != null && reason.isNotEmpty) {
-      booking['refundReason'] = reason;
-    }
-    if (isFull) {
-      booking['status'] = 'refunded';
-      booking['paymentStatus'] = 'refunded';
-    }
-    list[i] = booking;
-    MockData.bookings = list;
     return true;
   }
 
@@ -1749,6 +1812,7 @@ class MockRepository implements AppRepository {
         'sport': prog is Map ? (prog['sport'] ?? '') : '',
         'status': b['status'] ?? '',
         'paymentStatus': pay,
+        'selectedTier': b['selectedTier'],
         'gross': b['finalPrice'] ?? 0,
         'platformFee': b['platformFee'],
         'platformFeeBps': b['platformFeeBps'],
@@ -2392,6 +2456,26 @@ class MockRepository implements AppRepository {
   Future<void> saveProviderProfile(Map<String, dynamic> profile) async =>
       MockData.providerProfile = profile;
 
+  @override
+  Future<Map<String, dynamic>> createProviderConnectSession({
+    required Uri returnUrl,
+  }) async => const {
+    'error': 'Payout setup is unavailable in preview mode.',
+    'chargesEnabled': false,
+  };
+
+  @override
+  Future<void> refreshProviderEmbeddings() async {
+    // Preview listings are local fixtures; there is no remote index to refresh.
+  }
+
+  @override
+  Future<Map<String, dynamic>> generateProviderOnboardDraft(
+    Map<String, dynamic> payload,
+  ) async => const {
+    'error': 'Draft generation is unavailable in preview mode.',
+  };
+
   // ── Coach policies (AI front-office source of truth) ───────────────────────
   // In-memory demo store (L-013: static so the const MockRepository() stays const;
   // also keeps unit tests off GetStorage/MockData, matching every other mock
@@ -2900,7 +2984,7 @@ class MockRepository implements AppRepository {
       if (prog is! Map) continue;
       final program = Map<String, dynamic>.from(prog);
       // SAFETY gate (never relaxed): a verified background check is mandatory.
-      if (!_mockVerified(program)) continue;
+      if (!providerTrusted(program)) continue;
       if (wantSport) {
         final ps = (program['sportType'] ?? program['sport'] ?? '').toString();
         if (!ps.toLowerCase().contains(wantedSport)) continue;
@@ -2924,18 +3008,6 @@ class MockRepository implements AppRepository {
       if (ranked.length >= limit) break;
     }
     return ranked;
-  }
-
-  // Mirrors ProviderMatcher._isVerified for the demo: a verified BACKGROUND
-  // CHECK is required (identity 'verificationStatus' alone is not enough).
-  static bool _mockVerified(Map<String, dynamic> program) {
-    final prov = program['providerId'];
-    final bg =
-        (program['background_check_status'] ??
-                (prov is Map ? prov['background_check_status'] : null) ??
-                (prov is Map ? prov['backgroundCheckStatus'] : null))
-            ?.toString();
-    return bg == 'verified';
   }
 
   static String _mockBusinessName(Map<String, dynamic> program) {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_structure/core/theme/app_typography.dart';
+import 'package:sporve_app/core/theme/app_typography.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import '../../../core/routes/app_routes.dart';
@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/sport_colors.dart';
 import '../../../core/utils/session_time.dart';
+import '../../../core/utils/provider_trust.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
@@ -48,8 +49,15 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
         .toLowerCase()
         .trim();
     const multi = {
-      '', 'general', 'multi', 'multi-sport', 'multisport', 'multiple',
-      'all', 'all-around', 'various',
+      '',
+      'general',
+      'multi',
+      'multi-sport',
+      'multisport',
+      'multiple',
+      'all',
+      'all-around',
+      'various',
     };
     if (multi.contains(s)) return AppColors.textPrimary; // bright white
     return SportColors.of(s);
@@ -58,13 +66,16 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   void _openIntake(PlanProvider p) {
     final a = p.athlete;
     final sports = a?['preferredSports'];
-    Get.toNamed(AppRoutes.goalIntake, arguments: {
-      'athleteId': a?['_id']?.toString() ?? '',
-      'athleteName': (a?['firstName'] ?? a?['fullName'])?.toString(),
-      'sport': (sports is List && sports.isNotEmpty)
-          ? sports.first.toString()
-          : null,
-    })?.then((_) {
+    Get.toNamed(
+      AppRoutes.goalIntake,
+      arguments: {
+        'athleteId': a?['_id']?.toString() ?? '',
+        'athleteName': (a?['firstName'] ?? a?['fullName'])?.toString(),
+        'sport': (sports is List && sports.isNotEmpty)
+            ? sports.first.toString()
+            : null,
+      },
+    )?.then((_) {
       if (mounted) context.read<PlanProvider>().load();
     });
   }
@@ -81,19 +92,22 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
       final program = proposal['program'];
       if (program is Map) {
         final prov = program['providerId'];
-        final coach = (prov is Map ? prov['businessName'] : null)?.toString() ??
+        final coach =
+            (prov is Map ? prov['businessName'] : null)?.toString() ??
             (proposal['provider'] is Map
                 ? proposal['provider']['businessName']?.toString()
                 : null) ??
             'Academy';
-        Get.toNamed(AppRoutes.bookingFlow, arguments: {
-          'program': Map<String, dynamic>.from(program),
-          'title': program['title'],
-          'coach': coach,
-          'tier': 'STANDARD',
-          'price': program['price'],
-          'planProposalId': proposal['_id'],
-        })?.then((_) {
+        Get.toNamed(
+          AppRoutes.bookingFlow,
+          arguments: {
+            'program': Map<String, dynamic>.from(program),
+            'title': program['title'],
+            'coach': coach,
+            'price': program['price'],
+            'planProposalId': proposal['_id'],
+          },
+        )?.then((_) {
           _navigating = false;
           if (mounted) context.read<PlanProvider>().load();
         });
@@ -142,14 +156,11 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   }
 
   Widget _fill(Widget child) => ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          SizedBox(
-            height: MediaQuery.of(context).size.height * 0.72,
-            child: child,
-          ),
-        ],
-      );
+    physics: const AlwaysScrollableScrollPhysics(),
+    children: [
+      SizedBox(height: MediaQuery.of(context).size.height * 0.72, child: child),
+    ],
+  );
 
   // ── The reference layout ───────────────────────────────────────────────────
   Widget _planLayout(PlanProvider p) {
@@ -184,7 +195,10 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   // ── Hero: outcome headline + phase subtitle + progress bar ──────────────────
   Widget _hero(PlanProvider p) {
     final phases = p.phaseNames;
-    final current = p.currentPhaseIndex.clamp(0, phases.isEmpty ? 0 : phases.length - 1);
+    final current = p.currentPhaseIndex.clamp(
+      0,
+      phases.isEmpty ? 0 : phases.length - 1,
+    );
     final fill = phases.isEmpty ? 0.0 : (current + 1) / phases.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,14 +257,20 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
     return _card(
       child: Row(
         children: [
-          const Icon(Icons.hourglass_empty,
-              color: AppColors.textTertiary, size: 20),
+          const Icon(
+            Icons.hourglass_empty,
+            color: AppColors.textTertiary,
+            size: 20,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Finding your first matches — check back shortly.',
               style: AppTypography.font(
-                  color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -260,7 +280,8 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
 
   Widget _upNextFromBooking(Map<String, dynamic> booking, PlanProvider p) {
     final session = booking['sessionId'];
-    final title = (session is Map ? session['title'] : null)?.toString() ??
+    final title =
+        (session is Map ? session['title'] : null)?.toString() ??
         'Upcoming session';
     final start = session is Map ? parseSessionStart(session) : null;
     final when = start == null
@@ -319,9 +340,13 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                   borderRadius: BorderRadius.circular(AppRadii.tile),
                   border: Border.all(color: accent.withValues(alpha: 0.30)),
                 ),
-                child: Icon(SportColors.iconOf(
-                    context.read<PlanProvider>().goal?['sport']?.toString()),
-                    color: accent, size: 24),
+                child: Icon(
+                  SportColors.iconOf(
+                    context.read<PlanProvider>().goal?['sport']?.toString(),
+                  ),
+                  color: accent,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -366,7 +391,10 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
               child: Text(
                 primaryLabel.toUpperCase(),
                 style: AppTypography.mono(
-                    color: AppColors.onSlate, size: 12, weight: FontWeight.w600),
+                  color: AppColors.onSlate,
+                  size: 12,
+                  weight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -376,20 +404,19 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   }
 
   Widget _metaLine(IconData icon, String text) => Row(
-        children: [
-          Icon(icon, color: AppColors.textSecondary, size: 15),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.mono(
-                  color: AppColors.textPrimary, size: 12.5),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Icon(icon, color: AppColors.textSecondary, size: 15),
+      const SizedBox(width: 7),
+      Expanded(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.mono(color: AppColors.textPrimary, size: 12.5),
+        ),
+      ),
+    ],
+  );
 
   // ── PROGRESS ────────────────────────────────────────────────────────────────
   Widget _progressCard(PlanProvider p) {
@@ -410,9 +437,10 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                       ? '$count session${count == 1 ? '' : 's'} done'
                       : 'Your progress starts here',
                   style: AppTypography.font(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600),
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -420,7 +448,10 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                       ? 'First session will start your progress.'
                       : body,
                   style: AppTypography.font(
-                      color: AppColors.textPrimary, fontSize: 12.5, height: 1.4),
+                    color: AppColors.textPrimary,
+                    fontSize: 12.5,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),
@@ -444,7 +475,10 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
               Text(
                 'No suggestions yet — the concierge is still looking.',
                 style: AppTypography.font(
-                    color: AppColors.textSecondary, fontSize: 13, height: 1.5),
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 12),
               SporveButton(
@@ -479,14 +513,16 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
     final sport = program['sportType']?.toString();
     final accent = SportColors.of(sport);
     final coach = _coachOf(program);
-    final img = (program['image'] ??
-            program['coverImage'] ??
-            (program['providerId'] is Map
-                ? program['providerId']['profileImage']
-                : null))
-        ?.toString() ??
+    final img =
+        (program['image'] ??
+                program['coverImage'] ??
+                (program['providerId'] is Map
+                    ? program['providerId']['profileImage']
+                    : null))
+            ?.toString() ??
         '';
-    final hasRating = program['averageRating'] is num &&
+    final hasRating =
+        program['averageRating'] is num &&
         (program['averageRating'] as num) > 0;
     final ratingPrice = [
       if (hasRating) program['averageRating'].toString(),
@@ -494,7 +530,7 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
     ].join('  ·  ');
     final dist = _distanceLabel(program);
     final why = (prop['reasonText'] ?? '').toString();
-    final verified = _isVerified(program);
+    final verified = providerTrusted(program);
 
     return GestureDetector(
       onTap: () => _viewProgram(program),
@@ -517,21 +553,23 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (img.isNotEmpty)
-                    SporveImage(img, fit: BoxFit.cover,
-                        fallbackIcon: SportColors.iconOf(sport))
+                    SporveImage(
+                      img,
+                      fit: BoxFit.cover,
+                      fallbackIcon: SportColors.iconOf(sport),
+                    )
                   else
                     Container(
                       color: accent.withValues(alpha: 0.12),
                       alignment: Alignment.center,
-                      child: Icon(SportColors.iconOf(sport),
-                          color: accent.withValues(alpha: 0.55), size: 56),
+                      child: Icon(
+                        SportColors.iconOf(sport),
+                        color: accent.withValues(alpha: 0.55),
+                        size: 56,
+                      ),
                     ),
                   if (verified)
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: _proBadge(),
-                    ),
+                    Positioned(top: 10, right: 10, child: _proBadge()),
                 ],
               ),
             ),
@@ -548,24 +586,32 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.font(
-                              color: AppColors.textPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700),
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         ratingPrice,
                         style: AppTypography.mono(
-                            color: accent, size: 12.5, weight: FontWeight.w600),
+                          color: accent,
+                          size: 12.5,
+                          weight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
                   if (dist != null) ...[
                     const SizedBox(height: 3),
-                    Text(dist,
-                        style: AppTypography.font(
-                            color: AppColors.textSecondary, fontSize: 12)),
+                    Text(
+                      dist,
+                      style: AppTypography.font(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 8),
                   Text(
@@ -573,10 +619,11 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.font(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                        fontStyle: FontStyle.italic,
-                        height: 1.4),
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      fontStyle: FontStyle.italic,
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -586,16 +633,24 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                           onPressed: () => _viewProgram(program),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.textPrimary,
-                            side: const BorderSide(color: AppColors.hairlineStrong),
+                            side: const BorderSide(
+                              color: AppColors.hairlineStrong,
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(AppRadii.chip),
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.chip,
+                              ),
                             ),
                           ),
-                          child: Text('VIEW',
-                              style: AppTypography.mono(
-                                  color: AppColors.textPrimary, size: 11,
-                                  weight: FontWeight.w600)),
+                          child: Text(
+                            'VIEW',
+                            style: AppTypography.mono(
+                              color: AppColors.textPrimary,
+                              size: 11,
+                              weight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -607,13 +662,19 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
                             foregroundColor: SportColors.onColorOf(sport),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(AppRadii.chip),
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.chip,
+                              ),
                             ),
                           ),
-                          child: Text('APPROVE',
-                              style: AppTypography.mono(
-                                  color: SportColors.onColorOf(sport), size: 11,
-                                  weight: FontWeight.w600)),
+                          child: Text(
+                            'APPROVE',
+                            style: AppTypography.mono(
+                              color: SportColors.onColorOf(sport),
+                              size: 11,
+                              weight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -628,34 +689,47 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   }
 
   Widget _proBadge() => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: AppColors.ink.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(AppRadii.chip),
-          border: Border.all(color: AppColors.trustGold.withValues(alpha: 0.6)),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: AppColors.ink.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(AppRadii.chip),
+      border: Border.all(color: AppColors.trustGold.withValues(alpha: 0.6)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.verified, color: AppColors.trustGold, size: 13),
+        const SizedBox(width: 4),
+        Text(
+          'PRO',
+          style: AppTypography.mono(
+            color: AppColors.textPrimary,
+            size: 10,
+            weight: FontWeight.w600,
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.verified, color: AppColors.trustGold, size: 13),
-            const SizedBox(width: 4),
-            Text('PRO',
-                style: AppTypography.mono(
-                    color: AppColors.textPrimary, size: 10, weight: FontWeight.w600)),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 
   Widget _browseLink() => Center(
-        child: TextButton.icon(
-          onPressed: () => Get.toNamed(AppRoutes.findCoach),
-          icon: Text('BROWSE ALL TRAINERS',
-              style: AppTypography.mono(
-                  color: AppColors.textSecondary, size: 12, weight: FontWeight.w500)),
-          label: const Icon(Icons.arrow_forward,
-              color: AppColors.textSecondary, size: 18),
+    child: TextButton.icon(
+      onPressed: () => Get.toNamed(AppRoutes.findCoach),
+      icon: Text(
+        'BROWSE ALL TRAINERS',
+        style: AppTypography.mono(
+          color: AppColors.textSecondary,
+          size: 12,
+          weight: FontWeight.w500,
         ),
-      );
+      ),
+      label: const Icon(
+        Icons.arrow_forward,
+        color: AppColors.textSecondary,
+        size: 18,
+      ),
+    ),
+  );
 
   // ── No-goal / error states ──────────────────────────────────────────────────
   Widget _noGoalInvitation(PlanProvider p) {
@@ -674,43 +748,56 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
               color: AppColors.slateTint,
               borderRadius: BorderRadius.circular(AppRadii.card),
             ),
-            child: const Icon(Icons.flag_outlined,
-                color: AppColors.slateText, size: 26),
+            child: const Icon(
+              Icons.flag_outlined,
+              color: AppColors.slateText,
+              size: 26,
+            ),
           ),
           const SizedBox(height: 20),
           Text(
             hasAthlete ? "What's the goal?" : 'Start with your athlete',
             style: AppTypography.font(
-                color: AppColors.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w600),
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 10),
           Text(
             hasAthlete
                 ? 'Tell the concierge what you’re working toward and it will build a '
-                    'plan and suggest coaches — you approve every step.'
+                      'plan and suggest coaches — you approve every step.'
                 : 'Add a child to your profile, then set an outcome and the concierge '
-                    'will build a plan around it.',
+                      'will build a plan around it.',
             style: AppTypography.font(
-                color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: 24),
           if (hasAthlete)
-            SporveButton('Set a goal',
-                icon: Icons.auto_awesome,
-                variant: SporveButtonVariant.primary,
-                onPressed: () => _openIntake(p))
+            SporveButton(
+              'Set a goal',
+              icon: Icons.auto_awesome,
+              variant: SporveButtonVariant.primary,
+              onPressed: () => _openIntake(p),
+            )
           else
-            SporveButton('Go to profile',
-                icon: Icons.person_outline,
-                variant: SporveButtonVariant.primary,
-                onPressed: () => Get.toNamed(AppRoutes.editProfile)),
+            SporveButton(
+              'Go to profile',
+              icon: Icons.person_outline,
+              variant: SporveButtonVariant.primary,
+              onPressed: () => Get.toNamed(AppRoutes.editProfile),
+            ),
           const SizedBox(height: 12),
-          SporveButton('Browse trainers',
-              icon: Icons.search,
-              variant: SporveButtonVariant.secondary,
-              onPressed: () => Get.toNamed(AppRoutes.findCoach)),
+          SporveButton(
+            'Browse trainers',
+            icon: Icons.search,
+            variant: SporveButtonVariant.secondary,
+            onPressed: () => Get.toNamed(AppRoutes.findCoach),
+          ),
         ],
       ),
     );
@@ -719,102 +806,119 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   // Guest (unverified) invitation — sign in before setting a goal. No sport
   // color, progress bar, or phase text here: there's no goal to ground them yet.
   Widget _guestInvitation(PlanProvider p) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.slateTint,
-                borderRadius: BorderRadius.circular(AppRadii.card),
-              ),
-              child: const Icon(Icons.flag_outlined,
-                  color: AppColors.slateText, size: 26),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              "Set your athlete's goal",
-              style: AppTypography.font(
-                  color: AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Sign in and tell the concierge what you’re working toward — it '
-              'builds a plan and suggests coaches, and you approve every step.',
-              style: AppTypography.font(
-                  color: AppColors.textSecondary, fontSize: 14, height: 1.5),
-            ),
-            const SizedBox(height: 24),
-            SporveButton('Get started',
-                variant: SporveButtonVariant.primary,
-                onPressed: () => Get.toNamed(AppRoutes.authEntry)),
-            const SizedBox(height: 12),
-            SporveButton('Browse trainers',
-                variant: SporveButtonVariant.secondary,
-                onPressed: () => Get.toNamed(AppRoutes.findCoach)),
-          ],
+    padding: const EdgeInsets.all(24),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.slateTint,
+            borderRadius: BorderRadius.circular(AppRadii.card),
+          ),
+          child: const Icon(
+            Icons.flag_outlined,
+            color: AppColors.slateText,
+            size: 26,
+          ),
         ),
-      );
+        const SizedBox(height: 20),
+        Text(
+          "Set your athlete's goal",
+          style: AppTypography.font(
+            color: AppColors.textPrimary,
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Sign in and tell the concierge what you’re working toward — it '
+          'builds a plan and suggests coaches, and you approve every step.',
+          style: AppTypography.font(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 24),
+        SporveButton(
+          'Get started',
+          variant: SporveButtonVariant.primary,
+          onPressed: () => Get.toNamed(AppRoutes.authEntry),
+        ),
+        const SizedBox(height: 12),
+        SporveButton(
+          'Browse trainers',
+          variant: SporveButtonVariant.secondary,
+          onPressed: () => Get.toNamed(AppRoutes.findCoach),
+        ),
+      ],
+    ),
+  );
 
   Widget _errorState(PlanProvider p) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.cloud_off_outlined,
-                color: AppColors.textTertiary, size: 40),
-            const SizedBox(height: 16),
-            Text(
-              p.error ?? 'Something went wrong.',
-              textAlign: TextAlign.center,
-              style: AppTypography.font(
-                  color: AppColors.textSecondary, fontSize: 14, height: 1.5),
-            ),
-            const SizedBox(height: 20),
-            SporveButton('Retry',
-                fullWidth: false,
-                variant: SporveButtonVariant.secondary,
-                onPressed: () => p.load()),
-          ],
+    padding: const EdgeInsets.all(24),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(
+          Icons.cloud_off_outlined,
+          color: AppColors.textTertiary,
+          size: 40,
         ),
-      );
+        const SizedBox(height: 16),
+        Text(
+          p.error ?? 'Something went wrong.',
+          textAlign: TextAlign.center,
+          style: AppTypography.font(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 20),
+        SporveButton(
+          'Retry',
+          fullWidth: false,
+          variant: SporveButtonVariant.secondary,
+          onPressed: () => p.load(),
+        ),
+      ],
+    ),
+  );
 
   // ── Shared bits ─────────────────────────────────────────────────────────────
   Widget _section(String label, Widget child, {bool pad = false}) => Padding(
-        padding: EdgeInsets.symmetric(horizontal: pad ? 20 : 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _sectionLabel(label),
-            const SizedBox(height: 12),
-            child,
-          ],
-        ),
-      );
+    padding: EdgeInsets.symmetric(horizontal: pad ? 20 : 0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [_sectionLabel(label), const SizedBox(height: 12), child],
+    ),
+  );
 
   Widget _sectionLabel(String text) => Text(
-        text,
-        style: AppTypography.mono(
-                color: AppColors.textSecondary, size: 11, weight: FontWeight.w500)
-            .copyWith(letterSpacing: 1.6),
-      );
+    text,
+    style: AppTypography.mono(
+      color: AppColors.textSecondary,
+      size: 11,
+      weight: FontWeight.w500,
+    ).copyWith(letterSpacing: 1.6),
+  );
 
   Widget _card({required Widget child}) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.card),
-          border: Border.all(color: AppColors.hairline),
-        ),
-        child: child,
-      );
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadii.card),
+      border: Border.all(color: AppColors.hairline),
+    ),
+    child: child,
+  );
 
   // ── Grounded helpers ────────────────────────────────────────────────────────
   String _coachOf(Map<String, dynamic> program) {
@@ -823,14 +927,6 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
     if (biz != null && biz.isNotEmpty) return biz;
     final title = program['title']?.toString();
     return (title != null && title.isNotEmpty) ? title : 'A suggested coach';
-  }
-
-  bool _isVerified(Map<String, dynamic> program) {
-    final prov = program['providerId'];
-    if (prov is! Map) return false;
-    final bg = (prov['backgroundCheckStatus'] ?? prov['background_check_status'])
-        ?.toString();
-    return bg == 'verified';
   }
 
   String? _priceLabel(Map<String, dynamic>? program) {
@@ -862,8 +958,18 @@ class _PlanHomeScreenState extends State<PlanHomeScreen> {
   }
 
   static const _monthsFull = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   String _monthFull(DateTime d) => _monthsFull[d.month - 1];

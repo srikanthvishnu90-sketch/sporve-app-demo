@@ -1,140 +1,86 @@
-# Sporve Demo — Public Audit Summary
+# Sporve Flutter client — implementation audit
 
-**Date:** 2026-07-28 · **Scope:** the Sporve Flutter web demo (frontend).
-**Stance:** a candid engineering review. Strengths are noted where they change
-the risk picture; the body is what should improve.
+**Updated:** 2026-08-20
+**Scope:** Flutter mobile client and framed web demo. This is not a production
+Supabase or Stripe attestation.
 
-> **Note on scope.** This is the *public* summary. It covers the design system,
-> frontend architecture, product concept, documentation honesty, and
-> accessibility/fairness. A separate, **private** security review (backend
-> access control, payments internals, secret handling, and child-safety /
-> COPPA enforcement) was delivered directly to the maintainers and is **not**
-> published here — this is a live product handling minors' data, so those
-> findings follow responsible-disclosure rather than public posting.
+## Remediated in the 2026-08-20 implementation
 
----
+- Sporve revenue is one Free, Pro, or Enterprise subscription per provider
+  workspace. The current policy takes 0% from bookings; historical webhook-
+  recorded fee/net facts continue to render unchanged.
+- New bookings no longer offer or write Standard/Pro/Elite booking tiers.
+  Historical Pro/Elite rows label the immutable tier and recorded price.
+- Checkout sends identifiers and return URLs only. The app never supplies an
+  amount or writes `payment_status`; it refetches the booking after Stripe return
+  and shows processing/check-back states while the webhook is pending.
+- Refund requests send a booking identifier/reason only. The server decides and
+  records the amount from the captured policy snapshot.
+- Preview/mock mode cannot fabricate checkout, Connect, refund, or payment
+  success. Release mode still force-disables the mock repository.
+- Provider trust is one strict predicate: approved provider + verified
+  background check + valid completion timestamp. Discovery, matching, map pins,
+  badges, and payment entry use it and fail closed.
+- The design tokens now implement distinct positive/warning/negative/link roles,
+  Persimmon action color, an AA-capable structural foreground, real gradients,
+  Oswald displays, Hanken Grotesk body, and JetBrains Mono data.
+- Presentation raw-color literals and direct Supabase access are prohibited by
+  source-invariant tests. Dead/fabricated AI demo surfaces and an external image
+  hotlink were removed.
+- The mobile frame scrolls on short desktop viewports. Flutter web intentionally
+  remains a framed app demo under D6; `sporve-web` is the browser product.
+- Location permission failures now distinguish denied/unavailable states. The
+  map centers on the complete listing bounds and falls back to Chicago only when
+  no coordinates exist.
+- Malformed session times are explicit (`Time unavailable`) rather than silently
+  guessed. Silent catches now surface, breadcrumb, log, or document the one
+  legitimate reporter-recursion exception.
+- Client-invoked Edge Function and RPC names are source-extracted and checked
+  against machine-readable contracts. This detects client/manifest drift but
+  does not pretend absent backend source has been recovered.
+- Local GetStorage artifacts were removed and ignored; package/store identity is
+  `sporve_app` / `com.sporve.app`; proprietary and third-party notices now exist.
 
-## Verified strengths (measured, not flattery)
+## Verification state
 
-- **Zero leaked secrets.** No server secret is committed or embedded anywhere in
-  the frontend or the compiled bundle; only public-safe keys ship to the client.
-- **Payments are server-authoritative and idempotent** — amounts/fees are
-  derived server-side from the database, never from the client; no card data or
-  secret ever touches the app.
-- **Row-Level Security is on for every table.**
-- **Clean architecture swap-point** — 0 presentation files reach past the
-  repository interface into mock data; the mock→real backend swap is one binding.
-- **`flutter analyze` is clean and the test suite passes (70/70)**, including
-  real error-state and safety-gate tests.
-- **Honest empty/loading/error states** — real "nothing yet" states and skeleton
-  loaders, not fake data.
+- Flutter analyzer: clean after the implementation changes.
+- New deterministic tests cover strict trust, tier-history labels, Chicago/list
+  bounds, contract projection, source invariants, color contrast, payment state,
+  booking-path server messages, and malformed time input.
+- The managed workspace blocks Flutter's test runner from opening its required
+  `127.0.0.1:0` loopback socket. No test body failed in that attempt; the full
+  suite must still run in an environment that permits the test process.
+- Final build, browser, inherited workspace, and diff checks are recorded in
+  `docs/HANDOFF.md` at handoff rather than forecast here.
 
-The engineering craft is real and, in several dimensions, above its stage. The
-findings below are quality and honesty gaps, not a house of cards.
+## Open structural and launch risks
 
----
+1. D5 assigns production schema and Edge Functions to one dedicated backend
+   repository, but its name/source recovery is unresolved. This client contains
+   contracts, not the source of truth.
+2. The signed `checkout.session.completed → payment_status='paid'` webhook path,
+   Stripe amount derivation, idempotency, Connect behavior, payout reconciliation,
+   and refund execution cannot be verified without that backend source.
+3. No production Supabase mutation or Stripe action was performed. Test-mode
+   bidirectional app/web checkout, abandoned Connect resume, and refund-to-cent
+   evidence remain launch gates.
+4. The web pack containing canonical D1–D3 was absent from this checkout. The 0%
+   outcome implements the research owner's explicit subscription direction;
+   cross-repository contract consumption remains to be wired by the web owner.
+5. Asset provenance is incomplete for the files named in `NOTICE`. Font license
+   terms are recorded; unresolved product-image ownership is an owner blocker.
+6. IP assignment for the original third-party-authored history and stable git
+   identity are owner-only diligence items and remain unchecked.
+7. This branch descends from a repository state with a previously identified
+   automatic-task payload. The reviewed branch deletes it; default-branch and
+   credential incident remediation remain owner responsibilities.
 
-## 1 — Design system / color / UI
+## Priority order
 
-- **Contrast:** the brand slate `#475569` is used as foreground text/icon on the
-  black canvas in ~140 places (≈2.5–2.77:1, below WCAG AA's 4.5:1). Add a lifted
-  slate for foreground; keep `#475569` as a fill-with-white-text only.
-- **Semantic collapse:** `blue`, `positive`, `warning`, `slate`, `entryWall` are
-  all literally the same `#475569`, and `negative` equals `textTertiary`. A
-  confirmation, a warning, a link, and an error render identically — for a
-  product moving money, errors that don't look like errors is a real UX defect.
-- **Docs vs. reality:** the "three-font system" (Inter / Hanken / JetBrains) is
-  Inter everywhere — the selection ternary has identical branches. Bold weight is
-  globally suppressed (`w700+ → w600`), flattening intended hierarchy.
-- **Token discipline drift:** ~29 raw `Color(0x…)` hexes in the two AI screens
-  (including a reserved AI-blue that no longer exists in the palette) and several
-  ad-hoc radii (30/32/36/50) that exceed the tight-radius token system.
-- **Responsive:** a fixed 440px phone-frame with a hard `≤480` breakpoint and no
-  short-viewport scroll fallback — fine for a demo, not a product.
-- **Minor:** an external Unsplash hotlink bypasses the image error wrapper; a
-  `debug/` palette screen ships with stale hex labels.
-
-## 2 — Frontend architecture
-
-- **Silent failures:** 9 swallowed catches (5 fully empty `catch (_) {}`) hide
-  network/permission errors as "nothing happened," some around data writes.
-- **Two-data-shape landmine:** the codebase carries both Flutter string keys and
-  Supabase numeric columns for the same fields; every reader must remember both.
-  There is no single normalization layer, so the next field re-introduces the
-  bug. Add one adapter at the repository boundary.
-- **Dual state system breadth:** the Provider-for-state / GetX-for-routing split
-  is coherent, but 152 GetX call sites entangle navigation with business state
-  and make a future migration costly and testing harder.
-- **God-object repository:** the swap-point class is ~2,000 lines mixing many
-  concerns; split into per-aggregate repositories behind the existing interface.
-- **Best-effort AI with silent fallback:** an "AI headline" step falls back to a
-  local truncation on any error with no health signal — correct only if the
-  remote function is actually deployed.
-- **Housekeeping:** a rollback-only unused import and a parity prototype/dead
-  folder clutter the diligence surface.
-- **Strength:** repository swap-point discipline is genuinely clean (0 direct
-  mock-data reads); analyze clean; 70/70 tests pass.
-
-## 3 — Product concept
-
-- **The trust model is asserted, not built:** "background-checked coaches" is the
-  entire wedge, but there is no screening-vendor integration or verification
-  workflow in the code — it's a status enum someone sets by hand. The concept
-  only works if verification is real, gating, and universal.
-- **Two-sided cold-start:** the marketplace needs vetted supply before families
-  find value; here supply appears only as a waitlist. Verification throughput
-  becomes the growth bottleneck at scale.
-- **AI value vs. risk is inverted:** the strongest AI surface (ranked match) is a
-  deterministic formula in the canonical build, while the genuinely generative
-  surface is the least constrained — the opposite of the safe configuration.
-- **Payout loop:** booking + payment are real, but provider payout history is a
-  labeled stub — the "coach gets paid" loop isn't demonstrably closed.
-- **One intensity model across 20+ sports** ("Every sport. One app.") will
-  misclassify safety for some sports; this axis is already fragile.
-- **Operational risk:** correctness depends on humans remembering which of two
-  source trees owns functions and schema — an accident waiting to happen.
-
-## 4 — Accessibility & fairness
-
-- **Accessibility exclusion:** near-total absence of `Semantics` (~9 across the
-  presentation layer vs. 126 tap targets and 29 icon-only buttons), likely
-  sub-48px tap targets, suppressed bold, and the AA-failing slate foreground
-  together exclude low-vision and screen-reader users.
-- **Unaudited ranking bias:** matching weighs rating, review count, and distance.
-  Rating shrinkage helps low-review coaches, but new/rural/less-reviewed coaches
-  are structurally down-ranked and distance weighting can encode socioeconomic
-  geography. A marketplace deciding who gets seen needs an explicit fairness
-  review — and any "founding coach placement" incentive must never override
-  safety gating.
-
-## 5 — Documentation honesty (doc-vs-code mismatches)
-
-The most corrosive category for diligence trust: the code contradicts its own
-documentation in several load-bearing places.
-
-- The design docs describe a "deep teal" system; the code is slate.
-- The docs say "auth is mock"; it's real authentication.
-- "AI matching" is deterministic in the canonical build.
-- The "three-font system" is Inter-only; "blue reserved for AI" no longer maps to
-  any token yet the color still appears as raw hex.
-- "Secured by Stripe" is honest on the real path but shows a fully simulated
-  payment under the offline demo flag — any recorded demo must disclose its mode.
-
-**Fix (cheap, high-value):** update the docs to match the code. Stale docs are
-actively misleading, and none of these are rewrites.
-
----
-
-## Priority order (engineering-quality track)
-
-1. Fix design-system contrast + semantic collapse (lifted slate foreground;
-   distinct positive/warning/negative).
-2. Add one repository-boundary normalization layer for the two data shapes.
-3. Replace silent catches with logging + user-facing retry.
-4. Collapse to a single source of truth for the codebase; add a CI check that
-   every client-invoked function name maps to a real deployed function.
-5. Update all documentation to reflect the real design system, auth, AI, and fonts.
-6. Add `Semantics`, fix tap-target sizes, and commission a ranking-fairness review.
-
-*(Security, payments-internals, and child-safety/COPPA findings are covered in
-the private report shared with the maintainers.)*
+1. Name and reconstruct the dedicated backend repository; recover every deployed
+   function and a truthful schema baseline without mutating production from here.
+2. Audit/build the signed Stripe webhook and run the complete shared test-mode
+   money matrix from app and web.
+3. Run the full Flutter suite and store builds in an unrestricted CI runner.
+4. Complete asset/IP provenance and company git identity records.
+5. Apply the same generated contracts in `sporve-web` and make drift a CI failure.

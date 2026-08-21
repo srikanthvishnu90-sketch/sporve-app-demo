@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/presentation/widgets/sporve_image.dart';
+import 'package:sporve_app/presentation/widgets/sporve_image.dart';
 
 /// Proves the failed/empty-image fallback (#12 Category 1): a missing image
 /// never renders a broken-image glyph — it shows the configured fallback icon

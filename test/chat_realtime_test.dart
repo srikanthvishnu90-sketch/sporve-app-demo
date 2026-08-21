@@ -2,10 +2,10 @@
 // and realtime delivery with de-dupe (our own echo ignored, others appended).
 //   flutter test test/chat_realtime_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/auth/auth_service.dart';
-import 'package:flutter_structure/core/auth/app_user.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/shared/controllers/chat_provider.dart';
+import 'package:sporve_app/core/auth/auth_service.dart';
+import 'package:sporve_app/core/auth/app_user.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/shared/controllers/chat_provider.dart';
 
 class _FakeRepo implements AppRepository {
   final List<dynamic> store = [];

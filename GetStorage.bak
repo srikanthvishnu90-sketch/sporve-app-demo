@@ -1,1 +1,0 @@
-{"signup_email":"parent_test@example.com","auth_step":"authenticated","auth_token":"mock_jwt_token_prod_123","user_role":"parent"}

@@ -3,8 +3,8 @@
 // and a successful retry clears it.
 //   flutter test test/home_error_state_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_structure/core/data/app_repository.dart';
-import 'package:flutter_structure/presentation/client/controllers/home_controller.dart';
+import 'package:sporve_app/core/data/app_repository.dart';
+import 'package:sporve_app/presentation/client/controllers/home_controller.dart';
 
 class _FakeRepo implements AppRepository {
   Object? throwError; // set to throw from getProgramsOrThrow

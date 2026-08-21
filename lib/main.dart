@@ -86,7 +86,7 @@ void main() async {
         Provider<AppRepository>.value(value: repo),
         Provider<PushService>(create: (_) => PushService(repo)),
         ChangeNotifierProvider(create: (_) => OnboardingProvider(repo)),
-        ChangeNotifierProvider(create: (_) => OnboardDraftProvider()),
+        ChangeNotifierProvider(create: (_) => OnboardDraftProvider(repo)),
         ChangeNotifierProvider(create: (_) => HomeProvider(repo)),
         ChangeNotifierProvider(create: (_) => SearchProvider(repo)),
         ChangeNotifierProvider(create: (_) => MatchProvider(repo)),

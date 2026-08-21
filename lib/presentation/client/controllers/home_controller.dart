@@ -87,6 +87,7 @@ class HomeProvider with ChangeNotifier {
       final pid = sProg is Map ? sProg['_id']?.toString() : sProg?.toString();
       if (pid != programId) continue;
       final start = parseSessionStart(s);
+      if (start == null) continue;
       final day = DateTime(start.year, start.month, start.day);
       if (day.isBefore(today)) continue;
       if (soonest == null || start.isBefore(soonest)) soonest = start;
@@ -139,10 +140,13 @@ class HomeProvider with ChangeNotifier {
         final pid = sProg is Map ? sProg['_id']?.toString() : sProg?.toString();
         if (pid != programId) return false;
         final start = parseSessionStart(s);
+        if (start == null) return false;
         final day = DateTime(start.year, start.month, start.day);
         return !day.isBefore(today);
       }).toList();
-      list.sort((a, b) => parseSessionStart(a).compareTo(parseSessionStart(b)));
+      list.sort(
+        (a, b) => parseSessionStart(a)!.compareTo(parseSessionStart(b)!),
+      );
       return list;
     } catch (e) {
       debugPrint('Error fetching sessions for program: $e');
@@ -172,6 +176,7 @@ class HomeProvider with ChangeNotifier {
       if (b is! Map) continue;
       final session = b['sessionId'] is Map ? b['sessionId'] : null;
       final start = parseSessionStart(session);
+      if (start == null) continue;
       final day = DateTime(start.year, start.month, start.day);
       if (!day.isBefore(today)) n++;
     }
@@ -253,51 +258,28 @@ class HomeProvider with ChangeNotifier {
     return id;
   }
 
-  /// Marks a booking paid + confirmed (the offline-demo equivalent of a
-  /// successful Stripe checkout) and persists it, so it lands on Schedule/Home
-  /// as a real confirmed session.
-  Future<void> markBookingPaid(String bookingId) async {
-    _bookings = _bookings.map((b) {
-      final id = (b is Map) ? (b['_id'] ?? b['id'])?.toString() : null;
-      if (id == bookingId && b is Map) {
-        final m = Map<String, dynamic>.from(b);
-        m['paymentStatus'] = 'paid';
-        m['status'] = 'confirmed';
-        return m;
-      }
-      return b;
-    }).toList();
-    await _repo.saveBookings(_bookings);
-    _calculateStats(); // also notifies
-  }
-
-  /// Cancels a booking: persists status='cancelled' and drops it from the
-  /// active list so it leaves Schedule + "Coming Up" immediately.
-  Future<bool> cancelBooking(String bookingId) async {
-    final ok = await _repo.updateBookingStatus(bookingId, 'cancelled');
-    if (!ok) return false;
-    _bookings = _bookings.where((b) {
-      final id = (b is Map) ? (b['_id'] ?? b['id'])?.toString() : null;
-      return id != bookingId;
-    }).toList();
-    _calculateStats(); // also calls notifyListeners()
-    return true;
-  }
-
-  /// Process full or partial refund for a booking.
-  Future<bool> processRefund(
+  /// Requests server-authoritative cancellation/refund evaluation. No amount or
+  /// payment status is written by this client.
+  Future<Map<String, dynamic>> requestBookingCancellation(
     String bookingId, {
-    required double amount,
     String? reason,
   }) async {
-    final ok = await _repo.processRefund(
-      bookingId,
-      amount: amount,
-      reason: reason,
-    );
-    if (!ok) return false;
-    await fetchBookings();
-    return true;
+    try {
+      final result = await _repo.requestBookingCancellation(
+        bookingId,
+        reason: reason,
+      );
+      if (result['success'] == true) await fetchBookings();
+      return result;
+    } on RepositoryActionException catch (error) {
+      return {'success': false, 'error': error.message};
+    } catch (error) {
+      debugPrint('requestBookingCancellation failed: $error');
+      return const {
+        'success': false,
+        'error': 'Cancellation could not be processed. Please try again.',
+      };
+    }
   }
 
   /// The booking with [id] from the latest fetched list, or null.

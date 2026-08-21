@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'core/routes/app_pages.dart';
@@ -29,8 +31,8 @@ class MyApp extends StatelessWidget {
           surface: AppColors.surface,
           onSurface: AppColors.textPrimary,
         ),
-        // Standardise the whole app on Inter, with soft
-        // white as the default text color on the near-black canvas.
+        // Hanken is the Material default; display and data styles opt into
+        // Oswald/JetBrains through AppTypography.
         textTheme: base.textTheme.apply(
           bodyColor: AppColors.textPrimary,
           displayColor: AppColors.textPrimary,
@@ -56,6 +58,7 @@ class MyApp extends StatelessWidget {
       builder: (context, child) {
         final media = MediaQuery.of(context);
         const frameWidth = 440.0;
+        const minFrameHeight = 720.0;
         // Near-black canvas behind EVERY screen, lit only by a faint crown of
         // light at the very top. Base color is unchanged (ink); the treatment
         // is static and paints once.
@@ -70,17 +73,24 @@ class MyApp extends StatelessWidget {
         if (media.size.width <= 480 || child == null) {
           return canvas;
         }
+        final framedHeight = math
+            .max(media.size.height, minFrameHeight)
+            .toDouble();
+        final framed = SizedBox(
+          width: frameWidth,
+          height: framedHeight,
+          child: MediaQuery(
+            data: media.copyWith(size: Size(frameWidth, framedHeight)),
+            child: canvas,
+          ),
+        );
         return ColoredBox(
           color: AppColors.frame,
-          child: Center(
-            child: SizedBox(
-              width: frameWidth,
-              child: MediaQuery(
-                data: media.copyWith(size: Size(frameWidth, media.size.height)),
-                child: canvas,
-              ),
-            ),
-          ),
+          child: media.size.height >= minFrameHeight
+              ? Center(child: framed)
+              : SingleChildScrollView(
+                  child: Align(alignment: Alignment.topCenter, child: framed),
+                ),
         );
       },
       // A quick, subtle FADE on route pushes — keeps the clean/direct feel (no
