@@ -99,3 +99,32 @@ The Flutter client and safe mock localhost preview are ready for product review.
 Production launch is not ready: backend reconstruction, cross-client parity,
 Stripe test-mode evidence, governance/owner actions, and the default-branch
 security review remain hard blockers. The local preview makes no real charges.
+
+## Publish-readiness addendum — 2026-08-21
+
+- Rechecked the exact publish tree after the subscription overhaul: analyzer
+  clean, all 196 Flutter tests green, contract and billing validators green, and
+  guarded web release/profile builds successful.
+- Browser-tested the Family, Provider, Login, Pricing, Demo, session-detail, and
+  booking surfaces. The sampled build has no application console exceptions;
+  headless WebGL fallback and unused CanvasKit-preload warnings are non-blocking.
+- Repaired stale Miami demo geography, duplicate city/state rendering, disabled
+  search semantics, unlabelled core booking/payment controls, and the empty
+  booking flow that exposed dates/times without a real server session. The
+  featured program now has a future-relative session, and calendar/time actions
+  are derived exclusively from real session rows.
+- Added `docs/APP-QA-2026-08-21.md`, recording a 17/20 post-fix UI health score
+  and the remaining daylight-theme, optional-Wasm, and native assistive-tech
+  work.
+- Scanned the current tree and reachable Git history for high-confidence secret
+  patterns and sensitive credential filenames; no credential requiring history
+  rewriting was found.
+- The repository is already public. Publishing source does not deploy the app,
+  mutate Supabase, contact Stripe, or satisfy the unresolved live-money gates.
+
+### Addendum shutdown readiness
+
+Source and the localhost mock preview are ready to publish. Production money
+remains not ready until the canonical backend and Stripe sources are recovered,
+the companion web client is aligned, and the documented Stripe test-mode matrix
+passes bidirectionally.
