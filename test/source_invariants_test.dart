@@ -79,4 +79,33 @@ void main() {
       reason: 'Initial booking status is a database default.',
     );
   });
+
+  test('mock marketplace geography stays aligned with Chicagoland', () {
+    final source = File('lib/core/mock/mock_data.dart').readAsStringSync();
+    expect(source.toLowerCase(), isNot(contains('miami')));
+    expect(source, contains('America/Chicago'));
+    expect(source, contains('Chicago, IL'));
+  });
+
+  test(
+    'mock booking sessions stay future-relative and cover the hero program',
+    () {
+      final source = File('lib/core/mock/mock_data.dart').readAsStringSync();
+      expect(source, contains('"date": _futureSessionDate('));
+      expect(source, contains('"programId": "prog_5"'));
+      expect(source, contains('"_id": "sess_4"'));
+    },
+  );
+
+  test(
+    'booking availability is derived from real sessions, not static slots',
+    () {
+      final source = File(
+        'lib/presentation/client/view/booking_flow_screen.dart',
+      ).readAsStringSync();
+      expect(source, isNot(contains('final List<String> _timeSlots')));
+      expect(source, contains('get _timeSlots => _sessionsOnSelectedDay'));
+      expect(source, contains('_firstSessionOnCalendarDay(day)'));
+    },
+  );
 }

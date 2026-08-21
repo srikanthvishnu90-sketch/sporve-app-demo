@@ -4,7 +4,7 @@ class MockData {
   static final GetStorage _box = GetStorage();
 
   // Bump when the seed data shape/content changes so existing installs re-seed.
-  static const int _seedVersion = 5;
+  static const int _seedVersion = 7;
 
   static void init() {
     if (_box.read('mock_seed_version') != _seedVersion) {
@@ -28,7 +28,7 @@ class MockData {
         "bio":
             "Dedicated sports academy providing elite training clinics for junior athletes.",
         "sports": ["Soccer", "Tennis", "Basketball"],
-        "location": "Miami, FL",
+        "location": "Chicago, IL",
         "status": "approved",
         "verificationStatus": "verified",
         "backgroundCheckStatus": "verified",
@@ -79,13 +79,13 @@ class MockData {
           ],
           "location": {
             "type": "Point",
-            "coordinates": [-80.1918, 25.7617],
+            "coordinates": [-87.6298, 41.8781],
           },
           "address": {
-            "line1": "123 Coral Way",
-            "city": "Miami",
-            "state": "FL",
-            "zip": "33145",
+            "line1": "123 S State St",
+            "city": "Chicago",
+            "state": "IL",
+            "zip": "60603",
             "country": "USA",
           },
           "cancellationPolicy": "moderate",
@@ -123,13 +123,13 @@ class MockData {
           "whatsIncluded": ["Tennis Balls", "Racquet rentals"],
           "location": {
             "type": "Point",
-            "coordinates": [-80.2000, 25.7700],
+            "coordinates": [-87.6742, 41.9226],
           },
           "address": {
-            "line1": "450 Tennis Center Dr",
-            "city": "Miami",
-            "state": "FL",
-            "zip": "33149",
+            "line1": "2045 N Lincoln Park W",
+            "city": "Chicago",
+            "state": "IL",
+            "zip": "60614",
             "country": "USA",
           },
           "cancellationPolicy": "strict",
@@ -157,37 +157,50 @@ class MockData {
           "_id": "sess_1",
           "programId": "prog_1",
           "title": "Soccer Skill Session 1",
-          "startDate": "2026-05-04T00:00:00.000Z",
-          "endDate": "2026-05-04T00:00:00.000Z",
-          "date": "2026-05-04T00:00:00.000Z",
+          "startDate": _futureSessionDate(3),
+          "endDate": _futureSessionDate(3),
+          "date": _futureSessionDate(3),
           "startTime": "05:00 PM",
           "endTime": "06:30 PM",
-          "timezone": "EST",
-          "address": "123 Coral Way, Miami, FL",
+          "timezone": "America/Chicago",
+          "address": "123 S State St, Chicago, IL",
         },
         {
           "_id": "sess_2",
           "programId": "prog_1",
           "title": "Soccer Skill Session 2",
-          "startDate": "2026-05-06T00:00:00.000Z",
-          "endDate": "2026-05-06T00:00:00.000Z",
-          "date": "2026-05-06T00:00:00.000Z",
+          "startDate": _futureSessionDate(5),
+          "endDate": _futureSessionDate(5),
+          "date": _futureSessionDate(5),
           "startTime": "05:00 PM",
           "endTime": "06:30 PM",
-          "timezone": "EST",
-          "address": "123 Coral Way, Miami, FL",
+          "timezone": "America/Chicago",
+          "address": "123 S State St, Chicago, IL",
         },
         {
           "_id": "sess_3",
           "programId": "prog_2",
           "title": "Weekly Tennis Practice",
-          "startDate": "2026-05-05T00:00:00.000Z",
-          "endDate": "2026-05-05T00:00:00.000Z",
-          "date": "2026-05-05T00:00:00.000Z",
+          "startDate": _futureSessionDate(4),
+          "endDate": _futureSessionDate(4),
+          "date": _futureSessionDate(4),
           "startTime": "04:00 PM",
           "endTime": "05:30 PM",
-          "timezone": "EST",
-          "address": "450 Tennis Center Dr, Miami, FL",
+          "timezone": "America/Chicago",
+          "address": "2045 N Lincoln Park W, Chicago, IL",
+        },
+        {
+          "_id": "sess_4",
+          "programId": "prog_5",
+          "providerId": "provider_1",
+          "title": "Learn-to-Swim Clinic",
+          "startDate": _futureSessionDate(6),
+          "endDate": _futureSessionDate(6),
+          "date": _futureSessionDate(6),
+          "startTime": "10:00 AM",
+          "endTime": "11:00 AM",
+          "timezone": "America/Chicago",
+          "address": "Demo training venue, Chicago, IL",
         },
       ]);
 
@@ -283,7 +296,7 @@ class MockData {
       _box.write('mock_teams', [
         {
           "_id": "team_1",
-          "name": "Miami Elite Soccer U12",
+          "name": "Chicago Elite Soccer U12",
           "sport": "Soccer",
           "roster": [
             {
@@ -322,7 +335,8 @@ class MockData {
     }
   }
 
-  /// Builds one published listing with the full program shape. Coordinates are
+  /// Builds one published listing with the full program shape. The compact
+  /// seed-grid coordinates are translated onto Chicagoland and returned as
   /// [lng, lat] to match the GeoJSON Point convention used across the app.
   static Map<String, dynamic> _p(
     String id,
@@ -364,15 +378,12 @@ class MockData {
       "Professional coaching",
       "Progress report",
     ],
-    "location": {
-      "type": "Point",
-      "coordinates": [lng, lat],
-    },
+    "location": {"type": "Point", "coordinates": _chicagoPoint(lng, lat)},
     "address": {
-      "line1": "Miami, FL",
-      "city": "Miami",
-      "state": "FL",
-      "zip": "33101",
+      "line1": "Demo training venue",
+      "city": "Chicago",
+      "state": "IL",
+      "zip": "60601",
       "country": "USA",
     },
     "cancellationPolicy": "moderate",
@@ -392,9 +403,23 @@ class MockData {
     },
   };
 
+  static List<double> _chicagoPoint(double seedLng, double seedLat) => [
+    -87.6298 + (seedLng + 80.1918) * 0.75,
+    41.8781 + (seedLat - 25.7617) * 0.75,
+  ];
+
+  static String _futureSessionDate(int daysFromToday) {
+    final now = DateTime.now().toUtc();
+    return DateTime.utc(
+      now.year,
+      now.month,
+      now.day,
+    ).add(Duration(days: daysFromToday)).toIso8601String();
+  }
+
   /// Programs 3–30: five more businesses at EXACTLY 5 listings each, plus the
   /// 3 that complete Apex's 5 (prog_1 + prog_2 are defined inline above). Spread
-  /// across 20+ sports and Miami neighborhoods so browse + map read full.
+  /// across 20+ sports and Chicagoland neighborhoods so browse + map read full.
   static List<Map<String, dynamic>> _extraPrograms() => [
     // ── Apex Performance Club (verified) — completes its 5 ──────────────
     _p(
@@ -460,10 +485,10 @@ class MockData {
       10,
       6,
     ),
-    // ── Coral Reef Aquatics (verified) ──────────────────────────────────
+    // ── Lakefront Aquatics (verified) ──────────────────────────────────
     _p(
       'prog_6',
-      'Coral Reef Aquatics',
+      'Lakefront Aquatics',
       true,
       'Swimming',
       'Competitive Swim Squad',
@@ -484,7 +509,7 @@ class MockData {
     ),
     _p(
       'prog_7',
-      'Coral Reef Aquatics',
+      'Lakefront Aquatics',
       true,
       'Diving',
       'Springboard Diving Basics',
@@ -505,7 +530,7 @@ class MockData {
     ),
     _p(
       'prog_8',
-      'Coral Reef Aquatics',
+      'Lakefront Aquatics',
       true,
       'Water Polo',
       'Junior Water Polo League',
@@ -526,11 +551,11 @@ class MockData {
     ),
     _p(
       'prog_9',
-      'Coral Reef Aquatics',
+      'Lakefront Aquatics',
       true,
       'Surfing',
-      'Beginner Surf Camp',
-      'Pop-ups, paddling, and ocean safety on gentle South Beach breaks.',
+      'Lakefront Surf Fundamentals',
+      'Pop-ups, paddling, and lake-safety skills in a controlled shoreline progression.',
       85,
       'package',
       4.7,
@@ -547,7 +572,7 @@ class MockData {
     ),
     _p(
       'prog_10',
-      'Coral Reef Aquatics',
+      'Lakefront Aquatics',
       true,
       'Swimming',
       'Masters Stroke Technique',
@@ -672,10 +697,10 @@ class MockData {
       18,
       14,
     ),
-    // ── Everglade Racquet Institute (pending) ───────────────────────────
+    // ── Lakeshore Racquet Institute (pending) ───────────────────────────
     _p(
       'prog_16',
-      'Everglade Racquet Institute',
+      'Lakeshore Racquet Institute',
       false,
       'Tennis',
       'High-Performance Tennis',
@@ -696,7 +721,7 @@ class MockData {
     ),
     _p(
       'prog_17',
-      'Everglade Racquet Institute',
+      'Lakeshore Racquet Institute',
       false,
       'Pickleball',
       'Pickleball for Everyone',
@@ -717,7 +742,7 @@ class MockData {
     ),
     _p(
       'prog_18',
-      'Everglade Racquet Institute',
+      'Lakeshore Racquet Institute',
       false,
       'Badminton',
       'Badminton Footwork Clinic',
@@ -738,7 +763,7 @@ class MockData {
     ),
     _p(
       'prog_19',
-      'Everglade Racquet Institute',
+      'Lakeshore Racquet Institute',
       false,
       'Squash',
       'Squash Fundamentals',
@@ -759,7 +784,7 @@ class MockData {
     ),
     _p(
       'prog_20',
-      'Everglade Racquet Institute',
+      'Lakeshore Racquet Institute',
       false,
       'Table Tennis',
       'Table Tennis Spin Lab',
