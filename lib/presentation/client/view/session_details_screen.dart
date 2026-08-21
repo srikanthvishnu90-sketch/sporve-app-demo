@@ -17,6 +17,7 @@ import '../../widgets/sporve_button.dart';
 import '../../widgets/sporve_image.dart';
 import '../../../core/utils/trust_safety_sop.dart';
 import '../../../core/utils/provider_trust.dart';
+import '../../../core/utils/location_text.dart';
 
 class SessionDetailsScreen extends StatefulWidget {
   const SessionDetailsScreen({super.key});
@@ -178,6 +179,38 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
 
   double get _sessionPriceValue => _basePrice;
 
+  Widget _heroIconAction({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    Color color = Colors.white,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dynamic args = Get.arguments;
@@ -244,25 +277,11 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
         ? '${averageRatingVal.toStringAsFixed(1)} ($reviewsCountVal)'
         : 'New';
 
-    String locationText = 'Location TBD';
-    if (programData != null) {
-      final addr = programData['address'];
-      if (addr is Map) {
-        final parts = [
-          addr['line1'] ?? addr['addressLine1'],
-          addr['city'],
-          addr['state'],
-        ].where((s) => s != null && s.toString().trim().isNotEmpty).toList();
-        if (parts.isNotEmpty) {
-          locationText = parts.join(', ');
-        }
-      } else if (addr is String && addr.isNotEmpty) {
-        locationText = addr;
-      } else if (programData['location'] is String &&
-          (programData['location'] as String).isNotEmpty) {
-        locationText = programData['location'];
-      }
-    }
+    final rawLocation = programData?['location'];
+    final locationLabel = locationText(
+      programData?['address'],
+      fallback: rawLocation is String ? rawLocation : null,
+    );
 
     return GradientScaffold(
       body: SingleChildScrollView(
@@ -327,22 +346,10 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        GestureDetector(
+                        _heroIconAction(
+                          label: 'Back',
+                          icon: Icons.arrow_back_ios_new,
                           onTap: () => Get.back(),
-                          child: Container(
-                            height: 44,
-                            width: 44,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.45),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white24),
-                            ),
-                            child: const Icon(
-                              Icons.arrow_back_ios_new,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
                         ),
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -355,7 +362,16 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                                 final isFav = homeProvider.isFavorite(
                                   opportunity.programId,
                                 );
-                                return GestureDetector(
+                                return _heroIconAction(
+                                  label: isFav
+                                      ? 'Remove from saved coaches'
+                                      : 'Save coach',
+                                  icon: isFav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isFav
+                                      ? AppColors.destructiveRed
+                                      : Colors.white,
                                   onTap: () {
                                     // Soft gate (spec §3.2): a guest may save a few
                                     // coaches before being prompted to verify. Intent
@@ -374,48 +390,17 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                                       homeProvider.toggleFavorite(id);
                                     }
                                   },
-                                  child: Container(
-                                    height: 44,
-                                    width: 44,
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.45,
-                                      ),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white24),
-                                    ),
-                                    child: Icon(
-                                      isFav
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color: isFav
-                                          ? AppColors.destructiveRed
-                                          : Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
                                 );
                               },
                             ),
                             const SizedBox(width: 10),
-                            GestureDetector(
+                            _heroIconAction(
+                              label: 'Report and block coach',
+                              icon: Icons.shield_outlined,
+                              color: AppColors.negative,
                               onTap: () => _showReportBlockDialog(
                                 coach,
                                 opportunity?.programId ?? 'coach_id',
-                              ),
-                              child: Container(
-                                height: 44,
-                                width: 44,
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.45),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: const Icon(
-                                  Icons.shield_outlined,
-                                  color: AppColors.negative,
-                                  size: 18,
-                                ),
                               ),
                             ),
                           ],
@@ -538,7 +523,7 @@ class _SessionDetailsScreenState extends State<SessionDetailsScreen> {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              locationText,
+                              locationLabel,
                               style: AppTypography.font(
                                 color: Colors.white70,
                                 fontSize: 11,
