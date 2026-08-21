@@ -117,118 +117,123 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
         const SizedBox(height: 14),
 
         // ── The person card ───────────────────────────────────────────────
-        GestureDetector(
+        Semantics(
+          button: true,
+          label: 'View $coach ${sport ?? 'sports'} match details',
           onTap: () => _view(m),
-          child: Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.card),
-              border: Border.all(color: SportColors.borderOf(sport)),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Sport-tinted hero band (well tint — NOT the ambient token,
-                // which is reserved for full-bleed splash/confirmation moments).
-                Container(
-                  height: 132,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        accent.withValues(alpha: 0.20),
-                        accent.withValues(alpha: 0.06),
+          child: GestureDetector(
+            onTap: () => _view(m),
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadii.card),
+                border: Border.all(color: SportColors.borderOf(sport)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Sport-tinted hero band (well tint — NOT the ambient token,
+                  // which is reserved for full-bleed splash/confirmation moments).
+                  Container(
+                    height: 132,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          accent.withValues(alpha: 0.20),
+                          accent.withValues(alpha: 0.06),
+                        ],
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          right: 18,
+                          bottom: -10,
+                          child: Icon(
+                            SportColors.iconOf(sport),
+                            size: 96,
+                            color: accent.withValues(alpha: 0.28),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _pill('AI match', accent),
+                              const Spacer(),
+                              SportIconTile(sport ?? '', size: 44),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        right: 18,
-                        bottom: -10,
-                        child: Icon(
-                          SportColors.iconOf(sport),
-                          size: 96,
-                          color: accent.withValues(alpha: 0.28),
+                  // Details
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          coach,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.font(
+                            color: AppColors.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.3,
+                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(height: 8),
+                        Row(
                           children: [
-                            _pill('AI match', accent),
-                            const Spacer(),
-                            SportIconTile(sport ?? '', size: 44),
+                            if (hasRating) ...[
+                              const Icon(
+                                Icons.star,
+                                color: AppColors.textPrimary,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 3),
+                            ],
+                            Text(
+                              rating,
+                              style: AppTypography.font(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Text(
+                              '\$${price is num ? price.round() : (price ?? 0)}',
+                              style: AppTypography.font(
+                                color: accent,
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Details
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        coach,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.font(
-                          color: AppColors.textPrimary,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (hasRating) ...[
-                            const Icon(
-                              Icons.star,
-                              color: AppColors.textPrimary,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 3),
-                          ],
-                          Text(
-                            rating,
-                            style: AppTypography.font(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                            ),
+                        const SizedBox(height: 14),
+                        Text(
+                          _why(m, sport, hasRating, rating),
+                          style: AppTypography.font(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                            height: 1.5,
                           ),
-                          const SizedBox(width: 14),
-                          Text(
-                            '\$${price is num ? price.round() : (price ?? 0)}',
-                            style: AppTypography.font(
-                              color: accent,
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        _why(m, sport, hasRating, rating),
-                        style: AppTypography.font(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          height: 1.5,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -333,17 +338,23 @@ class _BestMatchCarouselState extends State<BestMatchCarousel> {
     required String label,
     required VoidCallback onTap,
     required Color color,
-  }) => InkWell(
+  }) => Semantics(
+    button: true,
+    label: label,
     onTap: onTap,
-    borderRadius: BorderRadius.circular(AppRadii.pill),
-    child: Container(
-      width: 54,
-      height: 54,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.hairlineStrong),
+    excludeSemantics: true,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadii.pill),
+      child: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.hairlineStrong),
+        ),
+        child: Icon(icon, color: color, size: 22),
       ),
-      child: Icon(icon, color: color, size: 22),
     ),
   );
 }

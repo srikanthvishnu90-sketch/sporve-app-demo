@@ -60,7 +60,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
   String? _selectedTrainerId;
   String? _selectedTrainerName;
 
-  // Calendar shows the real current month.
+  // Calendar mirrors the selected real session. It is a view of server-backed
+  // availability, never a client-side slot generator.
   late int _calYear;
   late int _calMonth;
 
@@ -108,45 +109,48 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
   String get _selectedWeekday =>
       _weekdayNames[DateTime(_calYear, _calMonth, _selectedDay).weekday - 1];
 
-  // ── Month navigation ────────────────────────────────────────────────────
-  bool get _isCurrentMonth {
-    final now = DateTime.now();
-    return _calYear == now.year && _calMonth == now.month;
+  String _sessionTimeLabel(Map<String, dynamic> session) {
+    final raw = session['startTime']?.toString() ?? '';
+    return raw.isNotEmpty ? raw : formatTime12h(parseSessionStart(session));
   }
 
-  void _prevMonth() {
-    if (_isCurrentMonth) return; // never go before this month
-    setState(() {
-      if (_calMonth == 1) {
-        _calMonth = 12;
-        _calYear--;
-      } else {
-        _calMonth--;
+  Map<String, dynamic>? _firstSessionOnCalendarDay(int day) {
+    for (final session in _programSessions) {
+      final start = parseSessionStart(session);
+      if (start != null &&
+          start.year == _calYear &&
+          start.month == _calMonth &&
+          start.day == day) {
+        return session;
       }
-      _clampSelectedDay();
-    });
+    }
+    return null;
   }
 
-  void _nextMonth() {
-    setState(() {
-      if (_calMonth == 12) {
-        _calMonth = 1;
-        _calYear++;
-      } else {
-        _calMonth++;
-      }
-      _clampSelectedDay();
-    });
+  List<Map<String, dynamic>> get _sessionsOnSelectedDay {
+    final matches = _programSessions.where((session) {
+      final start = parseSessionStart(session);
+      return start != null &&
+          start.year == _calYear &&
+          start.month == _calMonth &&
+          start.day == _selectedDay;
+    }).toList();
+    matches.sort(
+      (a, b) => parseSessionStart(a)!.compareTo(parseSessionStart(b)!),
+    );
+    return matches;
   }
 
-  // Keep _selectedDay valid for the visible month: not before today in the
-  // current month, and not past the month's last day.
-  void _clampSelectedDay() {
-    final now = DateTime.now();
-    final firstSelectable = _isCurrentMonth ? now.day : 1;
-    final lastDay = _daysInMonth;
-    if (_selectedDay < firstSelectable) _selectedDay = firstSelectable;
-    if (_selectedDay > lastDay) _selectedDay = lastDay;
+  List<String> get _timeSlots => _sessionsOnSelectedDay
+      .map(_sessionTimeLabel)
+      .toSet()
+      .toList(growable: false);
+
+  Map<String, dynamic>? _sessionAtSelectedTime(String time) {
+    for (final session in _sessionsOnSelectedDay) {
+      if (_sessionTimeLabel(session) == time) return session;
+    }
+    return null;
   }
 
   // Booking context passed from the session-details screen.
@@ -854,9 +858,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
                 ? 'Date unavailable'
                 : '${_weekdayNames[start.weekday - 1]}, '
                       '${_monthNames[start.month - 1].substring(0, 3)} ${start.day}';
-            final time = (s['startTime']?.toString().isNotEmpty ?? false)
-                ? s['startTime'].toString()
-                : formatTime12h(start);
+            final time = _sessionTimeLabel(s);
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: GestureDetector(
@@ -1109,17 +1111,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
     }
   }
 
-  final List<String> _timeSlots = [
-    '09:00 AM',
-    '10:30 AM',
-    '11:30 AM',
-    '12:00 PM',
-    '01:00 PM',
-    '02:30 PM',
-    '04:00 PM',
-    '05:30 PM',
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1142,6 +1133,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
           padding: const EdgeInsets.only(left: 12),
           child: SporveIconButton(
             Icons.arrow_back,
+            semanticLabel: 'Back',
             onTap: () {
               setState(() {
                 _currentStep = 2;
@@ -1160,6 +1152,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
         actions: [
           SporveIconButton(
             Icons.close,
+            semanticLabel: 'Close booking',
             onTap: () => Get.offAllNamed(AppRoutes.mainNav),
             color: AppColors.negative,
           ),
@@ -1176,6 +1169,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
         padding: const EdgeInsets.only(left: 12),
         child: SporveIconButton(
           Icons.arrow_back,
+          semanticLabel: 'Back',
           onTap: () {
             if (_currentStep == 2) {
               setState(() {
@@ -1243,20 +1237,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
                 _buildTrainerPicker(),
                 _buildSessionPicker(),
                 _buildMultiBookingEntryPoint(),
-                // Month header with prev/next navigation. Prev is disabled +
-                // dimmed in the current month so users can't book in the past.
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    SporveIconButton(
-                      Icons.arrow_back,
-                      iconSize: 16,
-                      onTap: _isCurrentMonth ? null : _prevMonth,
-                      color: _isCurrentMonth
-                          ? AppColors.textTertiary
-                          : AppColors.textPrimary,
-                    ),
-                    Text(
+                // Dates, times, and notes are meaningful only after the server
+                // has returned a real session. An empty program must not show
+                // fabricated availability that the booking write will reject.
+                if (_programSessions.isNotEmpty &&
+                    _selectedSession != null) ...[
+                  Align(
+                    alignment: Alignment.center,
+                    child: Text(
                       '${_monthNames[_calMonth - 1]} $_calYear',
                       style: AppTypography.font(
                         color: AppColors.textTertiary,
@@ -1265,223 +1253,197 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
                         letterSpacing: 1.5,
                       ),
                     ),
-                    SporveIconButton(
-                      Icons.arrow_forward,
-                      iconSize: 16,
-                      onTap: _nextMonth,
-                      color: AppColors.textPrimary,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Calendar Weekday Headers
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day) {
-                    return SizedBox(
-                      width: 40,
-                      child: Text(
-                        day,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.font(
-                          color: AppColors.textTertiary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-
-                // Calendar Days Grid
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 7,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
                   ),
-                  itemCount: _leadingBlanks + _daysInMonth,
-                  itemBuilder: (context, index) {
-                    // Leading blank cells to align day 1 to the right weekday.
-                    if (index < _leadingBlanks) return const SizedBox.shrink();
-                    final day = index - _leadingBlanks + 1;
-                    final now = DateTime.now();
-                    final isPast =
-                        _calYear == now.year &&
-                        _calMonth == now.month &&
-                        day < now.day;
-                    final isSelected = _selectedDay == day;
-                    return GestureDetector(
-                      onTap: isPast
-                          ? null
-                          : () {
-                              // The picked real session is the source of truth
-                              // for the booking date. When one is selected,
-                              // re-anchor to it so the displayed/persisted date
-                              // can't diverge from the booked sessionId. Only
-                              // allow free editing in the (fallback) no-session
-                              // case.
-                              if (_selectedSession != null) {
-                                _selectSession(_selectedSession!);
-                              } else {
-                                setState(() {
-                                  _selectedDay = day;
-                                });
-                              }
-                            },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        decoration: BoxDecoration(
-                          color: isSelected ? _sportColor : Colors.transparent,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
+                  const SizedBox(height: 16),
+
+                  // Calendar Weekday Headers
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day) {
+                      return SizedBox(
+                        width: 40,
                         child: Text(
-                          '$day',
+                          day,
+                          textAlign: TextAlign.center,
                           style: AppTypography.font(
-                            color: isPast
-                                ? AppColors.textTertiary
-                                : (isSelected
-                                      ? SportColors.onColorOf(_sport)
-                                      : AppColors.textPrimary),
-                            fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 32),
-
-                Text(
-                  'AVAILABLE TIMES',
-                  style: AppTypography.font(
-                    color: AppColors.textTertiary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Time slots grid
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    childAspectRatio: 2.2,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                  ),
-                  itemCount: _timeSlots.length,
-                  itemBuilder: (context, index) {
-                    final slot = _timeSlots[index];
-                    final isSelected = _selectedTime == slot;
-                    return GestureDetector(
-                      onTap: () {
-                        // Keep the time pinned to the real session's start
-                        // (source of truth) so the booked slot always matches
-                        // the chosen sessionId. Free editing only applies to
-                        // the fallback no-session case.
-                        if (_selectedSession != null) {
-                          _selectSession(_selectedSession!);
-                        } else {
-                          setState(() {
-                            _selectedTime = slot;
-                          });
-                        }
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        decoration: BoxDecoration(
-                          color: isSelected ? _sportColor : AppColors.surface,
-                          borderRadius: BorderRadius.circular(AppRadii.tile),
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.transparent
-                                : AppColors.hairline,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          slot,
-                          style: AppTypography.font(
-                            // Contrast-correct on any sport color (white on dark
-                            // sports, near-black on yellow/lime).
-                            color: isSelected
-                                ? SportColors.onColorOf(_sport)
-                                : AppColors.textSecondary,
-                            fontSize: 11,
+                            color: AppColors.textTertiary,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 32),
-
-                Text(
-                  'NOTES (OPTIONAL)',
-                  style: AppTypography.font(
-                    color: AppColors.textTertiary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
+                      );
+                    }).toList(),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                // Notes Input Box
-                TextField(
-                  maxLines: 3,
-                  style: AppTypography.font(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
+                  // Calendar Days Grid
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 7,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                        ),
+                    itemCount: _leadingBlanks + _daysInMonth,
+                    itemBuilder: (context, index) {
+                      // Leading blank cells to align day 1 to the right weekday.
+                      if (index < _leadingBlanks) {
+                        return const SizedBox.shrink();
+                      }
+                      final day = index - _leadingBlanks + 1;
+                      final session = _firstSessionOnCalendarDay(day);
+                      final isAvailable = session != null;
+                      final isSelected = _selectedDay == day;
+                      return GestureDetector(
+                        onTap: session == null
+                            ? null
+                            : () => _selectSession(session),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? _sportColor
+                                : Colors.transparent,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '$day',
+                            style: AppTypography.font(
+                              color: isSelected
+                                  ? SportColors.onColorOf(_sport)
+                                  : (isAvailable
+                                        ? AppColors.textPrimary
+                                        : AppColors.textTertiary),
+                              fontSize: 14,
+                              fontWeight: isSelected || isAvailable
+                                  ? FontWeight.bold
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  cursorColor: AppColors.slateText,
-                  decoration: InputDecoration(
-                    hintText: 'Any goals, injuries, or special requests...',
-                    hintStyle: AppTypography.font(
+
+                  const SizedBox(height: 32),
+
+                  Text(
+                    'AVAILABLE TIMES',
+                    style: AppTypography.font(
                       color: AppColors.textTertiary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Time slots grid
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 2.2,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                        ),
+                    itemCount: _timeSlots.length,
+                    itemBuilder: (context, index) {
+                      final slot = _timeSlots[index];
+                      final session = _sessionAtSelectedTime(slot);
+                      final isSelected = _selectedTime == slot;
+                      return GestureDetector(
+                        onTap: session == null
+                            ? null
+                            : () => _selectSession(session),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          decoration: BoxDecoration(
+                            color: isSelected ? _sportColor : AppColors.surface,
+                            borderRadius: BorderRadius.circular(AppRadii.tile),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.transparent
+                                  : AppColors.hairline,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            slot,
+                            style: AppTypography.font(
+                              // Contrast-correct on any sport color (white on dark
+                              // sports, near-black on yellow/lime).
+                              color: isSelected
+                                  ? SportColors.onColorOf(_sport)
+                                  : AppColors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  Text(
+                    'NOTES (OPTIONAL)',
+                    style: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Notes Input Box
+                  TextField(
+                    maxLines: 3,
+                    style: AppTypography.font(
+                      color: AppColors.textPrimary,
                       fontSize: 13,
                     ),
-                    filled: true,
-                    fillColor: AppColors.surface,
-                    contentPadding: const EdgeInsets.all(16),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadii.tile),
-                      borderSide: const BorderSide(
-                        color: AppColors.hairline,
-                        width: 1.5,
+                    cursorColor: AppColors.slateText,
+                    decoration: InputDecoration(
+                      hintText: 'Any goals, injuries, or special requests...',
+                      hintStyle: AppTypography.font(
+                        color: AppColors.textTertiary,
+                        fontSize: 13,
                       ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadii.tile),
-                      borderSide: const BorderSide(
-                        color: AppColors.hairline,
-                        width: 1.5,
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.all(16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.tile),
+                        borderSide: const BorderSide(
+                          color: AppColors.hairline,
+                          width: 1.5,
+                        ),
                       ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadii.tile),
-                      borderSide: const BorderSide(
-                        color: AppColors.slateBorder,
-                        width: 1.5,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.tile),
+                        borderSide: const BorderSide(
+                          color: AppColors.hairline,
+                          width: 1.5,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.tile),
+                        borderSide: const BorderSide(
+                          color: AppColors.slateBorder,
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -1528,7 +1490,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen>
                     'Continue',
                     variant: SporveButtonVariant.primary,
                     color: _sportColor, // sport-context CTA carries sport color
-                    onPressed: _onContinueFromStep1,
+                    onPressed:
+                        _programSessions.isEmpty || _selectedSession == null
+                        ? null
+                        : _onContinueFromStep1,
                   ),
                 ),
               ],
