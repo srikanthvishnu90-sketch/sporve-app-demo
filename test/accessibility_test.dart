@@ -71,4 +71,25 @@ void main() {
     expect(find.bySemanticsLabel('Coach Ana'), findsOneWidget);
     handle.dispose();
   });
+
+  testWidgets('navigation search is an enabled labelled button', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: CustomSearchField(onTap: () {})),
+      ),
+    );
+
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Ask Sporve to find a coach…')),
+      isSemantics(
+        label: 'Ask Sporve to find a coach…',
+        isButton: true,
+        hasTapAction: true,
+      ),
+    );
+    handle.dispose();
+  });
 }

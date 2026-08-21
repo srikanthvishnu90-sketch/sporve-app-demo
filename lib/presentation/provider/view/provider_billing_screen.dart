@@ -190,6 +190,7 @@ class _ProviderBillingScreenState extends State<ProviderBillingScreen> {
     children: [
       SporveIconButton(
         Icons.arrow_back_rounded,
+        semanticLabel: 'Back',
         circle: true,
         iconSize: 20,
         onTap: () => Navigator.maybePop(context),

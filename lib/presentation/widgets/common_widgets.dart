@@ -109,47 +109,87 @@ class CustomSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
+    if (onTap != null) {
+      return Semantics(
+        button: true,
+        label: hint,
+        onTap: onTap,
+        excludeSemantics: true,
+        child: Material(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.tile),
-          border: Border.all(color: AppColors.hairline),
-        ),
-        child: TextField(
-          controller: controller,
-          enabled: onTap == null,
-          readOnly: onTap != null,
-          onTap: onTap,
-          onChanged: onChanged,
-          style: AppTypography.font(color: AppColors.textPrimary, fontSize: 14),
-          cursorColor: AppColors.slateText,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: AppTypography.font(
-              color: AppColors.textTertiary,
-              fontSize: 14,
-            ),
-            // AI-native: the search bar IS the Sporve AI prompt.
-            prefixIcon: const Icon(
-              Icons.auto_awesome,
-              color: AppColors.slateText,
-              size: 20,
-            ),
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadii.tile),
-              borderSide: const BorderSide(
-                color: AppColors.slateBorder,
-                width: 1.5,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.tile),
+            side: const BorderSide(color: AppColors.hairline),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: AppColors.slateTint,
+            focusColor: AppColors.slateTint,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome,
+                    color: AppColors.slateText,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.font(
+                        color: AppColors.textTertiary,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 14,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.tile),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        style: AppTypography.font(color: AppColors.textPrimary, fontSize: 14),
+        cursorColor: AppColors.slateText,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTypography.font(
+            color: AppColors.textTertiary,
+            fontSize: 14,
+          ),
+          // AI-native: the search bar IS the Sporve AI prompt.
+          prefixIcon: const Icon(
+            Icons.auto_awesome,
+            color: AppColors.slateText,
+            size: 20,
+          ),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppRadii.tile),
+            borderSide: const BorderSide(
+              color: AppColors.slateBorder,
+              width: 1.5,
             ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 14,
           ),
         ),
       ),
@@ -710,8 +750,9 @@ class _SporveIconButtonState extends State<SporveIconButton> {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: bg,
-                      shape:
-                          widget.circle ? BoxShape.circle : BoxShape.rectangle,
+                      shape: widget.circle
+                          ? BoxShape.circle
+                          : BoxShape.rectangle,
                       borderRadius: widget.circle
                           ? null
                           : BorderRadius.circular(AppRadii.tile),
@@ -1094,7 +1135,11 @@ class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.check_circle_outline, color: AppColors.positive, size: 24),
+            const Icon(
+              Icons.check_circle_outline,
+              color: AppColors.positive,
+              size: 24,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1139,7 +1184,11 @@ class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.notifications_active_outlined, color: AppColors.slateText, size: 22),
+              const Icon(
+                Icons.notifications_active_outlined,
+                color: AppColors.slateText,
+                size: 22,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -1170,12 +1219,21 @@ class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
                 child: TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: AppTypography.font(color: AppColors.textPrimary, fontSize: 13),
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
-                    hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 13),
+                    hintStyle: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 13,
+                    ),
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     filled: true,
                     fillColor: AppColors.surface2,
                     border: OutlineInputBorder(
@@ -1191,12 +1249,21 @@ class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
                 child: TextField(
                   controller: _zipController,
                   keyboardType: TextInputType.number,
-                  style: AppTypography.font(color: AppColors.textPrimary, fontSize: 13),
+                  style: AppTypography.font(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'ZIP code',
-                    hintStyle: AppTypography.font(color: AppColors.textTertiary, fontSize: 13),
+                    hintStyle: AppTypography.font(
+                      color: AppColors.textTertiary,
+                      fontSize: 13,
+                    ),
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     filled: true,
                     fillColor: AppColors.surface2,
                     border: OutlineInputBorder(
@@ -1235,4 +1302,3 @@ class _UnservedWaitlistCardState extends State<UnservedWaitlistCard> {
     );
   }
 }
-
